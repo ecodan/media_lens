@@ -1,7 +1,14 @@
+import datetime
 import logging
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+
+UTC_PATTERN: str = r'\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\+00:00'
+
+def utc_timestamp() -> str:
+    # get utc timestamp as short string
+    return datetime.datetime.now(datetime.timezone.utc).isoformat(sep='T', timespec='seconds')
 
 LOGGER_NAME: str = "MEDIA_LENS"
 LOGFILE_NAME: str = "media-lens-{ts}.log"

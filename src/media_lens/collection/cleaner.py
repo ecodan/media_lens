@@ -15,6 +15,7 @@ from src.media_lens.common import LOGGER_NAME
 
 logger = logging.getLogger(LOGGER_NAME)
 
+TEXT_ELEMENTS: set[str] = {'span', 'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'}
 
 class SiteSpecificCleaner:
 
@@ -142,7 +143,7 @@ class WebpageCleaner:
         soup = BeautifulSoup(html_content, 'html.parser')
 
         # Define text display tags
-        text_tags = {'span', 'div', 'p'}
+        text_tags = TEXT_ELEMENTS
 
         # Find all elements that don't have text display descendants
         elements_to_remove = []
@@ -179,7 +180,7 @@ class WebpageCleaner:
         soup = BeautifulSoup(html_content, 'html.parser')
 
         # Define valid text containers
-        valid_tags = {'span', 'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'}
+        valid_tags = TEXT_ELEMENTS
         results = []
 
         # Find all text elements within valid tags
@@ -228,15 +229,20 @@ class WebpageCleaner:
 
 ############################################################
 # TESTING
-async def main(content: str, cleaner: SiteSpecificCleaner):
+def load_test_file(file_path: Path) -> str:
+    with open(file_path, "r") as file:
+        content = file.read()
+    return content
+
+async def main(working_dir: Path, fname: str, cleaner: SiteSpecificCleaner):
+    fpath: Path = working_dir / fname
+    content: str = load_test_file(fpath)
     logger.debug(f"raw content len: {len(content)} bytes")
 
-    # cleaner = WebpageCleaner(FoxNewsCleaner())
-    # cleaner = WebpageCleaner(BBCCleaner())
     cleaner = WebpageCleaner(cleaner)
     cleaned = cleaner.clean_html(content)
     logger.debug(f"cleaned content len: {len(cleaned)} bytes")
-    logger.debug(f"cleaned content: {cleaned}")
+    # logger.debug(f"cleaned content: {cleaned}")
 
     # cleaned = cleaner.filter_text_elements(cleaned)
     # logger.debug(f"cleaned and filtered content len: {len(cleaned)} bytes")
@@ -244,16 +250,12 @@ async def main(content: str, cleaner: SiteSpecificCleaner):
 
     text_elements = cleaner.extract_text_elements(cleaned)
     logger.debug(f"extracted text elements len: {len(json.dumps(text_elements))} bytes")
-    logger.debug(f"extracted text elements: {json.dumps(text_elements)}")
-
-def load_test_file(fname: str) -> str:
-    file_path: Path = Path("/Users/dan/dev/code/projects/python/media_lens/working") / fname
-    with open(file_path) as file:
-        content = file.read()
-    return content
+    # logger.debug(f"extracted text elements: {json.dumps(text_elements)}")
+    with open(working_dir / f"{fpath.stem}-cleaned.html", "w") as file:
+        file.write(cleaned)
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
-    asyncio.run(main(load_test_file("bbc-mob.html"), BBCCleaner()))
+    asyncio.run(main(Path("/Users/dan/dev/code/projects/python/media_lens/working/out/test"), "www.bbc.com.html", BBCCleaner()))
     # asyncio.run(main(load_test_file("cnn-mob.html"), BBCCleaner()))
     # asyncio.run(main(load_test_file("foxnews-mob.html"), BBCCleaner()))
