@@ -1,11 +1,11 @@
-import ftplib
 import logging
 import os
-from getpass import getpass
 from pathlib import Path
 import paramiko
 
 import dotenv
+
+from src.media_lens.common import get_project_root
 
 
 def upload_file(local_file: Path, remote_path: str):
@@ -87,8 +87,8 @@ def upload_file(local_file: Path, remote_path: str):
 ##################
 # Test
 def main():
-    local: Path = Path("/Users/dan/dev/code/projects/python/media_lens/working/out/medialens.html")
-    remote: str = "www/dancripe.com/public_html/reports"
+    local: Path = get_project_root() / "/working/out/medialens.html"
+    remote: str = os.getenv("FTP_REMOTE_PATH")
     upload_file(local, remote)
 
 if __name__ == '__main__':

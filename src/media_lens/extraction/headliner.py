@@ -2,17 +2,14 @@ import json
 import logging
 import os
 import re
-import time
 import traceback
 from abc import ABCMeta, abstractmethod
-from logging import Logger
 from pathlib import Path
 from typing import Dict
 
 import dotenv
-from anthropic import Anthropic
 
-from src.media_lens.common import LOGGER_NAME
+from src.media_lens.common import LOGGER_NAME, get_project_root
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -96,8 +93,6 @@ Format your response EXACTLY as a JSON object with this structure, and only this
 RESPONSE: 
 
 """
-
-
 class Extractor(metaclass=ABCMeta):
 
     @abstractmethod
@@ -202,4 +197,4 @@ def main(working_dir: Path):
 if __name__ == '__main__':
     dotenv.load_dotenv()
     logging.basicConfig(level=logging.DEBUG)
-    main(working_dir=Path("/Users/dan/dev/code/projects/python/media_lens/working/out/test"))
+    main(working_dir=Path(get_project_root() / "working/out/test"))

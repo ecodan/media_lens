@@ -8,7 +8,7 @@ from typing import Optional
 from playwright.async_api import async_playwright
 from playwright_stealth import stealth_async
 
-from src.media_lens.common import LOGGER_NAME
+from src.media_lens.common import LOGGER_NAME, get_project_root
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -91,6 +91,4 @@ async def main(url: str, browser_type: WebpageScraper.BrowserType = WebpageScrap
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
-    asyncio.run(main("http://www.cnn.com", WebpageScraper.BrowserType.MOBILE, outfile=Path("/Users/dan/dev/code/projects/python/media_lens/working/cnn-mob.html")))
-    asyncio.run(main("http://www.bbc.com", WebpageScraper.BrowserType.MOBILE, outfile=Path("/Users/dan/dev/code/projects/python/media_lens/working/bbc-mob.html")))
-    asyncio.run(main("http://www.foxnews.com", WebpageScraper.BrowserType.MOBILE, outfile=Path("/Users/dan/dev/code/projects/python/media_lens/working/foxnews-mob.html")))
+    asyncio.run(main("http://www.cnn.com", WebpageScraper.BrowserType.MOBILE, outfile=Path(get_project_root() / "working/cnn-mob.html")))

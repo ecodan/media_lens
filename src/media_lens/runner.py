@@ -6,16 +6,17 @@ from pathlib import Path
 import re
 
 import dotenv
-from huey import MemoryHuey
-from datetime import datetime
 import logging
 
 from src.media_lens.collection.harvester import Harvester
-from src.media_lens.common import create_logger, LOGGER_NAME
+from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
+from src.media_lens.presentation.deployer import upload_file
+from src.media_lens.presentation.html_formatter import generate_html_from_path
 
 logger = logging.getLogger(LOGGER_NAME)
+
 
 
 async def interpret(job_dir, sites):
@@ -36,14 +37,8 @@ async def extract(job_dir):
     await extractor.run(delay_between_sites_secs=60)
 
 
-async def reprocess_scraped_content():
-    out_dir: Path = Path("/Users/dan/dev/code/projects/python/media_lens/working/out")
-    sites: list[str] = ['www.cnn.com',
-                        'www.bbc.com',
-                        'www.foxnews.com'
-                        ]
-
-    logger.info(f"Reprocessing scraped content in {out_dir.name} for sites {sites}")
+async def reprocess_scraped_content(out_dir: Path):
+    logger.info(f"Reprocessing scraped content in {out_dir.name} for sites {SITES}")
 
     utc_pattern = r'\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\+00:00'
     for job_dir in out_dir.iterdir():
@@ -52,59 +47,41 @@ async def reprocess_scraped_content():
                 logger.debug(f"Reprocessing scraped content for {job_dir.name}")
 
                 harvester: Harvester = Harvester(outdir=out_dir)
-                await harvester.re_harvest(job_dir=job_dir, sites=sites)
+                await harvester.re_harvest(job_dir=job_dir, sites=SITES)
 
                 await extract(job_dir)
 
-                await interpret(job_dir, sites)
+                await interpret(job_dir, SITES)
 
 
-async def run_jobs():
-
-    # Initialize in-memory queue
-    huey = MemoryHuey(results=True)  # Keep results in memory
-
-    @huey.task(retries=3, retry_delay=60)  # Retry 3 times, 1 minute between retries
-    def scrape_url(url):
-        try:
-            logger.info(f"Scraping {url} at {datetime.now()}")
-            # Your scraping code here
-            return {"status": "success", "url": url}
-        except Exception as e:
-            logger.error(f"Error scraping {url}: {str(e)}")
-            raise
-
-    out_dir: Path = Path("/Users/dan/dev/code/projects/python/media_lens/working/out")
-    sites: list[str] = ['www.cnn.com',
-                        'www.bbc.com',
-                        'www.foxnews.com'
-                        ]
+async def run_new_analysis(out_dir: Path):
 
     # Harvest
     harvester: Harvester = Harvester(outdir=out_dir)
-    artifacts_dir = await harvester.harvest(sites=sites)
+    artifacts_dir = await harvester.harvest(sites=SITES)
 
     # Extract
     await extract(artifacts_dir)
 
     # Interpret
-    await interpret(artifacts_dir, sites)
+    await interpret(artifacts_dir, SITES)
 
-    # # Usage examples:
-    # # Immediate execution
-    # result = scrape_url('https://example.com')
-    #
-    # # Scheduled execution
-    # future_result = scrape_url.schedule(
-    #     args=('https://example.com',),
-    #     delay=60  # Run in 60 seconds
-    # )
-    #
-    # # Check task status
-    # print(future_result.get(blocking=True))  # Waits for result
+    # Output
+    template_dir_path: Path = Path(get_project_root() / "/config/templates")
+    template_name: str = "template_01.j2"
+    html: str = generate_html_from_path(out_dir, SITES, template_dir_path, template_name)
+    with open(out_dir / f"medialens.html", "w") as f:
+        f.write(html)
+
+    # Transfer
+    local: Path = get_project_root() / "/working/out/medialens.html"
+    remote: str = os.getenv("FTP_REMOTE_PATH")
+    upload_file(local, remote)
+
+
 
 if __name__ == '__main__':
     dotenv.load_dotenv()
     create_logger(LOGGER_NAME)
-    asyncio.run(run_jobs())
-    # asyncio.run(reprocess_scraped_content())
+    asyncio.run(run_new_analysis(Path(get_project_root() / "working/out")))
+    # asyncio.run(reprocess_scraped_content(Path(get_project_root() / "working/out")))

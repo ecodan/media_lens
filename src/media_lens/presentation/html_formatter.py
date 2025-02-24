@@ -9,7 +9,7 @@ from typing import List, Dict, Tuple
 import dotenv
 from jinja2 import Environment, FileSystemLoader
 
-from src.media_lens.common import utc_timestamp, UTC_PATTERN, LOGGER_NAME
+from src.media_lens.common import utc_timestamp, UTC_PATTERN, LOGGER_NAME, SITES, get_project_root
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -82,18 +82,13 @@ def generate_html_from_path(job_dirs_root: Path, sites: list[str], template_dir_
 #########################################
 # TEST
 def main(job_dirs_root: Path):
-    sites: list[str] = [
-        'www.cnn.com',
-        'www.bbc.com',
-        'www.foxnews.com'
-    ]
-    template_dir_path: Path = Path("/Users/dan/dev/code/projects/python/media_lens/config/templates")
+    template_dir_path: Path = Path(get_project_root() / "/config/templates")
     template_name: str = "template_01.j2"
-    html: str = generate_html_from_path(job_dirs_root, sites, template_dir_path, template_name)
+    html: str = generate_html_from_path(job_dirs_root, SITES, template_dir_path, template_name)
     with open(job_dirs_root / f"medialens.html", "w") as f:
         f.write(html)
 
 if __name__ == '__main__':
     dotenv.load_dotenv()
     logging.basicConfig(level=logging.INFO)
-    main(Path("/Users/dan/dev/code/projects/python/media_lens/working/out"))
+    main(Path(get_project_root() / "/working/out"))

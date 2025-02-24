@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 import dotenv
 
-from src.media_lens.common import LOGGER_NAME
+from src.media_lens.common import LOGGER_NAME, get_project_root
 from src.media_lens.extraction.headliner import LLMExtractor
 from src.media_lens.extraction.summarizer import ArticleSummarizer
 
@@ -94,7 +94,7 @@ class ContextExtractor:
 
 ################
 async def main():
-    extractor: ContextExtractor = ContextExtractor(working_dir=Path("/Users/dan/dev/code/projects/python/media_lens/working/out/2025-02-22T20:49:31+00:00"))
+    extractor: ContextExtractor = ContextExtractor(working_dir=Path(get_project_root() / "working/out/2025-02-22T20:49:31+00:00"))
     await extractor.run()
 
 if __name__ == '__main__':

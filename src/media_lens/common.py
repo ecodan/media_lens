@@ -10,6 +10,16 @@ def utc_timestamp() -> str:
     # get utc timestamp as short string
     return datetime.datetime.now(datetime.timezone.utc).isoformat(sep='T', timespec='seconds')
 
+def get_project_root() -> Path:
+    return Path(__file__).parent.parent
+
+SITES: list[str] = [
+    'www.cnn.com',
+    'www.bbc.com',
+    'www.foxnews.com'
+]
+
+
 LOGGER_NAME: str = "MEDIA_LENS"
 LOGFILE_NAME: str = "media-lens-{ts}.log"
 LOG_FORMAT: str = "%(asctime)s [%(levelname)s] <%(filename)s:%(lineno)s - %(funcName)s()> %(message)s"

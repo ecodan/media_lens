@@ -9,7 +9,7 @@ import dotenv
 
 from src.media_lens.collection.cleaner import WebpageCleaner, cleaner_for_site
 from src.media_lens.collection.scraper import WebpageScraper
-from src.media_lens.common import LOGGER_NAME, utc_timestamp
+from src.media_lens.common import LOGGER_NAME, utc_timestamp, get_project_root, SITES
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -64,9 +64,5 @@ async def main(sites: list[str], outdir: Path):
 if __name__ == '__main__':
     dotenv.load_dotenv()
     logging.basicConfig(level=logging.DEBUG)
-    sites: list[str] = ['www.cnn.com',
-                        'www.bbc.com',
-                        'www.foxnews.com'
-                        ]
-    outdir: Path = Path("/Users/dan/dev/code/projects/python/media_lens/working/out")
-    asyncio.run(main(sites=sites, outdir=outdir))
+    outdir: Path = Path(get_project_root() / "working/out")
+    asyncio.run(main(sites=SITES, outdir=outdir))

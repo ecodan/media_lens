@@ -3,7 +3,6 @@ import json
 import logging
 
 import trafilatura
-import requests
 from typing import Optional, Dict
 from urllib.parse import urlparse
 

@@ -2,13 +2,12 @@ import json
 import logging
 import os
 import traceback
-from logging import Logger
 from pathlib import Path
 from typing import List, Dict
 
 import dotenv
 
-from src.media_lens.common import LOGGER_NAME
+from src.media_lens.common import LOGGER_NAME, get_project_root
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -95,4 +94,4 @@ def main(working_dir: Path, site: str):
 if __name__ == '__main__':
     dotenv.load_dotenv()
     logging.basicConfig(level=logging.DEBUG)
-    main(Path("/Users/dan/dev/code/projects/python/media_lens/working/out/2025-02-22T20:49:31+00:00"), "www.bbc.com")
+    main(Path(get_project_root() / "working/out/2025-02-22T20:49:31+00:00"), "www.bbc.com")

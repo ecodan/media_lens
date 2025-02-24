@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 from trafilatura.settings import use_config
 
 from src.media_lens.collection.scraper import WebpageScraper
-from src.media_lens.common import LOGGER_NAME
+from src.media_lens.common import LOGGER_NAME, get_project_root
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -242,20 +242,12 @@ async def main(working_dir: Path, fname: str, cleaner: SiteSpecificCleaner):
     cleaner = WebpageCleaner(cleaner)
     cleaned = cleaner.clean_html(content)
     logger.debug(f"cleaned content len: {len(cleaned)} bytes")
-    # logger.debug(f"cleaned content: {cleaned}")
-
-    # cleaned = cleaner.filter_text_elements(cleaned)
-    # logger.debug(f"cleaned and filtered content len: {len(cleaned)} bytes")
-    # logger.debug(f"cleaned and filtered content: {cleaned}")
 
     text_elements = cleaner.extract_text_elements(cleaned)
     logger.debug(f"extracted text elements len: {len(json.dumps(text_elements))} bytes")
-    # logger.debug(f"extracted text elements: {json.dumps(text_elements)}")
     with open(working_dir / f"{fpath.stem}-cleaned.html", "w") as file:
         file.write(cleaned)
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
-    asyncio.run(main(Path("/Users/dan/dev/code/projects/python/media_lens/working/out/test"), "www.bbc.com.html", BBCCleaner()))
-    # asyncio.run(main(load_test_file("cnn-mob.html"), BBCCleaner()))
-    # asyncio.run(main(load_test_file("foxnews-mob.html"), BBCCleaner()))
+    asyncio.run(main(Path(get_project_root() / "working/out/test"), "www.bbc.com.html", BBCCleaner()))
