@@ -9,6 +9,12 @@ from src.media_lens.common import get_project_root
 
 
 def upload_file(local_file: Path, remote_path: str):
+    """
+    Uploads a file to a remote server using SFTP.
+    :param local_file: full path to the local file
+    :param remote_path: relative path to the remote directory
+    :return:
+    """
     # Get FTP credentials
     hostname = os.getenv("FTP_HOSTNAME")
     username = os.getenv("FTP_USERNAME")
@@ -87,7 +93,7 @@ def upload_file(local_file: Path, remote_path: str):
 ##################
 # Test
 def main():
-    local: Path = get_project_root() / "/working/out/medialens.html"
+    local: Path = get_project_root() / "working/out/medialens.html"
     remote: str = os.getenv("FTP_REMOTE_PATH")
     upload_file(local, remote)
 

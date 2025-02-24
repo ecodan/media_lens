@@ -9,21 +9,24 @@ from urllib.parse import urlparse
 
 import dotenv
 
-from src.media_lens.common import LOGGER_NAME, get_project_root
-from src.media_lens.extraction.headliner import LLMExtractor
+from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL
+from src.media_lens.extraction.agent import ClaudeLLMAgent, Agent
+from src.media_lens.extraction.headliner import LLMHeadlineExtractor
 from src.media_lens.extraction.summarizer import ArticleSummarizer
 
 logger = logging.getLogger(LOGGER_NAME)
 
 class ContextExtractor:
+    """
+    Orchestrates the extraction of headlines and articles from a set of HTML files.
+    """
 
-    def __init__(self, working_dir: Path):
+    def __init__(self, working_dir: Path, agent: Agent):
         super().__init__()
         self.working_dir = working_dir
-        self.extractor: LLMExtractor = LLMExtractor(
-            api_key=os.getenv("ANTHROPIC_API_KEY"),
-            model="claude-3-5-sonnet-latest",
-            # model="claude-3-5-haiku-latest",
+        agent: Agent = agent
+        self.extractor: LLMHeadlineExtractor = LLMHeadlineExtractor(
+            agent=agent,
             artifacts_dir=working_dir
         )
         self.summarizer: ArticleSummarizer = ArticleSummarizer()
@@ -32,16 +35,10 @@ class ContextExtractor:
     def _process_relative_url(url: str, filename: str) -> str:
         """
         Process a potentially relative URL, adding https:// and domain if needed.
-
-        Args:
-            url (str): The URL to process
-            filename (str): Filename containing the domain (e.g., 'www.cnn.com-extracted.json')
-
-        Returns:
-            str: Processed URL with protocol and domain if needed
-
-        Raises:
-            ValueError: If domain cannot be extracted from filename
+        :param url: The URL to process
+        :param filename: Filename containing the domain (e.g., 'www.cnn.com-extracted.json')
+        :returns str: Processed URL with protocol and domain if needed
+        :raises ValueError: If domain cannot be extracted from filename
         """
         # Check if URL already has a protocol
         parsed_url = urlparse(url)
@@ -60,6 +57,12 @@ class ContextExtractor:
         return f'https://{domain}/{url_path}'
 
     async def run(self, delay_between_sites_secs: int = 0):
+        """
+        Run the extraction process.
+        Loop through each file in the working directory, extract headlines and articles for the appropriate files, and save results.
+        :param delay_between_sites_secs: artificial delay to avoid rate limiting
+        :return:
+        """
         logger.info(f"Starting extraction at {self.working_dir}")
         # loop through all files to process in this batch
         for file in self.working_dir.glob("*-clean.html"):
@@ -94,7 +97,11 @@ class ContextExtractor:
 
 ################
 async def main():
-    extractor: ContextExtractor = ContextExtractor(working_dir=Path(get_project_root() / "working/out/2025-02-22T20:49:31+00:00"))
+    agent: Agent = ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL)
+    extractor: ContextExtractor = ContextExtractor(
+        agent=agent,
+        working_dir=Path(get_project_root() / "working/out/2025-02-22T20:49:31+00:00")
+    )
     await extractor.run()
 
 if __name__ == '__main__':

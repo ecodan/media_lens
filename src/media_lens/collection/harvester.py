@@ -1,8 +1,5 @@
 import asyncio
-import datetime
 import logging
-import sys
-from logging import Logger
 from pathlib import Path
 
 import dotenv
@@ -14,11 +11,21 @@ from src.media_lens.common import LOGGER_NAME, utc_timestamp, get_project_root, 
 logger = logging.getLogger(LOGGER_NAME)
 
 class Harvester(object):
+    """
+    Orchestrates the harvesting of web pages and their cleaning.
+    """
 
     def __init__(self, outdir: Path):
         self.outdir = outdir
 
     async def re_harvest(self, job_dir: Path, sites: list[str]):
+        """
+        Re-harvest sites from a previous job without re-downloading. This allows the re-use of the content
+        already downloaded.
+        :param job_dir: folder containing the downloaded content
+        :param sites: media sites to re-harvest
+        :return:
+        """
         logger.info(f"Reprocessing {len(sites)} sites in {job_dir.name}")
         for site in sites:
             try:
@@ -29,6 +36,12 @@ class Harvester(object):
                 logger.error(f"Failed to re-harvest {site}: {e}")
 
     async def harvest(self, sites: list[str], browser_type: WebpageScraper.BrowserType = WebpageScraper.BrowserType.MOBILE) -> Path:
+        """
+        Harvest the sites and save the raw and cleaned content to the outdir.
+        :param sites: media sites to harvest
+        :param browser_type: DESKTOP or MOBILE
+        :return: the newly created artifacts dir
+        """
         logger.info(f"Harvesting {len(sites)} sites")
         scraper: WebpageScraper = WebpageScraper()
         artifacts_dir: Path = self.outdir / utc_timestamp()
@@ -46,16 +59,25 @@ class Harvester(object):
         return artifacts_dir
 
     async def clean_site(self, artifacts_dir, content, site):
+        """
+        Clean the content of the site and save it to the artifacts dir.
+        :param artifacts_dir: the directory to save the cleaned content
+        :param content: the HTML content to clean
+        :param site: the site that produced the content
+        :return:
+        """
+        logger.debug(f"Cleaning {site}")
         # clean content
         cleaner: WebpageCleaner = WebpageCleaner(site_cleaner=cleaner_for_site(site))
         clean_content: str = cleaner.clean_html(content)
         clean_content = cleaner.filter_text_elements(clean_content)
-        logger.info(f"Writing clean {site} to {artifacts_dir}")
+        logger.debug(f"Writing clean {site} to {artifacts_dir}")
         with open(str(artifacts_dir / f"{site}-clean.html"), "w", encoding="utf-8") as f:
             f.write(clean_content)
 
 
 ####################
+# TESTING
 async def main(sites: list[str], outdir: Path):
     harvester: Harvester = Harvester(outdir=outdir)
     await harvester.harvest(sites=sites)

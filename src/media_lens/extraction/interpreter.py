@@ -6,8 +6,10 @@ from pathlib import Path
 from typing import List, Dict
 
 import dotenv
+from anthropic import APIError, APIConnectionError
+from tenacity import retry, stop_after_attempt, wait_exponential
 
-from src.media_lens.common import LOGGER_NAME, get_project_root
+from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -46,11 +48,27 @@ RESPONSE:
 """
 
 class LLMWebsiteInterpreter:
+    """
+    Class to interpret and answer questions about the content of a website using a large language model (LLM).
+    """
+    def __init__(self, agent: Agent):
+        self.agent: Agent = agent
 
-    def __init__(self, api_key: str, model: str):
-        self.agent: Agent = ClaudeLLMAgent(api_key=api_key, model=model)
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=lambda e: isinstance(e, (APIError, APIConnectionError))
+    )
+    def _call_llm(self, user_prompt: str, system_prompt: str) -> str:
+        return self.agent.infer(system_prompt=system_prompt, user_prompt=user_prompt)
+
 
     def interpret_from_files(self, files: List[Path]) -> List:
+        """
+        Convenience method to create a concatenated list of articles from a list of files.
+        :param files: list of files to read and concatenate
+        :return:
+        """
         logger.info(f"Interpreting {len(files)} files")
         content: List[Dict] = []
         for file in files:
@@ -60,20 +78,22 @@ class LLMWebsiteInterpreter:
         return self.interpret(content)
 
     def interpret(self, content: list) -> List:
+        """
+        Interpret the content of a website using a large language model (LLM).
+        :param content: all of the content to interpret
+        :return: a list of question and answer pairs
+        """
         logger.debug(f"Interpreting content: {len(content)} bytes")
         try:
             payload = [
                 f"<article>TITLE: {element['title']}\nTEXT: {element['text']}\n</article>\n" for element in content
             ]
 
-            system_message = SYSTEM_PROMPT
-            user_message = REASONING_PROMPT.format(
-                content=payload
-            )
-
-            response: str = self.agent.infer(
-                system_prompt=system_message,
-                user_prompt=user_message,
+            response: str = self._call_llm(
+                system_prompt=SYSTEM_PROMPT,
+                user_prompt=REASONING_PROMPT.format(
+                    content=payload
+                )
             )
             content = json.loads(response)
             return content
@@ -83,11 +103,11 @@ class LLMWebsiteInterpreter:
             print(traceback.format_exc())
             return []
 
+##########################
+# TEST
 def main(working_dir: Path, site: str):
-    interpreter = LLMWebsiteInterpreter(
-        api_key=os.getenv("ANTHROPIC_API_KEY"),
-        model="claude-3-5-sonnet-latest"
-    )
+    agent: Agent = ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL)
+    interpreter = LLMWebsiteInterpreter(agent=agent)
     files = [f for f in working_dir.glob(f"{site}-clean-article-*.json")]
     print(json.dumps(interpreter.interpret_from_files(files), indent=2))
 

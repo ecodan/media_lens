@@ -1,15 +1,21 @@
+import datetime
+import hashlib
 import json
 import logging
 import os
 import re
 import traceback
 from abc import ABCMeta, abstractmethod
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict
 
 import dotenv
+from anthropic import APIError, APIConnectionError
+from tenacity import retry, stop_after_attempt, wait_exponential
 
-from src.media_lens.common import LOGGER_NAME, get_project_root
+from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -93,7 +99,15 @@ Format your response EXACTLY as a JSON object with this structure, and only this
 RESPONSE: 
 
 """
-class Extractor(metaclass=ABCMeta):
+
+@dataclass
+class RetryStats:
+    attempts: int = 0
+    last_error: str | None = None
+    last_attempt: datetime.datetime | None = None
+
+
+class HeadlineExtractor(metaclass=ABCMeta):
 
     @abstractmethod
     def extract(self, content: str) -> Dict:
@@ -104,13 +118,9 @@ class Extractor(metaclass=ABCMeta):
         """
         Simply truncates HTML content at approximately max_tokens.
         Assumes HTML is already simplified.
-
-        Args:
-            html_string (str): Input HTML content
-            max_tokens (int): Maximum number of tokens (default 100K)
-
-        Returns:
-            str: Truncated HTML string
+        :param html_string: HTML content
+        :param max_tokens: Maximum number of tokens (default 100K)
+        :return: Truncated HTML string
         """
         # Simple token estimation: split on whitespace and punctuation
         tokens = re.findall(r'\w+|\S', html_string)
@@ -124,12 +134,65 @@ class Extractor(metaclass=ABCMeta):
 
         return truncated_text
 
-class LLMExtractor(Extractor):
-
-    def __init__(self, api_key: str, model: str, artifacts_dir: Path):
+class LLMHeadlineExtractor(HeadlineExtractor):
+    """
+    Extractor class that uses a large language model (LLM) to extract headlines and key stories from HTML content.
+    """
+    def __init__(self, agent: Agent, artifacts_dir: Path):
         super().__init__()
-        self.agent: Agent = ClaudeLLMAgent(api_key=api_key, model=model)
+        self.agent: Agent = agent
         self.artifacts_dir = artifacts_dir
+        self.stats = RetryStats()
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=lambda e: isinstance(e, (APIError, APIConnectionError))
+    )
+    def _call_llm(self, user_prompt: str, system_prompt: str) -> str:
+        return self.agent.infer(system_prompt=system_prompt, user_prompt=user_prompt)
+
+    def _update_stats(self, retry_state):
+        self.stats.attempts += 1
+        self.stats.last_attempt = datetime.datetime.now()
+        if retry_state.outcome.failed:
+            self.stats.last_error = str(retry_state.outcome.exception())
+
+    @staticmethod
+    def _get_content_hash(content: str) -> str:
+        return hashlib.sha256(content.encode()).hexdigest()
+
+    @lru_cache(maxsize=100)
+    def _process_content(self, content_hash: str, content: str) -> Dict:
+        """Cache extraction results using content hash as key"""
+        try:
+            # Use existing CoT analysis and gathering process
+            reasoning_response = self._call_llm(
+                system_prompt=SYSTEM_PROMPT,
+                user_prompt=REASONING_PROMPT.format(
+                    task="Indentify the five primary headlines in order of appearance such that they are the most likely headlines that a human viewer would see.",
+                    data=content,
+                    rules="""
+                    * Use judgement to identify the primary headlines. 
+                    * Often there are smaller supporting stories under a single headlines; use judgement to determine if they are unique enough to be their own headlines.
+                    * The response MUST have the headlines in order of appearance.
+                    * The response MUST quote the headlines verbatim.
+                    * The response MUST include the headline text, the publication date (if available) and the URL to the article.
+                    * The response SHOULD be in JSON but can also be in markdown.
+                    """
+                )
+            )
+
+            gathering_response = self._call_llm(
+                system_prompt=SYSTEM_PROMPT,
+                user_prompt=GATHERING_PROMPT.format(analysis=reasoning_response)
+            )
+
+            return json.loads(gathering_response)
+
+        except Exception as e:
+            logger.error(f"Error processing content: {str(e)}")
+            return {"error": str(e)}
 
     def extract(self, content: str) -> Dict:
         """
@@ -139,35 +202,8 @@ class LLMExtractor(Extractor):
         """
         logger.debug(f"Extracting news content: {len(content)} bytes")
         try:
-            # first use CoT to get the best candidates
-            prompt: str = REASONING_PROMPT.format(
-                task="Indentify the five primary headlines in order of appearance such that they are the most likely headlines that a human viewer would see.",
-                data=content,
-                rules="""
-                * Use judgement to identify the primary headlines. 
-                * Often there are smaller supporting stories under a single headlines; use judgement to determine if they are unique enough to be their own headlines.
-                * The response MUST have the headlines in order of appearance.
-                * The response MUST quote the headlines verbatim.
-                * The response MUST include the headline text, the publication date (if available) and the URL to the article.
-                * The response SHOULD be in JSON but can also be in markdown.
-                """
-            )
-            resonaing_response: str = self.agent.infer(
-                system_prompt=SYSTEM_PROMPT,
-                user_prompt=prompt,
-            )
-
-            prompt = GATHERING_PROMPT.format(
-                analysis=resonaing_response
-            )
-            gathering_response: str = self.agent.infer(
-                system_prompt=SYSTEM_PROMPT,
-                user_prompt=prompt
-            )
-
-            # Parse response content as JSON
-            content = json.loads(gathering_response)
-            return content
+            content_hash = self._get_content_hash(content)
+            return self._process_content(content_hash, self._truncate_html(content))
 
         except Exception as e:
             logger.error(f"Error extracting news content: {str(e)}")
@@ -179,11 +215,14 @@ class LLMExtractor(Extractor):
             }
 
 ##############################
+# TEST
 def main(working_dir: Path):
-    extractor: LLMExtractor = LLMExtractor(
+    agent: ClaudeLLMAgent = ClaudeLLMAgent(
         api_key=os.getenv("ANTHROPIC_API_KEY"),
-        model="claude-3-5-sonnet-latest",
-        # model="claude-3-5-haiku-latest",
+        model=ANTHROPIC_MODEL,
+    )
+    extractor: LLMHeadlineExtractor = LLMHeadlineExtractor(
+        agent=agent,
         artifacts_dir=working_dir
     )
     for file in working_dir.glob("*-clean.html"):

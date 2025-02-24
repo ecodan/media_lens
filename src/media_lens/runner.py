@@ -9,7 +9,8 @@ import dotenv
 import logging
 
 from src.media_lens.collection.harvester import Harvester
-from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES
+from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL
+from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
 from src.media_lens.presentation.deployer import upload_file
@@ -20,10 +21,11 @@ logger = logging.getLogger(LOGGER_NAME)
 
 
 async def interpret(job_dir, sites):
-    interpreter: LLMWebsiteInterpreter = LLMWebsiteInterpreter(
+    agent: Agent = ClaudeLLMAgent(
         api_key=os.getenv("ANTHROPIC_API_KEY"),
-        model="claude-3-5-sonnet-latest"
+        model=ANTHROPIC_MODEL
     )
+    interpreter: LLMWebsiteInterpreter = LLMWebsiteInterpreter(agent=agent)
     for site in sites:
         files = [f for f in job_dir.glob(f"{site}-clean-article-*.json")]
         interpretation: list = interpreter.interpret_from_files(files)
@@ -33,7 +35,11 @@ async def interpret(job_dir, sites):
 
 
 async def extract(job_dir):
-    extractor: ContextExtractor = ContextExtractor(working_dir=job_dir)
+    agent: Agent = ClaudeLLMAgent(
+        api_key=os.getenv("ANTHROPIC_API_KEY"),
+        model=ANTHROPIC_MODEL
+    )
+    extractor: ContextExtractor = ContextExtractor(agent=agent, working_dir=job_dir)
     await extractor.run(delay_between_sites_secs=60)
 
 
@@ -67,14 +73,14 @@ async def run_new_analysis(out_dir: Path):
     await interpret(artifacts_dir, SITES)
 
     # Output
-    template_dir_path: Path = Path(get_project_root() / "/config/templates")
+    template_dir_path: Path = Path(get_project_root() / "config/templates")
     template_name: str = "template_01.j2"
     html: str = generate_html_from_path(out_dir, SITES, template_dir_path, template_name)
     with open(out_dir / f"medialens.html", "w") as f:
         f.write(html)
 
     # Transfer
-    local: Path = get_project_root() / "/working/out/medialens.html"
+    local: Path = get_project_root() / "working/out/medialens.html"
     remote: str = os.getenv("FTP_REMOTE_PATH")
     upload_file(local, remote)
 

@@ -11,13 +11,15 @@ def utc_timestamp() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat(sep='T', timespec='seconds')
 
 def get_project_root() -> Path:
-    return Path(__file__).parent.parent
+    return Path(__file__).parent.parent.parent
 
 SITES: list[str] = [
     'www.cnn.com',
     'www.bbc.com',
     'www.foxnews.com'
 ]
+
+ANTHROPIC_MODEL: str = "claude-3-5-sonnet-latest"
 
 
 LOGGER_NAME: str = "MEDIA_LENS"

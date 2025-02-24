@@ -12,6 +12,9 @@ from src.media_lens.common import LOGGER_NAME
 logger = logging.getLogger(LOGGER_NAME)
 
 class ArticleSummarizer:
+    """
+    Simple wrapper around trafilatura to extract article content.
+    """
     def __init__(self):
         self.scraper: WebpageScraper = WebpageScraper()
 
