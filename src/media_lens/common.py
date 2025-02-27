@@ -4,11 +4,26 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+import pytz
+
 UTC_PATTERN: str = r'\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\+00:00'
+
+LONG_DATE_PATTERN: str = "%a %d-%b-%Y %H:%M %Z"
+UTC_DATE_PATTERN: str = "%Y-%m-%dT%H:%M:%S+00:00"
+TZ_DEFAULT: str = 'America/Los_Angeles'
 
 def utc_timestamp() -> str:
     # get utc timestamp as short string
     return datetime.datetime.now(datetime.timezone.utc).isoformat(sep='T', timespec='seconds')
+
+def timestamp_as_long_date(tz = pytz.timezone(TZ_DEFAULT)) -> str:
+    dt = datetime.datetime.now(tz)
+    return dt.strftime(LONG_DATE_PATTERN)
+
+def timestamp_str_as_long_date(ts: str, tz = pytz.timezone(TZ_DEFAULT)) -> str:
+    dt = datetime.datetime.fromisoformat(ts)
+    dt_local = dt.astimezone(tz)
+    return dt_local.strftime(LONG_DATE_PATTERN)
 
 def get_project_root() -> Path:
     return Path(__file__).parent.parent.parent

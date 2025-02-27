@@ -175,8 +175,9 @@ class LLMHeadlineExtractor(HeadlineExtractor):
                     rules="""
                     * Use judgement to identify the primary headlines. 
                     * Often there are smaller supporting stories under a single headlines; use judgement to determine if they are unique enough to be their own headlines.
+                    * Some media sites use a "catch phrase" such as "BIG WIN" or "ROLL TIDE"; these are not stand-alone headlines and should be combined with the full text of the actual headline.
                     * The response MUST have the headlines in order of appearance.
-                    * The response MUST quote the headlines verbatim.
+                    * The response MUST quote the headlines verbatim. 
                     * The response MUST include the headline text, the publication date (if available) and the URL to the article.
                     * The response SHOULD be in JSON but can also be in markdown.
                     """

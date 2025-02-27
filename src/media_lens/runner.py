@@ -1,12 +1,13 @@
 import asyncio
 import json
+import logging
 import os
-import time
-from pathlib import Path
 import re
+import time
+from enum import Enum
+from pathlib import Path
 
 import dotenv
-import logging
 
 from src.media_lens.collection.harvester import Harvester
 from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL
@@ -18,6 +19,14 @@ from src.media_lens.presentation.html_formatter import generate_html_from_path
 
 logger = logging.getLogger(LOGGER_NAME)
 
+UTC_PATTERN: str = r'\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\+00:00'
+
+
+class Steps(Enum):
+    HARVEST = "harvest"
+    EXTRACT = "extract"
+    INTERPRET = "interpret"
+    DEPLOY = "deploy"
 
 
 async def interpret(job_dir, sites):
@@ -43,25 +52,57 @@ async def extract(job_dir):
     await extractor.run(delay_between_sites_secs=60)
 
 
-async def reprocess_scraped_content(out_dir: Path):
+async def format_and_deploy(jobs_root: Path):
+    template_dir_path: Path = Path(get_project_root() / "config/templates")
+    template_name: str = "template_01.j2"
+    html: str = generate_html_from_path(jobs_root, SITES, template_dir_path, template_name)
+    with open(jobs_root / f"medialens.html", "w") as f:
+        f.write(html)
+    local: Path = get_project_root() / "working/out/medialens.html"
+    remote: str = os.getenv("FTP_REMOTE_PATH")
+    upload_file(local, remote)
+
+
+async def reprocess_scraped_content(job_dir, out_dir=None):
+    logger.debug(f"Reprocessing scraped content for {job_dir.name}")
+    harvester: Harvester = Harvester(outdir=out_dir)
+    await harvester.re_harvest(job_dir=job_dir, sites=SITES)
+    await extract(job_dir)
+    await interpret(job_dir, SITES)
+
+
+async def reprocess_all_scraped_content(out_dir: Path):
     logger.info(f"Reprocessing scraped content in {out_dir.name} for sites {SITES}")
 
-    utc_pattern = r'\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\+00:00'
     for job_dir in out_dir.iterdir():
         if job_dir.is_dir():
-            if re.match(utc_pattern, job_dir.name):
-                logger.debug(f"Reprocessing scraped content for {job_dir.name}")
+            if re.match(UTC_PATTERN, job_dir.name):
+                await reprocess_scraped_content(job_dir, out_dir)
 
-                harvester: Harvester = Harvester(outdir=out_dir)
-                await harvester.re_harvest(job_dir=job_dir, sites=SITES)
 
-                await extract(job_dir)
+async def complete_job(job_dir: Path, steps: list[str]):
+    if Steps.HARVEST.value in steps:
+        harvester: Harvester = Harvester(outdir=job_dir)
+        await harvester.harvest(sites=SITES)
 
-                await interpret(job_dir, SITES)
+    if Steps.EXTRACT.value in steps:
+        await extract(job_dir)
+
+    if Steps.INTERPRET.value in steps:
+        await interpret(job_dir, SITES)
+
+
+async def complete_all_jobs(out_dir: Path, steps: list[str]):
+    for job_dir in out_dir.iterdir():
+        if job_dir.is_dir():
+            if re.match(UTC_PATTERN, job_dir.name):
+                await complete_job(job_dir, steps)
+
+    if Steps.DEPLOY.value in steps:
+        await format_and_deploy(out_dir)
 
 
 async def run_new_analysis(out_dir: Path):
-
     # Harvest
     harvester: Harvester = Harvester(outdir=out_dir)
     artifacts_dir = await harvester.harvest(sites=SITES)
@@ -73,21 +114,12 @@ async def run_new_analysis(out_dir: Path):
     await interpret(artifacts_dir, SITES)
 
     # Output
-    template_dir_path: Path = Path(get_project_root() / "config/templates")
-    template_name: str = "template_01.j2"
-    html: str = generate_html_from_path(out_dir, SITES, template_dir_path, template_name)
-    with open(out_dir / f"medialens.html", "w") as f:
-        f.write(html)
-
-    # Transfer
-    local: Path = get_project_root() / "working/out/medialens.html"
-    remote: str = os.getenv("FTP_REMOTE_PATH")
-    upload_file(local, remote)
-
+    await format_and_deploy(out_dir)
 
 
 if __name__ == '__main__':
     dotenv.load_dotenv()
     create_logger(LOGGER_NAME)
     asyncio.run(run_new_analysis(Path(get_project_root() / "working/out")))
-    # asyncio.run(reprocess_scraped_content(Path(get_project_root() / "working/out")))
+    # asyncio.run(reprocess_all_scraped_content(Path(get_project_root() / "working/out")))
+    # asyncio.run(reprocess_scraped_content(Path(get_project_root() / "working/out/2025-02-25T05:37:47+00:00")))

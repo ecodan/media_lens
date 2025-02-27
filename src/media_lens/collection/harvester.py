@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import traceback
 from pathlib import Path
 
 import dotenv
@@ -31,9 +32,10 @@ class Harvester(object):
             try:
                 with open(job_dir / f"{site}.html", "r") as f:
                     content: str = f.read()
-                    await self.clean_site(job_dir, content, site)
+                    await self._clean_site(job_dir, content, site)
             except Exception as e:
                 logger.error(f"Failed to re-harvest {site}: {e}")
+                traceback.print_exc()
 
     async def harvest(self, sites: list[str], browser_type: WebpageScraper.BrowserType = WebpageScraper.BrowserType.MOBILE) -> Path:
         """
@@ -53,12 +55,14 @@ class Harvester(object):
                 logger.info(f"Writing {site} to {artifacts_dir}")
                 with open(str(artifacts_dir / f"{site}.html"), "w", encoding="utf-8") as f:
                     f.write(content)
-                await self.clean_site(artifacts_dir, content, site)
+                await self._clean_site(artifacts_dir, content, site)
             except Exception as e:
                 logger.error(f"Failed to harvest {site}: {e}")
+                traceback.print_exc()
         return artifacts_dir
 
-    async def clean_site(self, artifacts_dir, content, site):
+    @staticmethod
+    async def _clean_site(artifacts_dir, content, site):
         """
         Clean the content of the site and save it to the artifacts dir.
         :param artifacts_dir: the directory to save the cleaned content

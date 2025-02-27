@@ -72,7 +72,7 @@ class ContextExtractor:
                 try:
                     results: dict = self.extractor.extract(content)
                     if results.get("error"):
-                        logger.warning(f"error in extraction: {result["error"]}")
+                        logger.warning(f"error in extraction: {results["error"]}")
                         continue
                     # summarize stories
                     for idx, result in enumerate(results.get("stories", [])):

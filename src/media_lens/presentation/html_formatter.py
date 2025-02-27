@@ -5,13 +5,31 @@ import os
 import re
 from pathlib import Path
 from typing import List, Dict, Tuple
+from urllib.parse import urlparse
 
 import dotenv
 from jinja2 import Environment, FileSystemLoader
 
-from src.media_lens.common import utc_timestamp, UTC_PATTERN, LOGGER_NAME, SITES, get_project_root
+from src.media_lens.common import utc_timestamp, UTC_PATTERN, LOGGER_NAME, SITES, get_project_root, timestamp_as_long_date, timestamp_str_as_long_date, LONG_DATE_PATTERN
 
 logger = logging.getLogger(LOGGER_NAME)
+
+
+def convert_relative_url(url: str, site: str) -> str:
+    """
+    Process a potentially relative URL, adding https:// and domain if needed.
+    :param url: The URL to process
+    :param site: Domain name (e.g., 'www.cnn.com')
+    :returns str: Processed URL with protocol and domain if needed
+    """
+    # Check if URL already has a protocol
+    parsed_url = urlparse(url)
+    if parsed_url.scheme:
+        return url
+
+    # Append https:// and domain to the relative URL
+    url_path = url[1:] if url.startswith('/') else url
+    return f'https://{site}/{url_path}'
 
 def generate_comparison_html(template_dir_path: Path, template_name: str, content: dict):
     """
@@ -46,20 +64,27 @@ def generate_report(job_dirs: List[Path], sites: list[str], template_dir_path: P
     """
     logger.info(f'Generating report for {len(job_dirs)} jobs and {len(sites)} sites')
     content: Dict = {
-        "report_timestamp": utc_timestamp(),
+        "report_timestamp": timestamp_as_long_date(),
         "runs": []
     }
     for job_dir in job_dirs:
         logger.debug("processing job_dir {}".format(job_dir))
         run: Dict = {
-            "run_timestamp": job_dir.name,
+            "run_timestamp": timestamp_str_as_long_date(job_dir.name),
             "sites": sites,
             "extracted": [],
             "interpreted": []
         }
         for site in sites:
             with open(job_dir / f"{site}-clean-extracted.json", "r") as f:
-                run['extracted'].append(json.load(f))
+                extracted: Dict = json.load(f)
+                stories: List[Dict] = extracted['stories']
+                clean_stories: List[Dict] = []
+                for story in stories:
+                    story['url'] = convert_relative_url(story['url'], site)
+                    clean_stories.append(story)
+                extracted['stories'] = clean_stories
+                run['extracted'].append(extracted)
             with open(job_dir / f"{site}-interpreted.json", "r") as f:
                 run['interpreted'].append(json.load(f))
         qna: List[List] = []
@@ -74,7 +99,7 @@ def generate_report(job_dirs: List[Path], sites: list[str], template_dir_path: P
         run['interpreted'] = qna
         content['runs'].append(run)
     logger.info("generating html")
-    content['runs'] = sorted(content['runs'], key=lambda x: datetime.datetime.strptime(x["run_timestamp"], "%Y-%m-%dT%H:%M:%S+00:00"), reverse=True)
+    content['runs'] = sorted(content['runs'], key=lambda x: datetime.datetime.strptime(x["run_timestamp"], LONG_DATE_PATTERN), reverse=True)
     html: str = generate_comparison_html(template_dir_path, template_name, content)
     return html
 

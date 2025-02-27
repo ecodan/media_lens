@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 from abc import abstractmethod
 from pathlib import Path
 
@@ -32,6 +33,12 @@ class PatternBasedCleaner(SiteSpecificCleaner):
         :return: The cleaned HTML containing only matching elements and their ancestors
         :rtype: BeautifulSoup
         """
+        """
+        SLOW VERSION
+        """
+        # Start timer
+        start_time = time.time()
+
         # Find all elements matching any of the patterns
         matching_elements = []
         for pattern in self.patterns:
@@ -43,6 +50,9 @@ class PatternBasedCleaner(SiteSpecificCleaner):
                         element in match.parents for match in matching_elements)):
                 element.decompose()
 
+        # Calculate and log elapsed time
+        elapsed_time = time.time() - start_time
+        logger.debug(f"Pattern matching took {elapsed_time:.2f} seconds")
         return page
 
 class CNNCleaner(PatternBasedCleaner):
@@ -60,9 +70,9 @@ class FoxNewsCleaner(PatternBasedCleaner):
 
 class CleanerConfig:
     SITE_PATTERNS = {
-        "cnn": ['[class*="headline"]'],
-        "bbc": ['h2[data-testid*="headline"]'],
-        "foxnews": ["article"]
+        "www.cnn.com": ['[class*="headline"]'],
+        "www.bbc.com": ['h2[data-testid*="headline"]'],
+        "www.foxnews.com": ["article"]
     }
 
 
@@ -206,4 +216,5 @@ async def main(working_dir: Path, fname: str, cleaner: SiteSpecificCleaner):
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
-    asyncio.run(main(Path(get_project_root() / "working/out/test"), "www.bbc.com.html", BBCCleaner()))
+    # asyncio.run(main(Path(get_project_root() / "working/out/test"), "www.bbc.com.html", BBCCleaner()))
+    asyncio.run(main(Path(get_project_root() / "working/out/test"), "www.cnn.com.html", CNNCleaner()))
