@@ -1,0 +1,148 @@
+import json
+import os
+import shutil
+import tempfile
+from pathlib import Path
+from typing import List, Dict
+
+import pytest
+
+from src.media_lens.common import utc_timestamp
+
+
+@pytest.fixture
+def temp_dir():
+    """Create a temporary directory that is cleaned up after the test."""
+    temp_dir = tempfile.mkdtemp()
+    yield Path(temp_dir)
+    shutil.rmtree(temp_dir)
+
+
+@pytest.fixture
+def sample_html_content():
+    """Sample HTML content for testing scrapers and cleaners."""
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Test News Site</title>
+    </head>
+    <body>
+        <div class="main-content">
+            <div class="headline">
+                <h1><a href="/test-article-1">Breaking News: Test Headline 1</a></h1>
+                <p>This is a test summary for the first article.</p>
+            </div>
+            <div class="headline">
+                <h1><a href="/test-article-2">Breaking News: Test Headline 2</a></h1>
+                <p>This is a test summary for the second article.</p>
+            </div>
+            <div class="article-content">
+                <p>This is paragraph 1 of the article content.</p>
+                <p>This is paragraph 2 of the article content.</p>
+                <p>This is paragraph 3 of the article content.</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+
+@pytest.fixture
+def sample_article_json():
+    """Sample article data in JSON format."""
+    return {
+        "title": "Breaking News: Test Headline",
+        "text": "This is paragraph 1 of the article content.\n\nThis is paragraph 2 of the article content.",
+        "url": "/test-article-1"
+    }
+
+
+@pytest.fixture
+def sample_job_directory(temp_dir):
+    """Create a sample job directory with test data files."""
+    # Create job directory with timestamp name
+    job_dir = temp_dir / utc_timestamp()
+    job_dir.mkdir(exist_ok=True)
+    
+    # Sample site data
+    sites = ["www.test1.com", "www.test2.com"]
+    
+    # Create sample files for each site
+    for site in sites:
+        # Create HTML file
+        with open(job_dir / f"{site}.html", "w") as f:
+            f.write("<html><body>Test content</body></html>")
+        
+        # Create cleaned HTML file
+        with open(job_dir / f"{site}-clean.html", "w") as f:
+            f.write("<html><body>Cleaned content</body></html>")
+        
+        # Create articles
+        for i in range(3):
+            article = {
+                "title": f"Test Article {i+1} for {site}",
+                "text": f"This is the content of article {i+1} for {site}.",
+                "url": f"/{site}/article-{i+1}"
+            }
+            
+            with open(job_dir / f"{site}-clean-article-{i}.json", "w") as f:
+                json.dump(article, f)
+        
+        # Create extracted data
+        extracted = {
+            "stories": [
+                {
+                    "title": f"Test Article 1 for {site}",
+                    "summary": f"Summary for article 1 from {site}",
+                    "url": f"/{site}/article-1"
+                },
+                {
+                    "title": f"Test Article 2 for {site}",
+                    "summary": f"Summary for article 2 from {site}",
+                    "url": f"/{site}/article-2"
+                }
+            ]
+        }
+        
+        with open(job_dir / f"{site}-clean-extracted.json", "w") as f:
+            json.dump(extracted, f)
+        
+        # Create interpreted data
+        interpreted = [
+            {
+                "question": "What is the most important news right now?",
+                "answer": f"The most important news according to {site} is Test Article 1."
+            },
+            {
+                "question": "What are biggest issues in the world right now?",
+                "answer": f"According to {site}, the biggest issues are testing and quality assurance."
+            }
+        ]
+        
+        with open(job_dir / f"{site}-interpreted.json", "w") as f:
+            json.dump(interpreted, f)
+    
+    return job_dir
+
+
+@pytest.fixture
+def mock_llm_agent():
+    """Mock LLM agent that returns predefined responses."""
+    class MockAgent:
+        def invoke(self, system_prompt, user_prompt):
+            """Return a mock response."""
+            return """
+            [
+                {
+                    "question": "What is the most important news right now?",
+                    "answer": "The most important news is about testing."
+                },
+                {
+                    "question": "What are biggest issues in the world right now?",
+                    "answer": "The biggest issues are unit testing, integration testing, and system testing."
+                }
+            ]
+            """
+    
+    return MockAgent()

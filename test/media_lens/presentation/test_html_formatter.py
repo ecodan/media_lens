@@ -1,0 +1,190 @@
+import json
+import os
+import re
+from pathlib import Path
+
+import pytest
+
+from src.media_lens.presentation.html_formatter import (
+    convert_relative_url, generate_html_with_template, organize_runs_by_week,
+    generate_weekly_content, generate_html_from_path
+)
+
+
+def test_convert_relative_url():
+    """Test converting relative URLs to absolute URLs."""
+    # Test cases for different URL formats
+    test_cases = [
+        # (input_url, site, expected_output)
+        ("/news/article", "www.test.com", "https://www.test.com/news/article"),
+        ("news/article", "www.test.com", "https://www.test.com/news/article"),
+        ("https://www.test.com/news/article", "www.test.com", "https://www.test.com/news/article"),
+        ("http://www.test.com/news/article", "www.test.com", "http://www.test.com/news/article"),
+    ]
+    
+    # Check each test case
+    for input_url, site, expected in test_cases:
+        result = convert_relative_url(input_url, site)
+        assert result == expected
+
+
+def test_generate_html_with_template(temp_dir):
+    """Test HTML generation using a Jinja2 template."""
+    # Create a simple template
+    template_dir = temp_dir / "templates"
+    template_dir.mkdir(exist_ok=True)
+    
+    with open(template_dir / "test_template.j2", "w") as f:
+        f.write("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>{{ title }}</title>
+        </head>
+        <body>
+            <h1>{{ title }}</h1>
+            <p>{{ content }}</p>
+            <ul>
+            {% for item in items %}
+                <li>{{ item }}</li>
+            {% endfor %}
+            </ul>
+        </body>
+        </html>
+        """)
+    
+    # Test content
+    content = {
+        "title": "Test Page",
+        "content": "This is a test page.",
+        "items": ["Item 1", "Item 2", "Item 3"]
+    }
+    
+    # Generate HTML
+    html = generate_html_with_template(template_dir, "test_template.j2", content)
+    
+    # Check results
+    assert "<title>Test Page</title>" in html
+    assert "<h1>Test Page</h1>" in html
+    assert "<p>This is a test page.</p>" in html
+    assert "<li>Item 1</li>" in html
+    assert "<li>Item 2</li>" in html
+    assert "<li>Item 3</li>" in html
+
+
+def test_organize_runs_by_week(sample_job_directory):
+    """Test organizing job runs by calendar week."""
+    # Get all directories from the sample job directory
+    job_dirs = [sample_job_directory]
+    sites = ["www.test1.com", "www.test2.com"]
+    
+    # Call organize_runs_by_week
+    result = organize_runs_by_week(job_dirs, sites)
+    
+    # Check result structure
+    assert "report_timestamp" in result
+    assert "weeks" in result
+    assert len(result["weeks"]) >= 1
+    
+    # Check week data
+    week = result["weeks"][0]
+    assert "week_key" in week
+    assert "week_display" in week
+    assert "runs" in week
+    assert len(week["runs"]) == 1
+    
+    # Check run data
+    run = week["runs"][0]
+    assert "run_timestamp" in run
+    assert "extracted" in run
+    assert "interpreted" in run
+    assert len(run["extracted"]) == 2  # Should have data for both sites
+    assert len(run["interpreted"]) == 2  # Should have data for both sites
+
+
+def test_generate_weekly_content(sample_job_directory, temp_dir):
+    """Test generating content for weekly reports."""
+    # First organize runs by week
+    job_dirs = [sample_job_directory]
+    sites = ["www.test1.com", "www.test2.com"]
+    weeks_data = organize_runs_by_week(job_dirs, sites)
+    
+    # Get the first week
+    week_data = weeks_data["weeks"][0]
+    
+    # Call generate_weekly_content
+    weekly_content = generate_weekly_content(week_data, sites, temp_dir)
+    
+    # Check result structure
+    assert weekly_content["week_key"] == week_data["week_key"]
+    assert weekly_content["week_display"] == week_data["week_display"]
+    assert weekly_content["sites"] == sites
+    assert "site_content" in weekly_content
+    assert "interpretation" in weekly_content
+    assert "runs" in weekly_content
+
+
+def test_generate_html_from_path(sample_job_directory, temp_dir):
+    """Test the main HTML generation function."""
+    # Create template directory
+    template_dir = temp_dir / "templates"
+    template_dir.mkdir(exist_ok=True)
+    
+    # Create index template
+    with open(template_dir / "index_template.j2", "w") as f:
+        f.write("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Media Lens Report</title>
+        </head>
+        <body>
+            <h1>Media Lens Report</h1>
+            <p>Generated: {{ report_timestamp }}</p>
+            <ul>
+            {% for week in weeks %}
+                <li>
+                    <a href="medialens-{{ week.week_key }}.html">{{ week.week_display }}</a>
+                </li>
+            {% endfor %}
+            </ul>
+        </body>
+        </html>
+        """)
+    
+    # Create weekly template
+    with open(template_dir / "weekly_template.j2", "w") as f:
+        f.write("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>{{ week_display }} Report</title>
+        </head>
+        <body>
+            <h1>{{ week_display }} Report</h1>
+            {% for site in sites %}
+            <h2>{{ site }}</h2>
+            <ul>
+            {% for article in site_content[site] %}
+                <li>{{ article.title }}</li>
+            {% endfor %}
+            </ul>
+            {% endfor %}
+        </body>
+        </html>
+        """)
+    
+    # Call generate_html_from_path
+    sites = ["www.test1.com", "www.test2.com"]
+    html = generate_html_from_path(Path(sample_job_directory).parent, sites, template_dir, "index_template.j2")
+    
+    # Check if files were created
+    assert (Path(sample_job_directory).parent / "medialens.html").exists()
+    
+    # Verify HTML content
+    assert "<title>Media Lens Report</title>" in html
+    assert "<h1>Media Lens Report</h1>" in html
+    
+    # Check that the week key is in the HTML (means it processed the data)
+    week_pattern = r"medialens-\d{4}-W\d{2}.html"
+    assert re.search(week_pattern, html)
