@@ -10,7 +10,7 @@ from pathlib import Path
 import dotenv
 
 from src.media_lens.collection.harvester import Harvester
-from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL
+from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL, get_datetime_from_timestamp, get_week_key
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
@@ -26,6 +26,7 @@ class Steps(Enum):
     HARVEST = "harvest"
     EXTRACT = "extract"
     INTERPRET = "interpret"
+    INTERPRET_WEEKLY = "interpret_weekly"
     DEPLOY = "deploy"
 
 
@@ -43,6 +44,25 @@ async def interpret(job_dir, sites):
         time.sleep(30)
 
 
+async def interpret_weekly(job_dirs_root, sites):
+    """
+    Perform weekly interpretation on all content from the past week.
+    
+    :param job_dirs_root: Root directory containing all job directories
+    :param sites: List of media sites to interpret
+    """
+    agent: Agent = ClaudeLLMAgent(
+        api_key=os.getenv("ANTHROPIC_API_KEY"),
+        model=ANTHROPIC_MODEL
+    )
+    interpreter: LLMWebsiteInterpreter = LLMWebsiteInterpreter(agent=agent)
+
+    weekly_results: list[dict] = interpreter.interpret_weekly(job_dirs_root, sites)
+    for result in weekly_results:
+        with open(result['file_path'], "w") as f:
+            f.write(json.dumps(result['interpretation'], indent=2))
+
+
 async def extract(job_dir):
     agent: Agent = ClaudeLLMAgent(
         api_key=os.getenv("ANTHROPIC_API_KEY"),
@@ -54,13 +74,42 @@ async def extract(job_dir):
 
 async def format_and_deploy(jobs_root: Path):
     template_dir_path: Path = Path(get_project_root() / "config/templates")
-    template_name: str = "template_01.j2"
-    html: str = generate_html_from_path(jobs_root, SITES, template_dir_path, template_name)
-    with open(jobs_root / f"medialens.html", "w") as f:
-        f.write(html)
-    local: Path = get_project_root() / "working/out/medialens.html"
-    remote: str = os.getenv("FTP_REMOTE_PATH")
-    upload_file(local, remote)
+    template_name: str = "template_01.j2"  # This is ignored in the new implementation
+    
+    # Generate all HTML files (index and weekly pages)
+    index_html: str = generate_html_from_path(jobs_root, SITES, template_dir_path, template_name)
+    
+    # Get remote path from environment
+    remote_path: str = os.getenv("FTP_REMOTE_PATH")
+    if not remote_path:
+        logger.error("FTP_REMOTE_PATH environment variable not set, skipping deployment")
+        return
+    
+    logger.info(f"Deploying files to {remote_path}")
+    
+    # Upload the main index page
+    index_local: Path = jobs_root / "medialens.html"
+    if index_local.exists():
+        logger.info(f"Uploading main index file: {index_local}")
+        upload_file(index_local, remote_path)
+    else:
+        logger.warning(f"Main index file not found at {index_local}")
+    
+    # Find and upload all weekly pages using glob pattern
+    weekly_files = list(jobs_root.glob("medialens-*.html"))
+    logger.info(f"Found {len(weekly_files)} weekly HTML files")
+    
+    for weekly_file in weekly_files:
+        logger.info(f"Uploading weekly file: {weekly_file}")
+        upload_file(weekly_file, remote_path)
+    
+    # Look for any additional medialens HTML files in subdirectories
+    for subdir in jobs_root.iterdir():
+        if subdir.is_dir() and subdir.name != "__pycache__":
+            # Check for any HTML files in subdirectories 
+            for html_file in subdir.glob("medialens*.html"):
+                logger.info(f"Uploading additional HTML file from subdirectory: {html_file}")
+                upload_file(html_file, remote_path)
 
 
 async def reprocess_scraped_content(job_dir, out_dir=None):
@@ -93,11 +142,17 @@ async def complete_job(job_dir: Path, steps: list[str]):
 
 
 async def complete_all_jobs(out_dir: Path, steps: list[str]):
+    # First, process individual job directories
     for job_dir in out_dir.iterdir():
         if job_dir.is_dir():
             if re.match(UTC_PATTERN, job_dir.name):
                 await complete_job(job_dir, steps)
 
+    # Then handle weekly interpretation if requested
+    if Steps.INTERPRET_WEEKLY.value in steps:
+        await interpret_weekly(out_dir, SITES)
+
+    # Finally, deploy if requested
     if Steps.DEPLOY.value in steps:
         await format_and_deploy(out_dir)
 
@@ -110,8 +165,16 @@ async def run_new_analysis(out_dir: Path):
     # Extract
     await extract(artifacts_dir)
 
-    # Interpret
-    await interpret(artifacts_dir, SITES)
+    # Interpret individual run
+    # await interpret(artifacts_dir, SITES)
+
+    # Output
+    await format_and_deploy(out_dir)
+
+
+async def process_weekly_content(out_dir: Path):
+    # Interpret weekly content
+    await interpret_weekly(out_dir, SITES)
 
     # Output
     await format_and_deploy(out_dir)
@@ -120,6 +183,8 @@ async def run_new_analysis(out_dir: Path):
 if __name__ == '__main__':
     dotenv.load_dotenv()
     create_logger(LOGGER_NAME)
-    asyncio.run(run_new_analysis(Path(get_project_root() / "working/out")))
+    # asyncio.run(run_new_analysis(Path(get_project_root() / "working/out")))
     # asyncio.run(reprocess_all_scraped_content(Path(get_project_root() / "working/out")))
     # asyncio.run(reprocess_scraped_content(Path(get_project_root() / "working/out/2025-02-25T05:37:47+00:00")))
+    # asyncio.run(process_weekly_content(Path(get_project_root() / "working/out")))
+    asyncio.run(format_and_deploy(Path(get_project_root() / "working/out")))

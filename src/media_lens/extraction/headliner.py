@@ -150,7 +150,7 @@ class LLMHeadlineExtractor(HeadlineExtractor):
         retry=lambda e: isinstance(e, (APIError, APIConnectionError))
     )
     def _call_llm(self, user_prompt: str, system_prompt: str) -> str:
-        return self.agent.infer(system_prompt=system_prompt, user_prompt=user_prompt)
+        return self.agent.invoke(system_prompt=system_prompt, user_prompt=user_prompt)
 
     def _update_stats(self, retry_state):
         self.stats.attempts += 1

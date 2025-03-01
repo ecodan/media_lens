@@ -3,14 +3,19 @@ import json
 import logging
 import os
 import re
+from collections import defaultdict
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Any, Union
 from urllib.parse import urlparse
 
 import dotenv
 from jinja2 import Environment, FileSystemLoader
 
-from src.media_lens.common import utc_timestamp, UTC_PATTERN, LOGGER_NAME, SITES, get_project_root, timestamp_as_long_date, timestamp_str_as_long_date, LONG_DATE_PATTERN
+from src.media_lens.common import (
+    utc_timestamp, UTC_PATTERN, LOGGER_NAME, SITES, get_project_root, 
+    timestamp_as_long_date, timestamp_str_as_long_date, LONG_DATE_PATTERN,
+    get_datetime_from_timestamp, get_week_key, get_week_display
+)
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -31,104 +36,274 @@ def convert_relative_url(url: str, site: str) -> str:
     url_path = url[1:] if url.startswith('/') else url
     return f'https://{site}/{url_path}'
 
-def generate_comparison_html(template_dir_path: Path, template_name: str, content: dict):
+
+def generate_html_with_template(template_dir_path: Path, template_name: str, content: dict) -> str:
     """
-    Generate an HTML page that displays two lists of dictionaries side by side.
-    The expected content format is:
-        {
-            "report_timestamp": "2020-07-22",
-            "runs": [
-                {
-                    "run_timestamp": "2020-07-22",
-                    sites: [],
-                    extracted: [{<same as extracted data format>}, ...],
-                    interpreted: [{<same as interpreted data format>}, ...]
-                }
-            ]
-        }
+    Generate HTML using a Jinja2 template.
     """
-    logger.info(f"generating HTML from template {template_name} in {template_dir_path}")
+    logger.info(f"Generating HTML with template {template_name} in {template_dir_path}")
     env = Environment(loader=FileSystemLoader(template_dir_path))
     template = env.get_template(template_name)
     html_output = template.render(**content)
     return html_output
 
-def generate_report(job_dirs: List[Path], sites: list[str], template_dir_path: Path, template_name: str) -> str:
+
+def organize_runs_by_week(job_dirs: List[Path], sites: List[str]) -> Dict[str, Any]:
     """
-    Generate a report for the given job directories and sites.
-    :param job_dirs: list of job directories
-    :param sites: media sites
-    :param template_dir_path: full path to location of Jinja2 templates
-    :param template_name: template name
-    :return:
+    Organize job runs by calendar week.
+    
+    :param job_dirs: List of job directories
+    :param sites: List of media sites
+    :return: Dictionary with weeks as keys and runs as values
     """
-    logger.info(f'Generating report for {len(job_dirs)} jobs and {len(sites)} sites')
-    content: Dict = {
-        "report_timestamp": timestamp_as_long_date(),
-        "runs": []
-    }
+    logger.info(f'Organizing {len(job_dirs)} jobs by week')
+    
+    # Dictionary to store runs by week
+    weeks_data = defaultdict(list)
+    
+    # Process each job directory
     for job_dir in job_dirs:
-        logger.debug("processing job_dir {}".format(job_dir))
-        run: Dict = {
+        logger.debug(f"Processing job_dir {job_dir}")
+        
+        # Skip directories that don't match the UTC pattern
+        if not re.match(UTC_PATTERN, job_dir.name):
+            continue
+        
+        # Get datetime from job directory name
+        job_datetime = get_datetime_from_timestamp(job_dir.name)
+        
+        # Get week key for this job (e.g., "2025-W08")
+        week_key = get_week_key(job_datetime)
+        
+        # Create run data dictionary
+        run_data = {
             "run_timestamp": timestamp_str_as_long_date(job_dir.name),
+            "run_datetime": job_datetime,
+            "job_dir": job_dir,
             "sites": sites,
             "extracted": [],
             "interpreted": []
         }
+        
+        # Process each site
         for site in sites:
-            with open(job_dir / f"{site}-clean-extracted.json", "r") as f:
-                extracted: Dict = json.load(f)
-                stories: List[Dict] = extracted['stories']
-                clean_stories: List[Dict] = []
+            # Load extracted data
+            extracted_path = job_dir / f"{site}-clean-extracted.json"
+            if not extracted_path.exists():
+                logger.warning(f"Extracted file not found: {extracted_path}")
+                continue
+                
+            with open(extracted_path, "r") as f:
+                extracted = json.load(f)
+                stories = extracted.get('stories', [])
+                
+                # Clean story URLs
                 for story in stories:
                     story['url'] = convert_relative_url(story['url'], site)
-                    clean_stories.append(story)
-                extracted['stories'] = clean_stories
-                run['extracted'].append(extracted)
-            with open(job_dir / f"{site}-interpreted.json", "r") as f:
-                run['interpreted'].append(json.load(f))
-        qna: List[List] = []
-        for i in range(len(run['interpreted'][0])):
-            sublist: List = []
-            for j in range(len(run['interpreted']) + 1):
-                if j == 0: # first column
-                    sublist.append(run['interpreted'][j][i]['question'])
+                
+                run_data['extracted'].append({
+                    'site': site,
+                    'stories': stories
+                })
+                
+            # Load interpreted data
+            interpreted_path = job_dir / f"{site}-interpreted.json"
+            if not interpreted_path.exists():
+                logger.warning(f"Interpreted file not found: {interpreted_path}")
+                continue
+                
+            with open(interpreted_path, "r") as f:
+                interpreted = json.load(f)
+                run_data['interpreted'].append({
+                    'site': site,
+                    'qa': interpreted
+                })
+        
+        # Add this run to the appropriate week
+        weeks_data[week_key].append(run_data)
+    
+    # Sort runs within each week by datetime (newest first)
+    for week_key in weeks_data:
+        weeks_data[week_key] = sorted(
+            weeks_data[week_key], 
+            key=lambda x: x["run_datetime"], 
+            reverse=True
+        )
+    
+    # Create the final structure
+    result = {
+        "report_timestamp": timestamp_as_long_date(),
+        "weeks": []
+    }
+    
+    # Convert defaultdict to sorted list of weeks
+    for week_key in sorted(weeks_data.keys(), reverse=True):
+        result["weeks"].append({
+            "week_key": week_key,
+            "week_display": get_week_display(week_key),
+            "runs": weeks_data[week_key]
+        })
+    
+    return result
+
+
+def generate_weekly_content(week_data: Dict, sites: List[str], job_dirs_root: Path) -> Dict:
+    """
+    Process all runs in a week to create a weekly summary.
+    
+    :param week_data: Dictionary containing all runs for a week
+    :param sites: List of media sites
+    :return: Processed weekly content
+    """
+    # Create site-specific content collections
+    site_content = {site: [] for site in sites}
+    
+    # Collect content from all runs
+    for run in week_data["runs"]:
+        for extracted in run["extracted"]:
+            site = extracted["site"]
+            if site in site_content:
+                for story in extracted["stories"]:
+                    # Add timestamp to help with sorting/organization
+                    story["timestamp"] = run["run_timestamp"]
+                    story["datetime"] = run["run_datetime"]
+                    site_content[site].append(story)
+    
+    # Sort content for each site by datetime (newest first)
+    for site in site_content:
+        site_content[site] = sorted(
+            site_content[site],
+            key=lambda x: x["datetime"],
+            reverse=True
+        )
+    
+    # Load weekly interpretation if available
+    weekly_file = Path(job_dirs_root) / f"weekly-{week_data['week_key']}-interpreted.json"
+    # list of dict { "question": str, "answers": { "<site>": "<answer>" } }
+    weekly_interpretation: List = []
+
+    def get_question_from_list(q: str, questions: List[Dict[str, Any]]) -> Union[Dict, None]:
+        for question in questions:
+            if question["question"] == q:
+                return question
+        return None
+
+    if weekly_file.exists():
+        try:
+            with open(weekly_file, "r") as f:
+                weekly_data = json.load(f)
+                if isinstance(weekly_data, list):
+                    for data in weekly_data:
+                        question_str: str = data["question"]
+                        question_dict: Dict = get_question_from_list(question_str, weekly_interpretation)
+                        if question_dict is None:
+                            question_dict = {"question": question_str, "answers": {}}
+                            weekly_interpretation.append(question_dict)
+                        question_dict["answers"][data['site']] = data["answer"]
                 else:
-                    sublist.append(run['interpreted'][j-1][i]['answer'])
-            qna.append(sublist)
-        run['interpreted'] = qna
-        content['runs'].append(run)
-    logger.info("generating html")
-    content['runs'] = sorted(content['runs'], key=lambda x: datetime.datetime.strptime(x["run_timestamp"], LONG_DATE_PATTERN), reverse=True)
-    html: str = generate_comparison_html(template_dir_path, template_name, content)
-    return html
+                    logger.warning(f"Weekly interpretation has wrong format: {weekly_file}")
+        except (json.JSONDecodeError, FileNotFoundError) as e:
+            logger.warning(f"Could not load weekly interpretation from {weekly_file}: {str(e)}")
+    
+    # Format for template
+    return {
+        "week_key": week_data["week_key"],
+        "week_display": week_data["week_display"],
+        "sites": sites,
+        "site_content": site_content,
+        "interpretation": weekly_interpretation,
+        "runs": week_data["runs"]
+    }
+
+
+def generate_weekly_reports(weeks_data: Dict, sites: List[str], template_dir_path: Path, job_dirs_root: Path) -> Dict[str, str]:
+    """
+    Generate HTML reports for each week.
+    
+    :param weeks_data: Dictionary containing data organized by week
+    :param sites: List of media sites
+    :param template_dir_path: Path to templates directory
+    :param job_dirs_root: Root directory containing all job directories
+    :return: Dictionary mapping week keys to HTML content
+    """
+    weekly_html = {}
+    
+    # Generate HTML for each week
+    for week in weeks_data["weeks"]:
+        week_content = generate_weekly_content(week, sites, job_dirs_root)
+        weekly_html[week["week_key"]] = generate_html_with_template(
+            template_dir_path,
+            "weekly_template.j2",
+            week_content
+        )
+    
+    return weekly_html
+
+
+def generate_index_page(weeks_data: Dict, template_dir_path: Path) -> str:
+    """
+    Generate an index page with links to all weekly reports.
+    
+    :param weeks_data: Dictionary containing data organized by week
+    :param template_dir_path: Path to templates directory
+    :return: HTML content for the index page
+    """
+    index_content = {
+        "report_timestamp": weeks_data["report_timestamp"],
+        "weeks": weeks_data["weeks"]
+    }
+    
+    return generate_html_with_template(
+        template_dir_path,
+        "index_template.j2",  # We'll create this template
+        index_content
+    )
+
 
 def generate_html_from_path(job_dirs_root: Path, sites: list[str], template_dir_path: Path, template_name: str) -> str:
     """
-    Convenience method to generate HTML from a path.
+    Revised method to generate HTML from a path, now handling weekly organization.
+    
     :param job_dirs_root: the parent dir of all job dirs with UTC dates as names
     :param sites: list of media sites that will be covered
     :param template_dir_path: full path to location of Jinja2 templates
-    :param template_name: template name
-    :return:
+    :param template_name: template name (not used in new implementation)
+    :return: HTML content for the index page
     """
     logger.info(f"Generating HTML for {len(sites)} sites in {job_dirs_root}")
-    dirs: List[Path] = []
-    for node in job_dirs_root.iterdir():
-        if node.is_dir():
-            if re.match(UTC_PATTERN, node.name):
-                dirs.append(node)
-    return generate_report(dirs, sites, template_dir_path, template_name)
+    
+    # Get all job directories
+    dirs = [
+        node for node in job_dirs_root.iterdir() 
+        if node.is_dir() and re.match(UTC_PATTERN, node.name)
+    ]
+    
+    # Organize runs by week
+    weeks_data = organize_runs_by_week(dirs, sites)
+    
+    # Generate weekly HTML files
+    weekly_html = generate_weekly_reports(weeks_data, sites, template_dir_path, job_dirs_root)
+    
+    # Write weekly HTML files
+    for week_key, html in weekly_html.items():
+        with open(job_dirs_root / f"medialens-{week_key}.html", "w") as f:
+            f.write(html)
+    
+    # Generate and return index page
+    index_html = generate_index_page(weeks_data, template_dir_path)
+    with open(job_dirs_root / "medialens.html", "w") as f:
+        f.write(index_html)
+    
+    return index_html
 
 
 #########################################
 # TEST
 def main(job_dirs_root: Path):
     template_dir_path: Path = Path(get_project_root() / "config/templates")
-    template_name: str = "template_01.j2"
+    template_name: str = "template_01.j2"  # Will be ignored in new implementation
     html: str = generate_html_from_path(job_dirs_root, SITES, template_dir_path, template_name)
-    with open(job_dirs_root / f"medialens.html", "w") as f:
-        f.write(html)
+    # Weekly HTML files and index file are written inside generate_html_from_path
 
 if __name__ == '__main__':
     dotenv.load_dotenv()
