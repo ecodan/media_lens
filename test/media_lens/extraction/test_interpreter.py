@@ -143,7 +143,7 @@ def test_interpret_weeks_content(mock_llm_agent, temp_dir):
     ]
     
     # Call interpret_weeks_content
-    result = interpreter.interpret_weeks_content(all_content)
+    result = interpreter.interpret_site_content(all_content)
     
     # Verify results
     assert isinstance(result, list)
@@ -167,7 +167,7 @@ def test_interpret_weeks_content_error_handling(mock_llm_agent):
     ]
     
     # Call interpret_weeks_content
-    result = interpreter.interpret_weeks_content(invalid_content)
+    result = interpreter.interpret_site_content(invalid_content)
     
     # Verify error handling
     assert isinstance(result, list)

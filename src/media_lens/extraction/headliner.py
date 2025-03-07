@@ -41,7 +41,7 @@ The data you will use is the following:
 
 
 Follow these steps:
-1. Think through the problem step by step within the <thinking> tags.
+1. Think through the problem step by step within the <thinking> </thinking> tags.
 2. Reflect on your thinking to check for any errors or improvements within the <reflection> tags.
 3. Make any necessary adjustments based on your reflection.
 4. Reflect again on your thinking and adjustments and amend anything required to address shortcomings or improve the thoughts.
@@ -74,29 +74,42 @@ Use the following format for your response:
 """
 
 GATHERING_PROMPT: str = """
-You will be giving the results of a Chain of Thought (CoT) analysis from another expert agent and will format the top headlines
-and their URLs in JSON format.
+You are a specialized news content analyzer with expertise in extracting and formatting headlines from web content. Your task is to process the results of a previous Chain of Thought (CoT) 
+analysis and format the extracted headlines into a structured JSON format.
 
-Here's the previous agent's analysis (note: the final answer is denoted by <output/>):
-<analysis>
+Here is the previous agent's Chain of Thought analysis:
+
+<cot_analysis>
 {analysis}
-</analysis>
+</cot_analysis>
 
-Now format the headlines returned in the <output/> section as follows:
+Your objective is to extract the headlines from the <output/> section of the above analysis and format them into a specific JSON structure. Follow these steps:
+
+1. Carefully read and analyze the CoT analysis, focusing on the content within the <output/> tags.
+2. Extract each headline, along with its associated information (title, date if available, and URL).
+3. Format this information into a JSON object following the structure specified below.
+4. Ensure that your output is pure JSON, without any additional text, comments, or formatting.
+
+Use the following JSON structure for your output:
+
 {{
     "stories": [
         {{
             "title": "<story title exactly as it is on the web page>",
-            "date": "<publication date if available>"
+            "date": "<publication date if available>",
             "url": "<link to referenced article>"
         }},
         ...
     ]
 }}
 
-Format your response EXACTLY as a JSON object with this structure, and only this structure. Respond ONLY with JSON and no other text.
+Before providing your final output, show your thinking and verification process inside <analysis/> tags. In this process:
+1. Extract and list each headline with its associated information, numbering them sequentially.
+2. Verify that each headline has all required information (title, date if available, URL).
+3. Double-check the JSON structure by writing out a skeleton of the JSON object.
+4. Explicitly confirm that there is no extraneous text or formatting that would interfere with the pure JSON output.
 
-RESPONSE: 
+After your analysis process, provide only the formatted JSON as your final output. Do not include any additional text, comments, or formatting outside of the JSON structure.
 
 """
 
@@ -114,7 +127,7 @@ class HeadlineExtractor(metaclass=ABCMeta):
         pass
 
     @staticmethod
-    def _truncate_html(html_string, max_tokens=100000):
+    def _truncate_html(html_string: str, max_tokens: int = 100000):
         """
         Simply truncates HTML content at approximately max_tokens.
         Assumes HTML is already simplified.
@@ -146,7 +159,7 @@ class LLMHeadlineExtractor(HeadlineExtractor):
 
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
+        wait=wait_exponential(multiplier=1, min=30, max=120),
         retry=lambda e: isinstance(e, (APIError, APIConnectionError))
     )
     def _call_llm(self, user_prompt: str, system_prompt: str) -> str:
@@ -165,6 +178,7 @@ class LLMHeadlineExtractor(HeadlineExtractor):
     @lru_cache(maxsize=100)
     def _process_content(self, content_hash: str, content: str) -> Dict:
         """Cache extraction results using content hash as key"""
+        logger.debug(f"Processing content with hash: {content_hash} and length: {len(content)} (tokens: {len(content.split())})")
         try:
             # Use existing CoT analysis and gathering process
             reasoning_response = self._call_llm(
@@ -188,8 +202,10 @@ class LLMHeadlineExtractor(HeadlineExtractor):
                 system_prompt=SYSTEM_PROMPT,
                 user_prompt=GATHERING_PROMPT.format(analysis=reasoning_response)
             )
+            # get all text after </analysis>
+            gathering_response_json: str = re.search(r"</analysis>(.*)", gathering_response, re.DOTALL).group(1)
 
-            return json.loads(gathering_response)
+            return json.loads(gathering_response_json)
 
         except Exception as e:
             logger.error(f"Error processing content: {str(e)}")
@@ -204,7 +220,10 @@ class LLMHeadlineExtractor(HeadlineExtractor):
         logger.debug(f"Extracting news content: {len(content)} bytes")
         try:
             content_hash = self._get_content_hash(content)
-            return self._process_content(content_hash, self._truncate_html(content))
+            res: Dict = self._process_content(content_hash, self._truncate_html(content, max_tokens=25000))
+            if "error" in res:
+                return {} # TODO consider more robust error handling
+            return self._process_content(content_hash, self._truncate_html(content, max_tokens=25000))
 
         except Exception as e:
             logger.error(f"Error extracting news content: {str(e)}")
@@ -220,7 +239,7 @@ class LLMHeadlineExtractor(HeadlineExtractor):
 def main(working_dir: Path):
     agent: ClaudeLLMAgent = ClaudeLLMAgent(
         api_key=os.getenv("ANTHROPIC_API_KEY"),
-        model=ANTHROPIC_MODEL,
+        model=ANTHROPIC_MODEL
     )
     extractor: LLMHeadlineExtractor = LLMHeadlineExtractor(
         agent=agent,

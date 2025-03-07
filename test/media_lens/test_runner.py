@@ -90,6 +90,7 @@ async def test_interpret_weekly(mock_interpreter_class, mock_agent_class, temp_d
     mock_interpreter = MagicMock()
     mock_interpreter.interpret_weekly.return_value = [
         {
+            'week': '2025-W08',
             'file_path': temp_dir / 'weekly-2025-W08-interpreted.json',
             'interpretation': [{"question": "Weekly Question", "answer": "Weekly Answer", "site": "www.test1.com"}]
         }
@@ -99,14 +100,63 @@ async def test_interpret_weekly(mock_interpreter_class, mock_agent_class, temp_d
     # Create job root directory
     jobs_root = temp_dir
     
-    # Call interpret_weekly
+    # Call interpret_weekly with default parameters (current week only)
     sites = ["www.test1.com", "www.test2.com"]
     await interpret_weekly(jobs_root, sites)
     
-    # Verify the interpreter was called
-    mock_interpreter.interpret_weekly.assert_called_once_with(jobs_root, sites)
+    # Verify the interpreter was called with correct parameters
+    mock_interpreter.interpret_weekly.assert_called_once_with(
+        job_dirs_root=jobs_root, 
+        sites=sites,
+        current_week_only=True,
+        overwrite=False,
+        specific_weeks=None
+    )
     
     # Check that weekly files were created
+    assert (temp_dir / 'weekly-2025-W08-interpreted.json').exists()
+
+
+@pytest.mark.asyncio
+@patch('src.media_lens.runner.ClaudeLLMAgent')
+@patch('src.media_lens.runner.LLMWebsiteInterpreter')
+async def test_interpret_weekly_with_specific_weeks(mock_interpreter_class, mock_agent_class, temp_dir, mock_env_vars):
+    """Test weekly interpretation function with specific weeks."""
+    # Mock the interpreter
+    mock_interpreter = MagicMock()
+    mock_interpreter.interpret_weekly.return_value = [
+        {
+            'week': '2025-W07',
+            'file_path': temp_dir / 'weekly-2025-W07-interpreted.json',
+            'interpretation': [{"question": "Week 7 Question", "answer": "Week 7 Answer", "site": "www.test1.com"}]
+        },
+        {
+            'week': '2025-W08',
+            'file_path': temp_dir / 'weekly-2025-W08-interpreted.json',
+            'interpretation': [{"question": "Week 8 Question", "answer": "Week 8 Answer", "site": "www.test1.com"}]
+        }
+    ]
+    mock_interpreter_class.return_value = mock_interpreter
+    
+    # Create job root directory
+    jobs_root = temp_dir
+    
+    # Call interpret_weekly with specific weeks and overwrite=True
+    sites = ["www.test1.com", "www.test2.com"]
+    specific_weeks = ["2025-W07", "2025-W08"]
+    await interpret_weekly(jobs_root, sites, current_week_only=False, overwrite=True, specific_weeks=specific_weeks)
+    
+    # Verify the interpreter was called with correct parameters
+    mock_interpreter.interpret_weekly.assert_called_once_with(
+        job_dirs_root=jobs_root, 
+        sites=sites,
+        current_week_only=False,
+        overwrite=True,
+        specific_weeks=specific_weeks
+    )
+    
+    # Check that weekly files were created
+    assert (temp_dir / 'weekly-2025-W07-interpreted.json').exists()
     assert (temp_dir / 'weekly-2025-W08-interpreted.json').exists()
 
 

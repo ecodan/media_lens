@@ -11,7 +11,7 @@ from src.media_lens.common import LOGGER_NAME, get_project_root
 
 logger = logging.getLogger(LOGGER_NAME)
 
-TEXT_ELEMENTS: set[str] = {'span', 'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'}
+TEXT_ELEMENTS: set[str] = {'span', 'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'a'}
 
 class SiteSpecificCleaner:
 
@@ -57,29 +57,29 @@ class PatternBasedCleaner(SiteSpecificCleaner):
 
 class CNNCleaner(PatternBasedCleaner):
     def __init__(self):
-        super().__init__([f'[class*="{pattern}"]' for pattern in ["headline"]])
+        super().__init__(CleanerConfig.SITE_PATTERNS["www.cnn.com"])
 
 class BBCCleaner(PatternBasedCleaner):
     def __init__(self):
-        super().__init__([f'h2[data-testid*="{pattern}"]' for pattern in ["headline"]])
+        super().__init__(CleanerConfig.SITE_PATTERNS["www.bbc.com"])
 
 class FoxNewsCleaner(PatternBasedCleaner):
     def __init__(self):
-        super().__init__([f'{pattern}' for pattern in ["article"]])
+        super().__init__(CleanerConfig.SITE_PATTERNS["www.foxnews.com"])
 
 
 class CleanerConfig:
     SITE_PATTERNS = {
         "www.cnn.com": ['[class*="headline"]'],
         "www.bbc.com": ['h2[data-testid*="headline"]'],
-        "www.foxnews.com": ["article"]
+        "www.foxnews.com": ["article", "[class*='info']"]
     }
 
 
 def cleaner_for_site(site: str) -> SiteSpecificCleaner:
     site_key = next((k for k in CleanerConfig.SITE_PATTERNS if k in site), None)
     if site_key:
-        return PatternBasedCleaner([f'{p}' for p in CleanerConfig.SITE_PATTERNS[site_key]])
+        return PatternBasedCleaner(CleanerConfig.SITE_PATTERNS[site_key])
     raise ValueError(f"Unsupported site: {site}")
 
 
@@ -208,13 +208,16 @@ async def main(working_dir: Path, fname: str, cleaner: SiteSpecificCleaner):
     cleaner = WebpageCleaner(cleaner)
     cleaned = cleaner.clean_html(content)
     logger.debug(f"cleaned content len: {len(cleaned)} bytes")
+    cleaned = cleaner.filter_text_elements(content)
+    logger.debug(f"cleaned content len (post text elements): {len(cleaned)} bytes")
 
-    text_elements = cleaner.extract_text_elements(cleaned)
-    logger.debug(f"extracted text elements len: {len(json.dumps(text_elements))} bytes")
-    with open(working_dir / f"{fpath.stem}-cleaned.html", "w") as file:
+    # text_elements = cleaner.extract_text_elements(cleaned)
+    # logger.debug(f"extracted text elements len: {len(json.dumps(text_elements))} bytes")
+
+    with open(working_dir / f"{fpath.stem}-clean.html", "w") as file:
         file.write(cleaned)
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
     # asyncio.run(main(Path(get_project_root() / "working/out/test"), "www.bbc.com.html", BBCCleaner()))
-    asyncio.run(main(Path(get_project_root() / "working/out/test"), "www.cnn.com.html", CNNCleaner()))
+    asyncio.run(main(Path(get_project_root() / "working/out/test"), "www.foxnews.com.html", FoxNewsCleaner()))

@@ -1,5 +1,6 @@
 import datetime
 import logging
+import os
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -67,13 +68,20 @@ def get_datetime_from_timestamp(ts: str) -> datetime.datetime:
 def get_project_root() -> Path:
     return Path(__file__).parent.parent.parent
 
+def get_working_dir() -> Path:
+    if os.getenv("WORKING_DIR"):
+        return Path(os.getenv("WORKING_DIR"))
+    else:
+        return Path(__file__).parent.parent.parent / "working"
+
 SITES: list[str] = [
     'www.cnn.com',
     'www.bbc.com',
     'www.foxnews.com'
 ]
 
-ANTHROPIC_MODEL: str = "claude-3-5-sonnet-latest"
+# ANTHROPIC_MODEL: str = "claude-3-7-sonnet-latest"
+ANTHROPIC_MODEL: str = "claude-3-5-haiku-latest"
 
 
 LOGGER_NAME: str = "MEDIA_LENS"

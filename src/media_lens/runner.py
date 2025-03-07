@@ -6,11 +6,12 @@ import re
 import time
 from enum import Enum
 from pathlib import Path
+from typing import List
 
 import dotenv
 
 from src.media_lens.collection.harvester import Harvester
-from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL, get_datetime_from_timestamp, get_week_key
+from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL, get_datetime_from_timestamp, get_week_key, get_working_dir
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
@@ -24,6 +25,7 @@ UTC_PATTERN: str = r'\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2
 
 class Steps(Enum):
     HARVEST = "harvest"
+    REHARVEST = "re-harvest"
     EXTRACT = "extract"
     INTERPRET = "interpret"
     INTERPRET_WEEKLY = "interpret_weekly"
@@ -44,12 +46,15 @@ async def interpret(job_dir, sites):
         time.sleep(30)
 
 
-async def interpret_weekly(job_dirs_root, sites):
+async def interpret_weekly(job_dirs_root, sites, current_week_only=True, overwrite=False, specific_weeks=None):
     """
-    Perform weekly interpretation on all content from the past week.
+    Perform weekly interpretation on content from specified weeks.
     
     :param job_dirs_root: Root directory containing all job directories
     :param sites: List of media sites to interpret
+    :param current_week_only: If True, only interpret the current week
+    :param overwrite: If True, overwrite existing weekly interpretations
+    :param specific_weeks: If provided, only interpret these specific weeks (e.g. ["2025-W08", "2025-W09"])
     """
     agent: Agent = ClaudeLLMAgent(
         api_key=os.getenv("ANTHROPIC_API_KEY"),
@@ -57,8 +62,21 @@ async def interpret_weekly(job_dirs_root, sites):
     )
     interpreter: LLMWebsiteInterpreter = LLMWebsiteInterpreter(agent=agent)
 
-    weekly_results: list[dict] = interpreter.interpret_weekly(job_dirs_root, sites)
+    logger.info(f"Interpreting weekly content with: current_week_only={current_week_only}, overwrite={overwrite}")
+    if specific_weeks:
+        logger.info(f"Processing specific weeks: {specific_weeks}")
+    
+    weekly_results: list[dict] = interpreter.interpret_weeks(
+        job_dirs_root=job_dirs_root, 
+        sites=sites,
+        current_week_only=current_week_only,
+        overwrite=overwrite,
+        specific_weeks=specific_weeks
+    )
+    
+    # Write results to files
     for result in weekly_results:
+        logger.info(f"Writing weekly interpretation for {result['week']} to {result['file_path']}")
         with open(result['file_path'], "w") as f:
             f.write(json.dumps(result['interpretation'], indent=2))
 
@@ -117,7 +135,7 @@ async def reprocess_scraped_content(job_dir, out_dir=None):
     harvester: Harvester = Harvester(outdir=out_dir)
     await harvester.re_harvest(job_dir=job_dir, sites=SITES)
     await extract(job_dir)
-    await interpret(job_dir, SITES)
+    # await interpret(job_dir, SITES)
 
 
 async def reprocess_all_scraped_content(out_dir: Path):
@@ -150,7 +168,8 @@ async def complete_all_jobs(out_dir: Path, steps: list[str]):
 
     # Then handle weekly interpretation if requested
     if Steps.INTERPRET_WEEKLY.value in steps:
-        await interpret_weekly(out_dir, SITES)
+        # By default, only process current week and don't overwrite existing files
+        await interpret_weekly(out_dir, SITES, current_week_only=True, overwrite=False)
 
     # Finally, deploy if requested
     if Steps.DEPLOY.value in steps:
@@ -172,19 +191,88 @@ async def run_new_analysis(out_dir: Path):
     await format_and_deploy(out_dir)
 
 
-async def process_weekly_content(out_dir: Path):
+async def process_weekly_content(out_dir: Path, current_week_only: bool = True, 
+                             overwrite: bool = False, specific_weeks: List[str] = None):
+    """
+    Process weekly content and deploy the results.
+    
+    :param out_dir: Directory containing the job directories
+    :param current_week_only: If True, only process the current week
+    :param overwrite: If True, overwrite existing weekly interpretations
+    :param specific_weeks: If provided, only process these specific weeks
+    """
     # Interpret weekly content
-    await interpret_weekly(out_dir, SITES)
+    await interpret_weekly(
+        out_dir, 
+        SITES, 
+        current_week_only=current_week_only, 
+        overwrite=overwrite, 
+        specific_weeks=specific_weeks
+    )
 
     # Output
     await format_and_deploy(out_dir)
 
 
+async def run(steps: list[Steps], out_dir: Path, **kwargs):
+    if 'job_dir' not in kwargs or kwargs['job_dir'] == "latest":
+        # find the latest job dir
+        artifacts_dir: Path = Path(max([d for d in out_dir.iterdir() if d.is_dir() and re.match(UTC_PATTERN, d.name)], key=os.path.getctime))
+    else:
+        artifacts_dir: Path = Path(kwargs['job_dir'])
+
+    if Steps.HARVEST in steps:
+        # Harvest
+        harvester: Harvester = Harvester(outdir=out_dir)
+        # reassign artifacts_dir to new dir
+        artifacts_dir = await harvester.harvest(sites=SITES)
+    elif Steps.REHARVEST in steps:
+        # Re-Harvest
+        harvester: Harvester = Harvester(outdir=out_dir)
+        await harvester.re_harvest(sites=SITES, job_dir=artifacts_dir)
+
+    if Steps.EXTRACT in steps:
+        # Extract
+        await extract(artifacts_dir)
+
+    if Steps.INTERPRET in steps:
+        # Interpret individual run
+        await interpret(artifacts_dir, SITES)
+
+    if Steps.INTERPRET_WEEKLY in steps:
+        # Interpret weekly content
+        await interpret_weekly(out_dir, SITES, current_week_only=True, overwrite=True)
+
+    if Steps.DEPLOY in steps:
+        # Output
+        await format_and_deploy(out_dir)
+
+
 if __name__ == '__main__':
     dotenv.load_dotenv()
-    create_logger(LOGGER_NAME)
+    create_logger(LOGGER_NAME, get_working_dir() / "runner.log")
     # asyncio.run(run_new_analysis(Path(get_project_root() / "working/out")))
     # asyncio.run(reprocess_all_scraped_content(Path(get_project_root() / "working/out")))
-    # asyncio.run(reprocess_scraped_content(Path(get_project_root() / "working/out/2025-02-25T05:37:47+00:00")))
-    # asyncio.run(process_weekly_content(Path(get_project_root() / "working/out")))
-    asyncio.run(format_and_deploy(Path(get_project_root() / "working/out")))
+    # asyncio.run(reprocess_scraped_content(Path(get_project_root() / "working/out/2025-03-03T04:46:14+00:00")))
+    # asyncio.run(process_weekly_content(Path(get_project_root() / "working/out"), overwrite=True))
+    # asyncio.run(format_and_deploy(Path(get_project_root() / "working/out")))
+
+    steps: list[Steps] = [Steps.HARVEST, Steps.EXTRACT, Steps.INTERPRET_WEEKLY, Steps.DEPLOY]
+    # steps: list[Steps] = [Steps.REHARVEST, Steps.EXTRACT, Steps.INTERPRET_WEEKLY, Steps.DEPLOY]
+    # steps: list[Steps] = [Steps.INTERPRET_WEEKLY, Steps.DEPLOY]
+    # steps: list[Steps] = [Steps.DEPLOY]
+    # steps: list[Steps] = [Steps.REHARVEST]
+    # steps: list[Steps] = [Steps.EXTRACT]
+    job_dir: str = "latest"
+    asyncio.run(run(steps, Path(get_project_root() / "working/out"), job_dir=job_dir))
+
+    # bulk option
+    # jobs: list = [
+    #     '/Users/dan/dev/code/projects/python/media_lens/working/out/2025-03-03T04:46:14+00:00',
+    #     '/Users/dan/dev/code/projects/python/media_lens/working/out/2025-03-04T04:35:47+00:00',
+    #     '/Users/dan/dev/code/projects/python/media_lens/working/out/2025-03-05T05:15:32+00:00',
+    #     '/Users/dan/dev/code/projects/python/media_lens/working/out/2025-03-06T04:30:16+00:00'
+    # ]
+    # for job_dir in jobs:
+    #     steps: list[Steps] = [Steps.EXTRACT]
+    #     asyncio.run(run(steps, Path(get_project_root() / "working/out"), job_dir=job_dir))
