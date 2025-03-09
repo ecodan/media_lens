@@ -4,17 +4,19 @@ import logging
 import os
 import re
 from collections import defaultdict
+from datetime import timezone
 from pathlib import Path
 from typing import List, Dict, Tuple, Any, Union
 from urllib.parse import urlparse
 
 import dotenv
+import pytz
 from jinja2 import Environment, FileSystemLoader
 
 from src.media_lens.common import (
-    utc_timestamp, UTC_REGEX_PATTERN_BW_COMPAT, LOGGER_NAME, SITES, get_project_root,
-    timestamp_as_long_date, timestamp_str_as_long_date, LONG_DATE_PATTERN,
-    get_datetime_from_timestamp, get_week_key, get_week_display
+    UTC_REGEX_PATTERN_BW_COMPAT, LOGGER_NAME, SITES, get_project_root,
+    timestamp_as_long_date, timestamp_bw_compat_str_as_long_date, LONG_DATE_PATTERN,
+    get_utc_datetime_from_timestamp, get_week_key, get_week_display, TZ_DEFAULT
 )
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -69,16 +71,16 @@ def organize_runs_by_week(job_dirs: List[Path], sites: List[str]) -> Dict[str, A
         if not re.match(UTC_REGEX_PATTERN_BW_COMPAT, job_dir.name):
             continue
         
-        # Get datetime from job directory name
-        job_datetime = get_datetime_from_timestamp(job_dir.name)
-        
+        # Get UTC datetime from job directory name
+        job_utc_datetime: datetime = get_utc_datetime_from_timestamp(job_dir.name)
+
         # Get week key for this job (e.g., "2025-W08")
-        week_key = get_week_key(job_datetime)
+        week_key: str = get_week_key(job_utc_datetime)
         
         # Create run data dictionary
         run_data = {
-            "run_timestamp": timestamp_str_as_long_date(job_dir.name),
-            "run_datetime": job_datetime,
+            "run_timestamp": timestamp_bw_compat_str_as_long_date(job_dir.name),
+            "run_datetime": job_utc_datetime,
             "job_dir": job_dir,
             "sites": sites,
             "extracted": [],

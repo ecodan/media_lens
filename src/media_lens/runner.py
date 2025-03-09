@@ -12,7 +12,7 @@ from typing import List, Union
 import dotenv
 
 from src.media_lens.collection.harvester import Harvester
-from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL, get_datetime_from_timestamp, get_week_key, get_working_dir, UTC_DATE_PATTERN_BW_COMPAT, \
+from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL, get_utc_datetime_from_timestamp, get_week_key, get_working_dir, UTC_DATE_PATTERN_BW_COMPAT, \
     UTC_REGEX_PATTERN_BW_COMPAT
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 from src.media_lens.extraction.extractor import ContextExtractor
@@ -21,8 +21,6 @@ from src.media_lens.presentation.deployer import upload_file
 from src.media_lens.presentation.html_formatter import generate_html_from_path
 
 logger = logging.getLogger(LOGGER_NAME)
-
-UTC_PATTERN: str = r'\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\+00:00'
 
 
 class Steps(Enum):
@@ -145,7 +143,7 @@ async def reprocess_all_scraped_content(out_dir: Path):
 
     for job_dir in out_dir.iterdir():
         if job_dir.is_dir():
-            if re.match(UTC_PATTERN, job_dir.name):
+            if re.match(UTC_REGEX_PATTERN_BW_COMPAT, job_dir.name):
                 await reprocess_scraped_content(job_dir, out_dir)
 
 
@@ -165,7 +163,7 @@ async def complete_all_jobs(out_dir: Path, steps: list[str]):
     # First, process individual job directories
     for job_dir in out_dir.iterdir():
         if job_dir.is_dir():
-            if re.match(UTC_PATTERN, job_dir.name):
+            if re.match(UTC_REGEX_PATTERN_BW_COMPAT, job_dir.name):
                 await complete_job(job_dir, steps)
 
     # Then handle weekly interpretation if requested

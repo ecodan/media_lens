@@ -6,8 +6,8 @@ import pytest
 import pytz
 
 from src.media_lens.common import (
-    utc_timestamp, timestamp_as_long_date, timestamp_str_as_long_date,
-    get_week_key, get_week_display, get_datetime_from_timestamp,
+    utc_timestamp, timestamp_as_long_date, timestamp_bw_compat_str_as_long_date,
+    get_week_key, get_week_display, get_utc_datetime_from_timestamp,
     get_project_root, create_logger, WEEK_KEY_FORMAT, LOGGER_NAME,
     UTC_REGEX_PATTERN_BW_COMPAT
 )
@@ -43,7 +43,7 @@ def test_timestamp_str_as_long_date():
     test_ts = "2025-02-26T15:30:00+00:00"
     
     # Convert to long date
-    long_date = timestamp_str_as_long_date(test_ts)
+    long_date = timestamp_bw_compat_str_as_long_date(test_ts)
     
     # Verify conversion
     assert isinstance(long_date, str)
@@ -51,7 +51,7 @@ def test_timestamp_str_as_long_date():
     
     # Test with explicit timezone
     test_tz = pytz.timezone('America/New_York')
-    long_date_ny = timestamp_str_as_long_date(test_ts, test_tz)
+    long_date_ny = timestamp_bw_compat_str_as_long_date(test_ts, test_tz)
     
     # NY time should be different from default
     assert long_date != long_date_ny
@@ -94,7 +94,7 @@ def test_get_datetime_from_timestamp():
     test_ts = "2025-02-26T15:30:00+00:00"
     
     # Convert to datetime
-    dt = get_datetime_from_timestamp(test_ts)
+    dt = get_utc_datetime_from_timestamp(test_ts)
     
     # Verify conversion
     assert isinstance(dt, datetime.datetime)

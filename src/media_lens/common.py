@@ -1,10 +1,9 @@
-import datetime
+from datetime import datetime, timezone, timedelta
 import logging
 import os
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Dict, List
 
 import pytz
 
@@ -20,18 +19,23 @@ TZ_DEFAULT: str = 'America/Los_Angeles'
 
 def utc_timestamp() -> str:
     # get utc timestamp as short string
-    return datetime.datetime.now(datetime.timezone.utc).isoformat(sep='T', timespec='seconds')
+    return datetime.now(timezone.utc).isoformat(sep='T', timespec='seconds')
+
+def utc_bw_compat_timestamp() -> str:
+    # get compatible timestamp as short string
+    return datetime.now(timezone.utc).strftime(UTC_DATE_PATTERN_BW_COMPAT)
 
 def timestamp_as_long_date(tz = pytz.timezone(TZ_DEFAULT)) -> str:
-    dt = datetime.datetime.now(tz)
+    dt = datetime.now(tz)
     return dt.strftime(LONG_DATE_PATTERN)
 
-def timestamp_str_as_long_date(ts: str, tz = pytz.timezone(TZ_DEFAULT)) -> str:
-    dt = datetime.datetime.fromisoformat(ts)
+def timestamp_bw_compat_str_as_long_date(ts: str, tz = pytz.timezone(TZ_DEFAULT)) -> str:
+    dt = datetime.strptime(ts, UTC_DATE_PATTERN_BW_COMPAT)
+    dt = dt.replace(tzinfo=timezone.utc)
     dt_local = dt.astimezone(tz)
     return dt_local.strftime(LONG_DATE_PATTERN)
 
-def get_week_key(dt: datetime.datetime, tz = pytz.timezone(TZ_DEFAULT)) -> str:
+def get_week_key(dt: datetime, tz = pytz.timezone(TZ_DEFAULT)) -> str:
     """
     Convert a datetime to a week identifier string (YYYY-WNN format).
     This is used for grouping data by week.
@@ -48,7 +52,7 @@ def get_week_display(week_key: str, tz = pytz.timezone(TZ_DEFAULT)) -> str:
     week_num = int(week_key.split('-W')[1])
     
     # Get the first day of the year
-    first_day = datetime.datetime(year, 1, 1, tzinfo=tz)
+    first_day = datetime(year, 1, 1, tzinfo=tz)
     
     # Calculate days to add to get to the start of the desired week
     # Week 1 is the week containing Jan 1
@@ -57,15 +61,20 @@ def get_week_display(week_key: str, tz = pytz.timezone(TZ_DEFAULT)) -> str:
         days_to_add += 7
     
     # Get Monday of the target week
-    week_start = first_day + datetime.timedelta(days=days_to_add)
+    week_start = first_day + timedelta(days=days_to_add)
     
     return week_start.strftime(WEEK_DISPLAY_FORMAT)
 
-def get_datetime_from_timestamp(ts: str) -> datetime.datetime:
+
+def get_utc_datetime_from_timestamp(ts: str) -> datetime:
     """
-    Convert a timestamp string to a datetime object.
+    Convert a UTC timestamp string to a UTC datetime object.
+
+    :param ts: Timestamp string in UTC (format: YYYY-MM-DD_HHMMSS)
+    :return: UTC datetime object
     """
-    return datetime.datetime.fromisoformat(ts)
+    dt = datetime.strptime(ts, UTC_DATE_PATTERN_BW_COMPAT)
+    return dt.replace(tzinfo=timezone.utc)
 
 def get_project_root() -> Path:
     return Path(__file__).parent.parent.parent
