@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 import logging
 import traceback
 from pathlib import Path
@@ -7,7 +8,7 @@ import dotenv
 
 from src.media_lens.collection.cleaner import WebpageCleaner, cleaner_for_site
 from src.media_lens.collection.scraper import WebpageScraper
-from src.media_lens.common import LOGGER_NAME, utc_timestamp, get_project_root, SITES
+from src.media_lens.common import LOGGER_NAME, utc_timestamp, get_project_root, SITES, UTC_REGEX_PATTERN_BW_COMPAT, UTC_DATE_PATTERN_BW_COMPAT
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -46,7 +47,7 @@ class Harvester(object):
         """
         logger.info(f"Harvesting {len(sites)} sites")
         scraper: WebpageScraper = WebpageScraper()
-        artifacts_dir: Path = self.outdir / utc_timestamp()
+        artifacts_dir: Path = self.outdir / datetime.now(timezone.utc).strftime(UTC_DATE_PATTERN_BW_COMPAT)
         artifacts_dir.mkdir(parents=True, exist_ok=True)
         for site in sites:
             try:

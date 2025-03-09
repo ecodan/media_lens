@@ -9,7 +9,7 @@ from src.media_lens.common import (
     utc_timestamp, timestamp_as_long_date, timestamp_str_as_long_date,
     get_week_key, get_week_display, get_datetime_from_timestamp,
     get_project_root, create_logger, WEEK_KEY_FORMAT, LOGGER_NAME,
-    UTC_PATTERN
+    UTC_REGEX_PATTERN_BW_COMPAT
 )
 
 
@@ -18,7 +18,7 @@ def test_utc_timestamp():
     timestamp = utc_timestamp()
     
     # Verify format with regex pattern
-    assert re.match(UTC_PATTERN, timestamp)
+    assert re.match(UTC_REGEX_PATTERN_BW_COMPAT, timestamp)
     
     # Verify it's a valid ISO format timestamp
     try:

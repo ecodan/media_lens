@@ -12,7 +12,7 @@ import dotenv
 from anthropic import APIError, APIConnectionError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL, UTC_PATTERN, get_datetime_from_timestamp, get_week_key, SITES, create_logger
+from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL, UTC_REGEX_PATTERN_BW_COMPAT, get_datetime_from_timestamp, get_week_key, SITES, create_logger
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -350,7 +350,7 @@ class LLMWebsiteInterpreter:
         # Group job directories by week
         weeks = {}
         for job_dir in job_dirs_root.iterdir():
-            if job_dir.is_dir() and re.match(UTC_PATTERN, job_dir.name):
+            if job_dir.is_dir() and re.match(UTC_REGEX_PATTERN_BW_COMPAT, job_dir.name):
                 job_datetime = get_datetime_from_timestamp(job_dir.name)
                 week_key = get_week_key(job_datetime)
 

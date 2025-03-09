@@ -7,12 +7,13 @@ import re
 import time
 from enum import Enum
 from pathlib import Path
-from typing import List
+from typing import List, Union
 
 import dotenv
 
 from src.media_lens.collection.harvester import Harvester
-from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL, get_datetime_from_timestamp, get_week_key, get_working_dir
+from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL, get_datetime_from_timestamp, get_week_key, get_working_dir, UTC_DATE_PATTERN_BW_COMPAT, \
+    UTC_REGEX_PATTERN_BW_COMPAT
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
@@ -216,11 +217,20 @@ async def process_weekly_content(out_dir: Path, current_week_only: bool = True,
 
 
 async def run(steps: list[Steps], out_dir: Path, **kwargs):
+    if not out_dir.exists():
+        raise FileNotFoundError(f"Output directory {out_dir} does not exist")
+
     if 'job_dir' not in kwargs or kwargs['job_dir'] == "latest":
         # find the latest job dir
-        artifacts_dir: Path = Path(max([d for d in out_dir.iterdir() if d.is_dir() and re.match(UTC_PATTERN, d.name)], key=os.path.getctime))
+        job_dirs: List[Path] = [d for d in out_dir.iterdir() if d.is_dir() and re.match(UTC_REGEX_PATTERN_BW_COMPAT, d.name)]
+        if job_dirs:
+            artifacts_dir: Union[Path,None] = Path(max(job_dirs, key=os.path.getctime))
+        else:
+            artifacts_dir: Union[Path,None] = None
     else:
-        artifacts_dir: Path = Path(kwargs['job_dir'])
+        artifacts_dir: Union[Path,None] = Path(kwargs['job_dir'])
+        if not artifacts_dir.exists():
+            raise FileNotFoundError(f"Job directory {artifacts_dir} does not exist")
 
     if Steps.HARVEST in steps:
         # Harvest
@@ -274,6 +284,8 @@ def main():
         help='Output directory for artifacts'
     )
     args = parser.parse_args()
+    dotenv.load_dotenv()
+    create_logger(LOGGER_NAME, get_working_dir() / "runner.log")
 
     if args.command == 'run':
         steps = [Steps(step) for step in args.steps]
@@ -282,6 +294,4 @@ def main():
         parser.print_help()
 
 if __name__ == '__main__':
-    dotenv.load_dotenv()
-    create_logger(LOGGER_NAME, get_working_dir() / "runner.log")
     main()

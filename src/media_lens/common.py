@@ -8,10 +8,12 @@ from typing import Dict, List
 
 import pytz
 
-UTC_PATTERN: str = r'\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\+00:00'
+UTC_REGEX_PATTERN: str = r'\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\+00:00'
+UTC_REGEX_PATTERN_BW_COMPAT: str = r'\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])_(?:[01]\d|2[0-3])[0-5]\d[0-5]\d'
 
 LONG_DATE_PATTERN: str = "%a %d-%b-%Y %H:%M %Z"
 UTC_DATE_PATTERN: str = "%Y-%m-%dT%H:%M:%S+00:00"
+UTC_DATE_PATTERN_BW_COMPAT: str = "%Y-%m-%d_%H%M%S"
 WEEK_KEY_FORMAT: str = "%Y-W%U"  # Year-week number format (e.g., "2025-W08")
 WEEK_DISPLAY_FORMAT: str = "Week of %b %d, %Y"  # Display format (e.g., "Week of Feb 24, 2025")
 TZ_DEFAULT: str = 'America/Los_Angeles'

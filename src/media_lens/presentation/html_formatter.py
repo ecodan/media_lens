@@ -12,7 +12,7 @@ import dotenv
 from jinja2 import Environment, FileSystemLoader
 
 from src.media_lens.common import (
-    utc_timestamp, UTC_PATTERN, LOGGER_NAME, SITES, get_project_root, 
+    utc_timestamp, UTC_REGEX_PATTERN_BW_COMPAT, LOGGER_NAME, SITES, get_project_root,
     timestamp_as_long_date, timestamp_str_as_long_date, LONG_DATE_PATTERN,
     get_datetime_from_timestamp, get_week_key, get_week_display
 )
@@ -66,7 +66,7 @@ def organize_runs_by_week(job_dirs: List[Path], sites: List[str]) -> Dict[str, A
         logger.debug(f"Processing job_dir {job_dir}")
         
         # Skip directories that don't match the UTC pattern
-        if not re.match(UTC_PATTERN, job_dir.name):
+        if not re.match(UTC_REGEX_PATTERN_BW_COMPAT, job_dir.name):
             continue
         
         # Get datetime from job directory name
@@ -275,7 +275,7 @@ def generate_html_from_path(job_dirs_root: Path, sites: list[str], template_dir_
     # Get all job directories
     dirs = [
         node for node in job_dirs_root.iterdir() 
-        if node.is_dir() and re.match(UTC_PATTERN, node.name)
+        if node.is_dir() and re.match(UTC_REGEX_PATTERN_BW_COMPAT, node.name)
     ]
     
     # Organize runs by week
