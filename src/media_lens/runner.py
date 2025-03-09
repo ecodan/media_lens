@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import json
 import logging
@@ -248,31 +249,39 @@ async def run(steps: list[Steps], out_dir: Path, **kwargs):
         await format_and_deploy(out_dir)
 
 
+def main():
+    parser = argparse.ArgumentParser(description='Media Lens CLI')
+    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+
+    # Run command
+    run_parser = subparsers.add_parser('run', help='Run the media lens pipeline')
+    run_parser.add_argument(
+        '-s', '--steps',
+        nargs='+',
+        choices=[step.value for step in Steps],
+        required=True,
+        help='One or more steps to execute'
+    )
+    run_parser.add_argument(
+        '-j', '--job-dir',
+        default='latest',
+        help='Job directory to process (default: latest)'
+    )
+    run_parser.add_argument(
+        '-o', '--output-dir',
+        type=Path,
+        required=True,
+        help='Output directory for artifacts'
+    )
+    args = parser.parse_args()
+
+    if args.command == 'run':
+        steps = [Steps(step) for step in args.steps]
+        asyncio.run(run(steps=steps, out_dir=args.output_dir, job_dir=args.job_dir))
+    else:
+        parser.print_help()
+
 if __name__ == '__main__':
     dotenv.load_dotenv()
     create_logger(LOGGER_NAME, get_working_dir() / "runner.log")
-    # asyncio.run(run_new_analysis(Path(get_project_root() / "working/out")))
-    # asyncio.run(reprocess_all_scraped_content(Path(get_project_root() / "working/out")))
-    # asyncio.run(reprocess_scraped_content(Path(get_project_root() / "working/out/2025-03-03T04:46:14+00:00")))
-    # asyncio.run(process_weekly_content(Path(get_project_root() / "working/out"), overwrite=True))
-    # asyncio.run(format_and_deploy(Path(get_project_root() / "working/out")))
-
-    steps: list[Steps] = [Steps.HARVEST, Steps.EXTRACT, Steps.INTERPRET_WEEKLY, Steps.DEPLOY]
-    # steps: list[Steps] = [Steps.REHARVEST, Steps.EXTRACT, Steps.INTERPRET_WEEKLY, Steps.DEPLOY]
-    # steps: list[Steps] = [Steps.INTERPRET_WEEKLY, Steps.DEPLOY]
-    # steps: list[Steps] = [Steps.DEPLOY]
-    # steps: list[Steps] = [Steps.REHARVEST]
-    # steps: list[Steps] = [Steps.EXTRACT]
-    job_dir: str = "latest"
-    asyncio.run(run(steps, Path(get_project_root() / "working/out"), job_dir=job_dir))
-
-    # bulk option
-    # jobs: list = [
-    #     '/Users/dan/dev/code/projects/python/media_lens/working/out/2025-03-03T04:46:14+00:00',
-    #     '/Users/dan/dev/code/projects/python/media_lens/working/out/2025-03-04T04:35:47+00:00',
-    #     '/Users/dan/dev/code/projects/python/media_lens/working/out/2025-03-05T05:15:32+00:00',
-    #     '/Users/dan/dev/code/projects/python/media_lens/working/out/2025-03-06T04:30:16+00:00'
-    # ]
-    # for job_dir in jobs:
-    #     steps: list[Steps] = [Steps.EXTRACT]
-    #     asyncio.run(run(steps, Path(get_project_root() / "working/out"), job_dir=job_dir))
+    main()

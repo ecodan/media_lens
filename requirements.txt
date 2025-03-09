@@ -37,7 +37,7 @@ huey==2.5.2
 idna==3.10
 iniconfig==2.0.0
 ipykernel==6.29.5
-ipython==8.32.0
+ipython==8.17.2
 isoduration==20.11.0
 jedi==0.19.2
 Jinja2==3.1.5
@@ -75,7 +75,7 @@ parso==0.8.4
 pathlib==1.0.1
 pexpect==4.9.0
 platformdirs==4.3.6
-playwright==1.50.0
+playwright==1.40.0
 playwright-stealth==1.0.6
 pluggy==1.5.0
 prometheus_client==0.21.1
