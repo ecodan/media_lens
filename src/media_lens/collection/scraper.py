@@ -60,10 +60,10 @@ class WebpageScraper:
 
                 logger.debug(f"loading page...")
                 # Navigate to the page
-                await page.goto(url, wait_until='networkidle')
+                await page.goto(url, wait_until='networkidle', timeout=90000)
 
-                # Wait for content to load
-                await page.wait_for_load_state('domcontentloaded')
+                # Wait for content to load with a longer timeout
+                await page.wait_for_load_state('domcontentloaded', timeout=90000)
 
                 # Get page content
                 content = await page.content()
