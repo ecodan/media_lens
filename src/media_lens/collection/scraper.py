@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import traceback
 from enum import Enum
 from pathlib import Path
 from typing import Optional
@@ -58,14 +59,17 @@ class WebpageScraper:
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
                 })
 
-                logger.debug(f"loading page...")
-                # Navigate to the page
-                await page.goto(url, wait_until='networkidle', timeout=90000)
+                try:
+                    logger.debug(f"loading page...")
+                    # Navigate to the page
+                    await page.goto(url, wait_until='networkidle')
 
-                # Wait for content to load with a longer timeout
-                await page.wait_for_load_state('domcontentloaded', timeout=90000)
+                    # Wait for content to load with a longer timeout
+                    await page.wait_for_load_state('domcontentloaded')
+                except Exception as e:
+                    logger.warning(f"Probably timeout while loading page: {url}; scraping what content is available.")
 
-                # Get page content
+                # Get page content (may be truncated in case of timeout)
                 content = await page.content()
 
                 await browser.close()
@@ -74,6 +78,7 @@ class WebpageScraper:
 
         except Exception as e:
             logger.error(f"Error fetching page content: {str(e)}")
+            traceback.print_exc()
             raise e
 
 
