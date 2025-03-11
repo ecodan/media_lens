@@ -62,12 +62,12 @@ class WebpageScraper:
                 try:
                     logger.debug(f"loading page...")
                     # Navigate to the page
-                    await page.goto(url, wait_until='networkidle')
+                    await page.goto(url, wait_until='networkidle', timeout=60000)  # 60 seconds timeout
 
                     # Wait for content to load with a longer timeout
-                    await page.wait_for_load_state('domcontentloaded')
+                    await page.wait_for_load_state('domcontentloaded', timeout=60000)  # 60 seconds timeout
                 except Exception as e:
-                    logger.warning(f"Probably timeout while loading page: {url}; scraping what content is available.")
+                    logger.warning(f"Probable timeout while loading page: {url}; scraping what content is available.")
 
                 # Get page content (may be truncated in case of timeout)
                 content = await page.content()
