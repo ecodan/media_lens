@@ -29,6 +29,8 @@ def convert_relative_url(url: str, site: str) -> str:
     :param site: Domain name (e.g., 'www.cnn.com')
     :returns str: Processed URL with protocol and domain if needed
     """
+    if not url:
+        return url
     # Check if URL already has a protocol
     parsed_url = urlparse(url)
     if parsed_url.scheme:
