@@ -215,14 +215,19 @@ async def process_weekly_content(out_dir: Path, current_week_only: bool = True,
     # Output
     await format_and_deploy(out_dir)
 
-async def summarize_all(out_dir: Path):
+async def summarize_all(out_dir: Path, force: bool = False):
     logger.info(f"Summarizing extracted content in {out_dir.name}")
     summarizer: DailySummarizer = DailySummarizer(agent=ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL))
 
     for job_dir in out_dir.iterdir():
         if job_dir.is_dir():
             if re.match(UTC_REGEX_PATTERN_BW_COMPAT, job_dir.name):
-                summarizer.generate_summary_from_job_dir(job_dir)
+                # Check if summary file already exists
+                summary_file = job_dir / "daily_news.txt"
+                if summary_file.exists() and not force:
+                    logger.info(f"Summary already exists for {job_dir.name}, skipping...")
+                else:
+                    summarizer.generate_summary_from_job_dir(job_dir)
 
 async def run(steps: list[Steps], out_dir: Path, **kwargs):
     if not out_dir.exists():
@@ -319,6 +324,16 @@ def main():
     if args.command == 'run':
         steps = [Steps(step) for step in args.steps]
         asyncio.run(run(steps=steps, out_dir=args.output_dir, job_dir=args.job_dir))
+    elif args.command == 'summarize':
+        # Summarize daily news
+        out_dir: Path = Path(args.output_dir)
+        force = args.force
+        if force:
+            logger.info("Force resummarization of daily news")
+            asyncio.run(summarize_all(out_dir))
+        else:
+            logger.info("Summarizing daily news without force")
+            asyncio.run(summarize_all(out_dir))
     else:
         parser.print_help()
 
