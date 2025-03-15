@@ -176,7 +176,7 @@ def test_generate_html_from_path(sample_job_directory, temp_dir):
     
     # Call generate_html_from_path
     sites = ["www.test1.com", "www.test2.com"]
-    html = generate_html_from_path(Path(sample_job_directory).parent, sites, template_dir, "index_template.j2")
+    html = generate_html_from_path(Path(sample_job_directory).parent, sites, template_dir)
     
     # Check if files were created
     assert (Path(sample_job_directory).parent / "medialens.html").exists()

@@ -97,7 +97,7 @@ async def format_and_deploy(jobs_root: Path):
     template_name: str = "template_01.j2"  # This is ignored in the new implementation
     
     # Generate all HTML files (index and weekly pages)
-    index_html: str = generate_html_from_path(jobs_root, SITES, template_dir_path, template_name)
+    index_html: str = generate_html_from_path(jobs_root, SITES, template_dir_path)
     
     # Get remote path from environment
     remote_path: str = os.getenv("FTP_REMOTE_PATH")
