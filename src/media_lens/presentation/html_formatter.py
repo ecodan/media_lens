@@ -86,7 +86,8 @@ def organize_runs_by_week(job_dirs: List[Path], sites: List[str]) -> Dict[str, A
             "job_dir": job_dir,
             "sites": sites,
             "extracted": [],
-            "interpreted": []
+            "interpreted": [],
+            "news_summary": "",
         }
         
         # Process each site
@@ -109,20 +110,26 @@ def organize_runs_by_week(job_dirs: List[Path], sites: List[str]) -> Dict[str, A
                     'site': site,
                     'stories': stories
                 })
-                
+
+            # Load news summary
+            news_summary_path = job_dir / f"daily_news.txt"
+            if news_summary_path.exists():
+                with open(news_summary_path, "r") as f:
+                    news_summary = f.read()
+                    run_data['news_summary'] = news_summary.replace("\n", "<br>")
+
             # Load interpreted data
             interpreted_path = job_dir / f"{site}-interpreted.json"
             if not interpreted_path.exists():
                 logger.warning(f"Interpreted file not found: {interpreted_path}")
-                continue
-                
-            with open(interpreted_path, "r") as f:
-                interpreted = json.load(f)
-                run_data['interpreted'].append({
-                    'site': site,
-                    'qa': interpreted
-                })
-        
+            else:
+                with open(interpreted_path, "r") as f:
+                    interpreted = json.load(f)
+                    run_data['interpreted'].append({
+                        'site': site,
+                        'qa': interpreted
+                    })
+
         # Add this run to the appropriate week
         weeks_data[week_key].append(run_data)
     
@@ -264,7 +271,7 @@ def generate_index_page(weeks_data: Dict, template_dir_path: Path) -> str:
     )
 
 
-def generate_html_from_path(job_dirs_root: Path, sites: list[str], template_dir_path: Path, template_name: str) -> str:
+def generate_html_from_path(job_dirs_root: Path, sites: list[str], template_dir_path: Path) -> str:
     """
     Revised method to generate HTML from a path, now handling weekly organization.
     
@@ -305,8 +312,7 @@ def generate_html_from_path(job_dirs_root: Path, sites: list[str], template_dir_
 # TEST
 def main(job_dirs_root: Path):
     template_dir_path: Path = Path(get_project_root() / "config/templates")
-    template_name: str = "template_01.j2"  # Will be ignored in new implementation
-    html: str = generate_html_from_path(job_dirs_root, SITES, template_dir_path, template_name)
+    html: str = generate_html_from_path(job_dirs_root, SITES, template_dir_path)
     # Weekly HTML files and index file are written inside generate_html_from_path
 
 if __name__ == '__main__':

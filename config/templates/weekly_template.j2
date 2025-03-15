@@ -212,7 +212,15 @@
                 </div>
                 {% endfor %}
             </div>
-            
+            {% if run.news_summary %}
+            <!-- Expandable new summary for the day -->
+            <div class="row g-0 data-row p-2 border-top">
+                <div class="col-12 col-md-12 p-3">
+                    <strong>Daily News Summary</strong>
+                    <p>{{ run.news_summary }}</p>
+                </div>
+            </div>
+            {% endif %}
             <!-- Q&A rows -->
         {% if run.interpreted %}
             {% for i in range(run.interpreted[0].qa|length) %}

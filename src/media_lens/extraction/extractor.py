@@ -12,7 +12,7 @@ import dotenv
 from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL
 from src.media_lens.extraction.agent import ClaudeLLMAgent, Agent
 from src.media_lens.extraction.headliner import LLMHeadlineExtractor
-from src.media_lens.extraction.summarizer import ArticleSummarizer
+from src.media_lens.extraction.collector import ArticleCollector
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -20,7 +20,6 @@ class ContextExtractor:
     """
     Orchestrates the extraction of headlines and articles from a set of HTML files.
     """
-
     def __init__(self, working_dir: Path, agent: Agent):
         super().__init__()
         self.working_dir = working_dir
@@ -29,7 +28,7 @@ class ContextExtractor:
             agent=agent,
             artifacts_dir=working_dir
         )
-        self.summarizer: ArticleSummarizer = ArticleSummarizer()
+        self.article_collector: ArticleCollector = ArticleCollector()
 
     @staticmethod
     def _process_relative_url(url: str, filename: str) -> str:
@@ -80,12 +79,12 @@ class ContextExtractor:
                         if url is not None:
                             logger.info(f"Scraping article url: {url}")
                             try:
-                                summary: dict = await self.summarizer.extract_article(self._process_relative_url(url, file.name))
-                                if summary is not None:
+                                article: dict = await self.article_collector.extract_article(self._process_relative_url(url, file.name))
+                                if article is not None:
                                     outfile: Path = self.working_dir / f"{file.stem}-article-{idx}.json"
                                     result['article_text'] = str(outfile)
                                     with open(outfile, "w") as aoutf:
-                                        aoutf.write(json.dumps(summary))
+                                        aoutf.write(json.dumps(article))
                             except Exception as e:
                                 logger.error(f"Failed to extract article: {url}")
                     with open(self.working_dir / f"{file.stem}-extracted.json", "w") as outf:

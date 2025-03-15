@@ -17,6 +17,7 @@ from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, 
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
+from src.media_lens.extraction.summarizer import DailySummarizer
 from src.media_lens.presentation.deployer import upload_file
 from src.media_lens.presentation.html_formatter import generate_html_from_path
 
@@ -29,6 +30,7 @@ class Steps(Enum):
     EXTRACT = "extract"
     INTERPRET = "interpret"
     INTERPRET_WEEKLY = "interpret_weekly"
+    SUMMARIZE_DAILY = "summarize_daily"
     DEPLOY = "deploy"
 
 
@@ -213,6 +215,14 @@ async def process_weekly_content(out_dir: Path, current_week_only: bool = True,
     # Output
     await format_and_deploy(out_dir)
 
+async def summarize_all(out_dir: Path):
+    logger.info(f"Summarizing extracted content in {out_dir.name}")
+    summarizer: DailySummarizer = DailySummarizer(agent=ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL))
+
+    for job_dir in out_dir.iterdir():
+        if job_dir.is_dir():
+            if re.match(UTC_REGEX_PATTERN_BW_COMPAT, job_dir.name):
+                summarizer.generate_summary_from_job_dir(job_dir)
 
 async def run(steps: list[Steps], out_dir: Path, **kwargs):
     if not out_dir.exists():
@@ -252,6 +262,11 @@ async def run(steps: list[Steps], out_dir: Path, **kwargs):
         # Interpret weekly content
         await interpret_weekly(out_dir, SITES, current_week_only=True, overwrite=True)
 
+    if Steps.SUMMARIZE_DAILY in steps:
+        # Summarize daily content
+        summarizer: DailySummarizer = DailySummarizer(agent=ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL))
+        summarizer.generate_summary_from_job_dir(artifacts_dir)
+
     if Steps.DEPLOY in steps:
         # Output
         await format_and_deploy(out_dir)
@@ -281,6 +296,22 @@ def main():
         required=True,
         help='Output directory for artifacts'
     )
+
+    # Summarize daily news command with option to force resummarization if no summary present
+    summarize_parser = subparsers.add_parser('summarize', help='Summarize daily news')
+    summarize_parser.add_argument(
+        '-o', '--output-dir',
+        type=Path,
+        required=True,
+        help='Output directory for artifacts'
+    )
+    summarize_parser.add_argument(
+        '-f', '--force',
+        action='store_true',
+        help='Force resummarization even if summary exists'
+    )
+
+
     args = parser.parse_args()
     dotenv.load_dotenv()
     create_logger(LOGGER_NAME, get_working_dir() / "runner.log")
