@@ -1,22 +1,18 @@
 import datetime
 import json
 import logging
-import os
 import re
 from collections import defaultdict
-from datetime import timezone
 from pathlib import Path
-from typing import List, Dict, Tuple, Any, Union
+from typing import List, Dict, Any, Union
 from urllib.parse import urlparse
 
 import dotenv
-import pytz
 from jinja2 import Environment, FileSystemLoader
 
 from src.media_lens.common import (
     UTC_REGEX_PATTERN_BW_COMPAT, LOGGER_NAME, SITES, get_project_root,
-    timestamp_as_long_date, timestamp_bw_compat_str_as_long_date, LONG_DATE_PATTERN,
-    get_utc_datetime_from_timestamp, get_week_key, get_week_display, TZ_DEFAULT
+    timestamp_as_long_date, timestamp_bw_compat_str_as_long_date, get_utc_datetime_from_timestamp, get_week_key, get_week_display
 )
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -216,6 +212,17 @@ def generate_weekly_content(week_data: Dict, sites: List[str], job_dirs_root: Pa
         except (json.JSONDecodeError, FileNotFoundError) as e:
             logger.warning(f"Could not load weekly interpretation from {weekly_file}: {str(e)}")
     
+    # Load morality analysis if available
+    morality_analysis = None
+    morality_file = Path(job_dirs_root) / f"weekly-{week_data['week_key']}-morality.json"
+    if morality_file.exists():
+        try:
+            with open(morality_file, "r") as f:
+                morality_analysis = json.load(f)
+                logger.info(f"Loaded morality analysis for week {week_data['week_key']}")
+        except (json.JSONDecodeError, FileNotFoundError) as e:
+            logger.warning(f"Could not load morality analysis from {morality_file}: {str(e)}")
+    
     # Format for template
     return {
         "week_key": week_data["week_key"],
@@ -223,6 +230,7 @@ def generate_weekly_content(week_data: Dict, sites: List[str], job_dirs_root: Pa
         "sites": sites,
         "site_content": site_content,
         "interpretation": weekly_interpretation,
+        "morality_analysis": morality_analysis,
         "runs": week_data["runs"]
     }
 
@@ -278,7 +286,6 @@ def generate_html_from_path(job_dirs_root: Path, sites: list[str], template_dir_
     :param job_dirs_root: the parent dir of all job dirs with UTC dates as names
     :param sites: list of media sites that will be covered
     :param template_dir_path: full path to location of Jinja2 templates
-    :param template_name: template name (not used in new implementation)
     :return: HTML content for the index page
     """
     logger.info(f"Generating HTML for {len(sites)} sites in {job_dirs_root}")

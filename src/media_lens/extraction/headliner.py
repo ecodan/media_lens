@@ -223,7 +223,7 @@ class LLMHeadlineExtractor(HeadlineExtractor):
             res: Dict = self._process_content(content_hash, self._truncate_html(content, max_tokens=25000))
             if "error" in res:
                 return {} # TODO consider more robust error handling
-            return self._process_content(content_hash, self._truncate_html(content, max_tokens=25000))
+            return res
 
         except Exception as e:
             logger.error(f"Error extracting news content: {str(e)}")

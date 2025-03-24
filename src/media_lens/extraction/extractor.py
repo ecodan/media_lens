@@ -24,7 +24,7 @@ class ContextExtractor:
         super().__init__()
         self.working_dir = working_dir
         agent: Agent = agent
-        self.extractor: LLMHeadlineExtractor = LLMHeadlineExtractor(
+        self.headline_extractor: LLMHeadlineExtractor = LLMHeadlineExtractor(
             agent=agent,
             artifacts_dir=working_dir
         )
@@ -69,7 +69,7 @@ class ContextExtractor:
             with open(file, "r") as f:
                 content = f.read()
                 try:
-                    results: dict = self.extractor.extract(content)
+                    results: dict = self.headline_extractor.extract(content)
                     if results.get("error"):
                         logger.warning(f"error in extraction: {results["error"]}")
                         continue

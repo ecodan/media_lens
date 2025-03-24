@@ -12,8 +12,7 @@ from typing import List, Union
 import dotenv
 
 from src.media_lens.collection.harvester import Harvester
-from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL, get_utc_datetime_from_timestamp, get_week_key, get_working_dir, UTC_DATE_PATTERN_BW_COMPAT, \
-    UTC_REGEX_PATTERN_BW_COMPAT
+from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL, get_working_dir, UTC_REGEX_PATTERN_BW_COMPAT
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
@@ -81,6 +80,8 @@ async def interpret_weekly(job_dirs_root, sites, current_week_only=True, overwri
         logger.info(f"Writing weekly interpretation for {result['week']} to {result['file_path']}")
         with open(result['file_path'], "w") as f:
             f.write(json.dumps(result['interpretation'], indent=2))
+
+
 
 
 async def extract(job_dir):
@@ -315,7 +316,7 @@ def main():
         action='store_true',
         help='Force resummarization even if summary exists'
     )
-
+    
 
     args = parser.parse_args()
     dotenv.load_dotenv()
