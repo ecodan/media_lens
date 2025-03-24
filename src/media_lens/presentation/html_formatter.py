@@ -212,17 +212,6 @@ def generate_weekly_content(week_data: Dict, sites: List[str], job_dirs_root: Pa
         except (json.JSONDecodeError, FileNotFoundError) as e:
             logger.warning(f"Could not load weekly interpretation from {weekly_file}: {str(e)}")
     
-    # Load morality analysis if available
-    morality_analysis = None
-    morality_file = Path(job_dirs_root) / f"weekly-{week_data['week_key']}-morality.json"
-    if morality_file.exists():
-        try:
-            with open(morality_file, "r") as f:
-                morality_analysis = json.load(f)
-                logger.info(f"Loaded morality analysis for week {week_data['week_key']}")
-        except (json.JSONDecodeError, FileNotFoundError) as e:
-            logger.warning(f"Could not load morality analysis from {morality_file}: {str(e)}")
-    
     # Format for template
     return {
         "week_key": week_data["week_key"],
@@ -230,7 +219,6 @@ def generate_weekly_content(week_data: Dict, sites: List[str], job_dirs_root: Pa
         "sites": sites,
         "site_content": site_content,
         "interpretation": weekly_interpretation,
-        "morality_analysis": morality_analysis,
         "runs": week_data["runs"]
     }
 

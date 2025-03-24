@@ -6,7 +6,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 import pytest
 
 from src.media_lens.runner import (
-    extract, interpret, interpret_weekly, format_and_deploy
+    extract, interpret, interpret_weekly, format_and_deploy, Steps, summarize_all
 )
 
 
@@ -204,3 +204,54 @@ async def test_format_and_deploy(mock_upload_file, mock_generate_html, temp_dir,
     
     # Verify total number of uploads
     assert mock_upload_file.call_count == 4
+
+@pytest.mark.asyncio
+@patch('src.media_lens.runner.DailySummarizer')
+async def test_summarize_all(mock_summarizer_class, temp_dir, mock_env_vars):
+    """Test the summarize_all function."""
+    # Mock the summarizer
+    mock_summarizer = MagicMock()
+    mock_summarizer_class.return_value = mock_summarizer
+    
+    # Create job directories with UTC timestamp pattern
+    for day in range(1, 4):
+        job_dir = temp_dir / f"2025-03-{day:02d}T12:00:00+00:00"
+        job_dir.mkdir(exist_ok=True)
+        
+        # Add a summary file to one directory to test skipping
+        if day == 2:
+            (job_dir / "daily_news.txt").write_text("Existing summary")
+    
+    # Call summarize_all without force
+    await summarize_all(temp_dir)
+    
+    # Verify summarizer was called for directories without summary
+    assert mock_summarizer.generate_summary_from_job_dir.call_count == 2
+    
+    # Call summarize_all with force=True
+    mock_summarizer.generate_summary_from_job_dir.reset_mock()
+    await summarize_all(temp_dir, force=True)
+    
+    # Verify summarizer was called for all directories when forced
+    assert mock_summarizer.generate_summary_from_job_dir.call_count == 3
+
+@pytest.mark.parametrize("steps", [
+    ([Steps.HARVEST, Steps.EXTRACT]),
+    ([Steps.INTERPRET, Steps.INTERPRET_WEEKLY]),
+    ([Steps.SUMMARIZE_DAILY, Steps.DEPLOY]),
+])
+def test_steps_enum(steps):
+    """Test that the Steps enum contains the expected values and no moralizer step."""
+    # Convert steps to values for easier comparison
+    step_values = [step.value for step in Steps]
+    
+    # Check that expected steps exist
+    assert "harvest" in step_values
+    assert "extract" in step_values
+    assert "interpret" in step_values
+    assert "interpret_weekly" in step_values
+    assert "summarize_daily" in step_values
+    assert "deploy" in step_values
+    
+    # Verify that moralize_weekly is not in the enum
+    assert "moralize_weekly" not in step_values

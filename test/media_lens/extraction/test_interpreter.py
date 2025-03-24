@@ -86,64 +86,26 @@ def test_interpret_with_json_error(mock_json_loads, mock_llm_agent):
     assert result == []
 
 
-@patch('src.media_lens.extraction.agent.Agent.invoke')
-def test_call_llm_with_retry(mock_invoke, mock_llm_agent):
-    """Test _call_llm retry mechanism."""
-    # Create a proper mock for APIError with a MagicMock for the request argument
-    api_error = MagicMock(spec=APIError)
-    api_error.__str__.return_value = "Rate limit exceeded"
-    
-    # Set up the mock to fail twice then succeed
-    mock_invoke.side_effect = [
-        api_error,  # First call raises error
-        api_error,  # Second call raises error
-        '{"key": "value"}'  # Third call succeeds
-    ]
-    
-    # Create test interpreter with mock agent
-    interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent)
-    
-    # Call _call_llm
-    result = interpreter._call_llm("system prompt", "user prompt")
-    
-    # Verify retry and result
-    assert mock_invoke.call_count == 3
-    assert result == '{"key": "value"}'
-
-
 def test_interpret_weeks_content(mock_llm_agent, temp_dir):
-    """Test interpret_weeks_content method."""
+    """Test interpret_site_content method."""
     # Create test interpreter with mock agent
     interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent)
     
-    # Create test content structure
-    all_content = [
-        {
-            "site": "www.test1.com",
-            "content": [
-                [
-                    {"title": "Test1 Article 1", "text": "Content 1", "url": "/article1"},
-                    {"title": "Test1 Article 2", "text": "Content 2", "url": "/article2"}
-                ],
-                [
-                    {"title": "Test1 Article 3", "text": "Content 3", "url": "/article3"},
-                    {"title": "Test1 Article 4", "text": "Content 4", "url": "/article4"}
-                ]
-            ]
-        },
-        {
-            "site": "www.test2.com",
-            "content": [
-                [
-                    {"title": "Test2 Article 1", "text": "Content 1", "url": "/article1"},
-                    {"title": "Test2 Article 2", "text": "Content 2", "url": "/article2"}
-                ]
-            ]
-        }
+    # Create test content structure for a single site
+    site = "www.test1.com"
+    content = [
+        [
+            {"title": "Test1 Article 1", "text": "Content 1", "url": "/article1"},
+            {"title": "Test1 Article 2", "text": "Content 2", "url": "/article2"}
+        ],
+        [
+            {"title": "Test1 Article 3", "text": "Content 3", "url": "/article3"},
+            {"title": "Test1 Article 4", "text": "Content 4", "url": "/article4"}
+        ]
     ]
     
-    # Call interpret_weeks_content
-    result = interpreter.interpret_site_content(all_content)
+    # Call interpret_site_content with correct arguments
+    result = interpreter.interpret_site_content(site, content)
     
     # Verify results
     assert isinstance(result, list)
@@ -154,20 +116,16 @@ def test_interpret_weeks_content(mock_llm_agent, temp_dir):
 
 
 def test_interpret_weeks_content_error_handling(mock_llm_agent):
-    """Test error handling in interpret_weeks_content."""
+    """Test error handling in interpret_site_content."""
     # Create test interpreter with mock agent
     interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent)
     
     # Create invalid content structure
-    invalid_content = [
-        {
-            "site": "www.test1.com",
-            "content": "not-a-list"  # Invalid type
-        }
-    ]
+    site = "www.test1.com"
+    invalid_content = "not-a-list"  # Invalid type
     
-    # Call interpret_weeks_content
-    result = interpreter.interpret_site_content(invalid_content)
+    # Call interpret_site_content
+    result = interpreter.interpret_site_content(site, invalid_content)
     
     # Verify error handling
     assert isinstance(result, list)

@@ -61,8 +61,10 @@ def sample_article_json():
 @pytest.fixture
 def sample_job_directory(temp_dir):
     """Create a sample job directory with test data files."""
-    # Create job directory with timestamp name
-    job_dir = temp_dir / utc_timestamp()
+    # Create job directory with timestamp name in the backwards-compatible format
+    # Use a fixed timestamp for testing to ensure consistent week key generation
+    fixed_timestamp = "2025-02-26_153000"  # Format: YYYY-MM-DD_HHMMSS
+    job_dir = temp_dir / fixed_timestamp
     job_dir.mkdir(exist_ok=True)
     
     # Sample site data
