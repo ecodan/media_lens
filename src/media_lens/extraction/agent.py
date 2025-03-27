@@ -56,7 +56,7 @@ class ClaudeLLMAgent(Agent):
             )
             logger.debug(f"Claude raw response: {response.content}")
             if len(response.content) == 1:
-                logger.debug(f".. response: {len(response.content[0].text)} bytes / {len(response.content[0].text.split(" "))} words")
+                logger.debug(f".. response: {len(response.content[0].text)} bytes / {len(response.content[0].text.split())} words")
                 return response.content[0].text
             else:
                 return "ERROR - NO DATA"

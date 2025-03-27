@@ -53,10 +53,21 @@ Currently implements a file system-based storage solution for simplicity and rap
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.8+ (tested with Python 3.12)
 - See requirements.txt for dependencies
 - Anthropic Claude developer API
 - SFTP information if you want to push the file to a web server
+
+## Development Setup
+
+```bash
+# Create and activate virtual environment
+python -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
 
 
 ## Configuration
@@ -77,7 +88,17 @@ FTP_REMOTE_PATH=
 ## Usage
 
 ```bash
-python src/runner.py
+# Run main program
+python src/media_lens/runner.py
+
+# Run with scheduler (automated daily runs)
+./run_media_lens_scheduled.sh
+
+# Run full pipeline from harvest to deploy
+./run_harvest_to_deploy.sh
+
+# Run single module
+python -m src.media_lens.<module_path>
 ```
 
 ## License

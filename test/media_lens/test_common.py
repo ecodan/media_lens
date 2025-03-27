@@ -8,7 +8,7 @@ import pytz
 from src.media_lens.common import (
     utc_timestamp, timestamp_as_long_date, timestamp_bw_compat_str_as_long_date,
     get_week_key, get_week_display, get_utc_datetime_from_timestamp,
-    get_project_root, create_logger, WEEK_KEY_FORMAT, LOGGER_NAME,
+    get_project_root, create_logger, is_last_day_of_week, WEEK_KEY_FORMAT, LOGGER_NAME,
     UTC_REGEX_PATTERN_BW_COMPAT
 )
 
@@ -134,3 +134,27 @@ def test_create_logger():
     
     # Skip testing the error case - it's difficult to predict exactly what will
     # happen on different systems when trying to access an invalid path
+    
+    
+def test_is_last_day_of_week():
+    """Test that is_last_day_of_week correctly identifies Sundays."""
+    # Test for Sunday (should be True)
+    sunday = datetime.datetime(2025, 3, 9, tzinfo=pytz.UTC)
+    print(f"Sunday weekday(): {sunday.weekday()}")
+    
+    # Using a different approach to verify our date is correct
+    weekday_name = sunday.strftime("%A")
+    print(f"Sunday day name: {weekday_name}")
+    
+    result = is_last_day_of_week(sunday)
+    print(f"Result of is_last_day_of_week: {result}")
+    
+    assert result is True
+    
+    # Saturday (should be False)
+    saturday = datetime.datetime(2025, 3, 8, tzinfo=pytz.UTC)
+    assert is_last_day_of_week(saturday) is False
+    
+    # Monday (should be False)
+    monday = datetime.datetime(2025, 3, 3, tzinfo=pytz.UTC)
+    assert is_last_day_of_week(monday) is False

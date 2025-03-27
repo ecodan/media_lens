@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import datetime
 import json
 import logging
 import os
@@ -50,6 +51,8 @@ async def interpret(job_dir, sites):
 async def interpret_weekly(job_dirs_root, sites, current_week_only=True, overwrite=False, specific_weeks=None):
     """
     Perform weekly interpretation on content from specified weeks.
+    This will only run on the last day of the week (Sunday) or if explicitly requested via specific_weeks.
+    It will also check for the previous week if it was missed due to a missed Sunday.
     
     :param job_dirs_root: Root directory containing all job directories
     :param sites: List of media sites to interpret
@@ -57,29 +60,59 @@ async def interpret_weekly(job_dirs_root, sites, current_week_only=True, overwri
     :param overwrite: If True, overwrite existing weekly interpretations
     :param specific_weeks: If provided, only interpret these specific weeks (e.g. ["2025-W08", "2025-W09"])
     """
+    from src.media_lens.common import is_last_day_of_week, get_week_key
+    
     agent: Agent = ClaudeLLMAgent(
         api_key=os.getenv("ANTHROPIC_API_KEY"),
         model=ANTHROPIC_MODEL
     )
     interpreter: LLMWebsiteInterpreter = LLMWebsiteInterpreter(agent=agent)
-
-    logger.info(f"Interpreting weekly content with: current_week_only={current_week_only}, overwrite={overwrite}")
-    if specific_weeks:
-        logger.info(f"Processing specific weeks: {specific_weeks}")
     
-    weekly_results: list[dict] = interpreter.interpret_weeks(
-        job_dirs_root=job_dirs_root, 
-        sites=sites,
-        current_week_only=current_week_only,
-        overwrite=overwrite,
-        specific_weeks=specific_weeks
-    )
+    # Check if today is the last day of the week or if specific weeks were provided
+    today = datetime.datetime.now(datetime.timezone.utc)
+    current_week = get_week_key(today)
+    weeks_to_process = specific_weeks or []
     
-    # Write results to files
-    for result in weekly_results:
-        logger.info(f"Writing weekly interpretation for {result['week']} to {result['file_path']}")
-        with open(result['file_path'], "w") as f:
-            f.write(json.dumps(result['interpretation'], indent=2))
+    # If not the last day of the week and no specific weeks provided, skip unless force overwrite
+    if not is_last_day_of_week(dt=None, tz=None) and not specific_weeks and not overwrite:
+        logger.info("Today is not the last day of the week. Skipping weekly interpretation.")
+        return
+    
+    # If it's the last day of the week, add current week to process list
+    if is_last_day_of_week(dt=None, tz=None) and current_week_only:
+        logger.info(f"Today is the last day of the week. Processing current week: {current_week}")
+        if current_week not in weeks_to_process:
+            weeks_to_process.append(current_week)
+    
+    # Check if previous week was processed
+    previous_week_date = today - datetime.timedelta(days=7)
+    previous_week = get_week_key(previous_week_date)
+    previous_week_file = job_dirs_root / f"weekly-{previous_week}-interpreted.json"
+    
+    # If previous week's file doesn't exist, add it to the processing list
+    if not previous_week_file.exists() and not specific_weeks:
+        logger.info(f"Previous week {previous_week} was not processed. Adding to processing list.")
+        if previous_week not in weeks_to_process:
+            weeks_to_process.append(previous_week)
+    
+    # Only proceed if there are weeks to process
+    if weeks_to_process:
+        logger.info(f"Processing weeks: {', '.join(weeks_to_process)}")
+        weekly_results: list[dict] = interpreter.interpret_weeks(
+            job_dirs_root=job_dirs_root, 
+            sites=sites,
+            current_week_only=False,  # We're handling this logic ourselves
+            overwrite=overwrite,
+            specific_weeks=weeks_to_process
+        )
+        
+        # Write results to files
+        for result in weekly_results:
+            logger.info(f"Writing weekly interpretation for {result['week']} to {result['file_path']}")
+            with open(result['file_path'], "w") as f:
+                f.write(json.dumps(result['interpretation'], indent=2))
+    else:
+        logger.info("No weeks to process.")
 
 
 
@@ -170,8 +203,9 @@ async def complete_all_jobs(out_dir: Path, steps: list[str]):
                 await complete_job(job_dir, steps)
 
     # Then handle weekly interpretation if requested
+    # The modified interpret_weekly will only run on the last day of the week
+    # or if a previous week was missed
     if Steps.INTERPRET_WEEKLY.value in steps:
-        # By default, only process current week and don't overwrite existing files
         await interpret_weekly(out_dir, SITES, current_week_only=True, overwrite=False)
 
     # Finally, deploy if requested
@@ -198,13 +232,14 @@ async def process_weekly_content(out_dir: Path, current_week_only: bool = True,
                              overwrite: bool = False, specific_weeks: List[str] = None):
     """
     Process weekly content and deploy the results.
+    This function now respects the last-day-of-week logic in interpret_weekly.
     
     :param out_dir: Directory containing the job directories
     :param current_week_only: If True, only process the current week
     :param overwrite: If True, overwrite existing weekly interpretations
     :param specific_weeks: If provided, only process these specific weeks
     """
-    # Interpret weekly content
+    # Interpret weekly content - will only run on last day of week or for missed weeks
     await interpret_weekly(
         out_dir, 
         SITES, 
@@ -213,7 +248,7 @@ async def process_weekly_content(out_dir: Path, current_week_only: bool = True,
         specific_weeks=specific_weeks
     )
 
-    # Output
+    # Output - always run the deployment step
     await format_and_deploy(out_dir)
 
 async def summarize_all(out_dir: Path, force: bool = False):

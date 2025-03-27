@@ -17,6 +17,32 @@ WEEK_KEY_FORMAT: str = "%Y-W%U"  # Year-week number format (e.g., "2025-W08")
 WEEK_DISPLAY_FORMAT: str = "Week of %b %d, %Y"  # Display format (e.g., "Week of Feb 24, 2025")
 TZ_DEFAULT: str = 'America/Los_Angeles'
 
+def is_last_day_of_week(dt: datetime = None, tz = None) -> bool:
+    """
+    Check if the given datetime is the last day of the week (Sunday).
+    If no datetime is provided, check the current day.
+    
+    :param dt: Datetime to check, defaults to current datetime
+    :param tz: Timezone to use - if None, uses the timezone from the provided datetime object
+               or UTC for the current time
+    :return: True if the datetime is the last day of the week, False otherwise
+    """
+    if dt is None:
+        # No datetime provided, use current time
+        dt = datetime.now(timezone.utc)
+        if tz is not None:
+            dt = dt.astimezone(tz)
+    # We have a datetime, but don't change its timezone unless explicitly requested
+    elif tz is not None:
+        # Only convert timezone if explicitly requested
+        dt = dt.astimezone(tz)
+    
+    # In Python's datetime weekday(), Monday is 0 and Sunday is 6
+    weekday_num = dt.weekday()
+    
+    # True if Sunday (weekday 6)
+    return weekday_num == 6
+
 def utc_timestamp() -> str:
     # get utc timestamp as short string
     return datetime.now(timezone.utc).isoformat(sep='T', timespec='seconds')
