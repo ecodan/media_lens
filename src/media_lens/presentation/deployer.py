@@ -1,5 +1,6 @@
 import logging
 import os
+import socket
 from pathlib import Path
 import paramiko
 
@@ -17,12 +18,16 @@ def upload_file(local_file: Path, remote_path: str):
     """
     # Get FTP credentials
     hostname = os.getenv("FTP_HOSTNAME")
+    # Check for IP fallback if hostname is set
+    ip_fallback = os.getenv("FTP_IP_FALLBACK")
     username = os.getenv("FTP_USERNAME")
     key_path = os.getenv("FTP_KEY_PATH")
-    port: int = int(os.getenv("FTP_PORT"))
+    port_str = os.getenv("FTP_PORT")
+    port: int = int(port_str) if port_str else 22
 
     try:
-        print(f"Attempting to connect to {hostname} on port {port}")
+        connect_hostname = hostname
+        print(f"Attempting to connect to {connect_hostname} on port {port}")
 
         # Create SSH client
         ssh = paramiko.SSHClient()
@@ -43,15 +48,42 @@ def upload_file(local_file: Path, remote_path: str):
         print("Key loaded successfully")
         print("Establishing connection...")
 
-        ssh.connect(
-            hostname=hostname,
-            username=username,
-            pkey=private_key,
-            port=port,
-            timeout=30,
-            allow_agent=False,
-            look_for_keys=False
-        )
+        connection_error = None
+        # Try with hostname first
+        try:
+            ssh.connect(
+                hostname=connect_hostname,
+                username=username,
+                pkey=private_key,
+                port=port,
+                timeout=30,
+                allow_agent=False,
+                look_for_keys=False
+            )
+        except socket.gaierror as e:
+            connection_error = e
+            # If we have an IP fallback and DNS resolution failed, try with the IP
+            if ip_fallback and "nodename nor servname provided, or not known" in str(e):
+                print(f"DNS resolution failed for {connect_hostname}. Trying IP fallback: {ip_fallback}")
+                try:
+                    ssh.connect(
+                        hostname=ip_fallback,
+                        username=username,
+                        pkey=private_key,
+                        port=port,
+                        timeout=30,
+                        allow_agent=False,
+                        look_for_keys=False
+                    )
+                    # If we successfully connected with IP, update connection_error to None
+                    connection_error = None
+                except Exception as ip_e:
+                    print(f"Failed to connect using IP fallback: {str(ip_e)}")
+                    # Keep the original error
+        
+        # If we still have an error, raise it
+        if connection_error:
+            raise connection_error
 
         print("Opening SFTP session...")
         sftp = ssh.open_sftp()
