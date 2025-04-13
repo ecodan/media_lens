@@ -1,7 +1,6 @@
 import argparse
 import asyncio
 import datetime
-import json
 import logging
 import os
 import re
@@ -12,6 +11,7 @@ from pathlib import Path
 from typing import List, Union, Optional
 
 import dotenv
+from dateparser.utils.strptime import strptime
 
 from src.media_lens.collection.harvester import Harvester
 from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL, get_working_dir, UTC_REGEX_PATTERN_BW_COMPAT, RunState
@@ -389,6 +389,52 @@ async def process_weekly_content(out_dir: Path, current_week_only: bool = True,
     # Deploy output
     await deploy_output(out_dir)
 
+
+async def reinterpret_weeks_from_date(out_dir: Path, start_date: datetime, overwrite: bool = True):
+    """
+    Reinterpret all weeks from a given start date up to the current week.
+    Will only process weeks that fall on Sundays.
+    
+    :param out_dir: Directory containing the job directories
+    :param start_date: The date to start reinterpreting from (will include the week containing this date)
+    :param overwrite: If True, overwrite existing weekly interpretations
+    """
+    from src.media_lens.common import get_week_key
+    
+    # Make sure start_date has timezone info
+    if start_date.tzinfo is None:
+        start_date = start_date.replace(tzinfo=datetime.timezone.utc)
+    
+    # Get the current date
+    current_date = datetime.datetime.now(datetime.timezone.utc)
+    
+    # Get week keys for each Sunday from start_date to current date
+    weeks_to_process = []
+    
+    # Start with the week containing the start date
+    week_date = start_date
+    while week_date <= current_date:
+        week_key = get_week_key(week_date)
+        if week_key not in weeks_to_process:
+            weeks_to_process.append(week_key)
+        
+        # Move to the next Sunday
+        days_until_sunday = (6 - week_date.weekday()) % 7
+        if days_until_sunday == 0:
+            days_until_sunday = 7  # If already Sunday, go to next Sunday
+        
+        week_date = week_date + datetime.timedelta(days=days_until_sunday)
+    
+    logger.info(f"Reinterpreting {len(weeks_to_process)} weeks: {', '.join(weeks_to_process)}")
+    
+    # Process all the weeks
+    await process_weekly_content(
+        out_dir=out_dir,
+        current_week_only=False,
+        overwrite=overwrite,
+        specific_weeks=weeks_to_process
+    )
+
 async def summarize_all(out_dir: Path, force: bool = False):
     logger.info(f"Summarizing extracted content in {out_dir}")
     summarizer: DailySummarizer = DailySummarizer(agent=ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL))
@@ -581,6 +627,26 @@ def main():
         help='Force resummarization even if summary exists'
     )
     
+    # Weekly reinterpretation command
+    reinterpret_parser = subparsers.add_parser('reinterpret-weeks', help='Reinterpret weekly content from a date')
+    reinterpret_parser.add_argument(
+        '-d', '--date',
+        type=str,
+        required=True,
+        help='Start date in YYYY-MM-DD format'
+    )
+    reinterpret_parser.add_argument(
+        '-o', '--output-dir',
+        type=Path,
+        required=True,
+        help='Output directory for artifacts'
+    )
+    reinterpret_parser.add_argument(
+        '--no-overwrite',
+        action='store_true',
+        help='Do not overwrite existing weekly interpretations'
+    )
+    
     # Stop command
     stop_parser = subparsers.add_parser('stop', help='Stop a currently running workflow')
     
@@ -617,6 +683,22 @@ def main():
         else:
             logger.info("Summarizing daily news without force")
             asyncio.run(summarize_all(out_dir))
+    elif args.command == 'reinterpret-weeks':
+        # Reinterpret weekly content from a specified date
+        try:
+            start_date = strptime(args.date, "%Y-%m-%d")
+            start_date = start_date.replace(tzinfo=datetime.timezone.utc)
+            logger.info(f"Reinterpreting weekly content from {args.date}")
+            
+            asyncio.run(reinterpret_weeks_from_date(
+                out_dir=args.output_dir,
+                start_date=start_date,
+                overwrite=not args.no_overwrite
+            ))
+            print(f"Weekly reinterpretation from {args.date} completed successfully")
+        except ValueError as e:
+            logger.error(f"Invalid date format: {str(e)}")
+            print(f"Error: {str(e)}")
     elif args.command == 'stop':
         # Request stop for the current run
         RunState.request_stop()
