@@ -1,10 +1,8 @@
 import asyncio
-import json
 import logging
 import os
 import re
 import time
-from pathlib import Path
 from urllib.parse import urlparse
 
 import dotenv
@@ -13,6 +11,7 @@ from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL
 from src.media_lens.extraction.agent import ClaudeLLMAgent, Agent
 from src.media_lens.extraction.headliner import LLMHeadlineExtractor
 from src.media_lens.extraction.collector import ArticleCollector
+from src.media_lens.storage_adapter import StorageAdapter
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -20,13 +19,13 @@ class ContextExtractor:
     """
     Orchestrates the extraction of headlines and articles from a set of HTML files.
     """
-    def __init__(self, working_dir: Path, agent: Agent):
+    def __init__(self, agent: Agent, working_dir=None):
         super().__init__()
+        self.storage = StorageAdapter()
         self.working_dir = working_dir
         agent: Agent = agent
         self.headline_extractor: LLMHeadlineExtractor = LLMHeadlineExtractor(
-            agent=agent,
-            artifacts_dir=working_dir
+            agent=agent
         )
         self.article_collector: ArticleCollector = ArticleCollector()
 
@@ -63,34 +62,49 @@ class ContextExtractor:
         :return:
         """
         logger.info(f"Starting extraction at {self.working_dir}")
-        # loop through all files to process in this batch
-        for file in self.working_dir.glob("*-clean.html"):
-            logger.info(f"Processing {file}")
-            with open(file, "r") as f:
-                content = f.read()
-                try:
-                    results: dict = self.headline_extractor.extract(content)
-                    if results.get("error"):
-                        logger.warning(f"error in extraction: {results["error"]}")
-                        continue
-                    # summarize stories
-                    for idx, result in enumerate(results.get("stories", [])):
-                        url: str = result.get("url")
-                        if url is not None:
-                            logger.info(f"Scraping article url: {url}")
-                            try:
-                                article: dict = await self.article_collector.extract_article(self._process_relative_url(url, file.name))
-                                if article is not None:
-                                    outfile: Path = self.working_dir / f"{file.stem}-article-{idx}.json"
-                                    result['article_text'] = str(outfile)
-                                    with open(outfile, "w") as aoutf:
-                                        aoutf.write(json.dumps(article))
-                            except Exception as e:
-                                logger.error(f"Failed to extract article: {url}")
-                    with open(self.working_dir / f"{file.stem}-extracted.json", "w") as outf:
-                        outf.write(json.dumps(results))
-                except Exception as e:
-                    logger.error(f"Failed to extract headlines from {file}: {e}")
+        
+        # Get the directory name (for cloud storage path)
+        dir_name = self.working_dir.name
+        
+        # Get clean HTML files using the storage adapter
+        clean_html_files = self.storage.get_files_by_pattern(dir_name, "*-clean.html")
+        
+        for file_path in clean_html_files:
+            logger.info(f"Processing {file_path}")
+            
+            # Read content using storage adapter
+            content = self.storage.read_text(file_path)
+            file_name = os.path.basename(file_path)
+            file_stem = os.path.splitext(file_name)[0]
+            
+            try:
+                results: dict = self.headline_extractor.extract(content)
+                if results.get("error"):
+                    logger.warning(f"error in extraction: {results['error']}")
+                    continue
+                    
+                # summarize stories
+                for idx, result in enumerate(results.get("stories", [])):
+                    url: str = result.get("url")
+                    if url is not None:
+                        logger.info(f"Scraping article url: {url}")
+                        try:
+                            article: dict = await self.article_collector.extract_article(self._process_relative_url(url, file_name))
+                            if article is not None:
+                                # Use storage adapter to write article
+                                article_file_path = f"{dir_name}/{file_stem}-article-{idx}.json"
+                                result['article_text'] = article_file_path
+                                self.storage.write_json(article_file_path, article)
+                        except Exception as e:
+                            logger.error(f"Failed to extract article: {url} - {str(e)}")
+                            
+                # Use storage adapter to write extracted data
+                extracted_file_path = f"{dir_name}/{file_stem}-extracted.json"
+                self.storage.write_json(extracted_file_path, results)
+                
+            except Exception as e:
+                logger.error(f"Failed to extract headlines from {file_path}: {str(e)}")
+                
             time.sleep(delay_between_sites_secs)
 
 
@@ -98,8 +112,7 @@ class ContextExtractor:
 async def main():
     agent: Agent = ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL)
     extractor: ContextExtractor = ContextExtractor(
-        agent=agent,
-        working_dir=Path(get_project_root() / "working/out/2025-02-22T20:49:31+00:00")
+        agent=agent
     )
     await extractor.run()
 

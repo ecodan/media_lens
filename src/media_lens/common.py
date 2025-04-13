@@ -4,6 +4,7 @@ import os
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Union
 
 import pytz
 
@@ -125,7 +126,35 @@ LOGGER_NAME: str = "MEDIA_LENS"
 LOGFILE_NAME: str = "media-lens-{ts}.log"
 LOG_FORMAT: str = "%(asctime)s [%(levelname)s] <%(filename)s:%(lineno)s - %(funcName)s()> %(message)s"
 
-def create_logger(name: str, logfile_path: Path = None) -> logging.Logger:
+# Global run state
+class RunState:
+    _should_stop = False
+    _current_run_id = None
+    
+    @classmethod
+    def stop_requested(cls) -> bool:
+        """Check if stop has been requested for the current run"""
+        return cls._should_stop
+    
+    @classmethod
+    def request_stop(cls) -> None:
+        """Request the current run to stop"""
+        cls._should_stop = True
+        logger = logging.getLogger(LOGGER_NAME)
+        logger.info(f"Stop requested for run {cls._current_run_id}")
+    
+    @classmethod
+    def reset(cls, run_id: str = None) -> None:
+        """Reset the stop flag, optionally setting a new run ID"""
+        cls._should_stop = False
+        cls._current_run_id = run_id
+        
+    @classmethod
+    def get_run_id(cls) -> str:
+        """Get the current run ID"""
+        return cls._current_run_id
+
+def create_logger(name: str, logfile_path: Union[str, Path] = None) -> logging.Logger:
     logger = logging.getLogger(name)
     formatter = logging.Formatter(LOG_FORMAT)
     logger.setLevel(logging.DEBUG)
@@ -135,6 +164,10 @@ def create_logger(name: str, logfile_path: Path = None) -> logging.Logger:
         handler.setFormatter(formatter)
         logger.addHandler(handler)
         if logfile_path:
+            # Convert string path to Path object if necessary
+            if isinstance(logfile_path, str):
+                logfile_path = Path(logfile_path)
+                
             if not logfile_path.parent.exists():
                 raise ValueError(f"Logfile path does not exist: {logfile_path.parent}")
             handler = RotatingFileHandler(

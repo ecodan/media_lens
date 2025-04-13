@@ -88,43 +88,46 @@ def organize_runs_by_week(job_dirs: List[Path], sites: List[str]) -> Dict[str, A
         
         # Process each site
         for site in sites:
+            from src.media_lens.storage_adapter import StorageAdapter
+            storage = StorageAdapter()
+            
+            # Get job directory name
+            job_dir_name = job_dir.name if hasattr(job_dir, 'name') else job_dir
+            
             # Load extracted data
-            extracted_path = job_dir / f"{site}-clean-extracted.json"
-            if not extracted_path.exists():
+            extracted_path = f"{job_dir_name}/{site}-clean-extracted.json"
+            if not storage.file_exists(extracted_path):
                 logger.warning(f"Extracted file not found: {extracted_path}")
                 continue
                 
-            with open(extracted_path, "r") as f:
-                extracted = json.load(f)
-                stories = extracted.get('stories', [])
-                
-                # Clean story URLs
-                for story in stories:
-                    story['url'] = convert_relative_url(story['url'], site)
-                
-                run_data['extracted'].append({
-                    'site': site,
-                    'stories': stories
-                })
+            extracted = storage.read_json(extracted_path)
+            stories = extracted.get('stories', [])
+            
+            # Clean story URLs
+            for story in stories:
+                story['url'] = convert_relative_url(story['url'], site)
+            
+            run_data['extracted'].append({
+                'site': site,
+                'stories': stories
+            })
 
             # Load news summary
-            news_summary_path = job_dir / f"daily_news.txt"
-            if news_summary_path.exists():
-                with open(news_summary_path, "r") as f:
-                    news_summary = f.read()
-                    run_data['news_summary'] = news_summary.replace("\n", "<br>")
+            news_summary_path = f"{job_dir_name}/daily_news.txt"
+            if storage.file_exists(news_summary_path):
+                news_summary = storage.read_text(news_summary_path)
+                run_data['news_summary'] = news_summary.replace("\n", "<br>")
 
             # Load interpreted data
-            interpreted_path = job_dir / f"{site}-interpreted.json"
-            if not interpreted_path.exists():
+            interpreted_path = f"{job_dir_name}/{site}-interpreted.json"
+            if not storage.file_exists(interpreted_path):
                 logger.warning(f"Interpreted file not found: {interpreted_path}")
             else:
-                with open(interpreted_path, "r") as f:
-                    interpreted = json.load(f)
-                    run_data['interpreted'].append({
-                        'site': site,
-                        'qa': interpreted
-                    })
+                interpreted = storage.read_json(interpreted_path)
+                run_data['interpreted'].append({
+                    'site': site,
+                    'qa': interpreted
+                })
 
         # Add this run to the appropriate week
         weeks_data[week_key].append(run_data)
@@ -184,41 +187,12 @@ def generate_weekly_content(week_data: Dict, sites: List[str], job_dirs_root: Pa
             reverse=True
         )
     
-    # Load weekly interpretation if available
-    weekly_file = Path(job_dirs_root) / f"weekly-{week_data['week_key']}-interpreted.json"
-    # list of dict { "question": str, "answers": { "<site>": "<answer>" } }
-    weekly_interpretation: List = []
-
-    def get_question_from_list(q: str, questions: List[Dict[str, Any]]) -> Union[Dict, None]:
-        for question in questions:
-            if question["question"] == q:
-                return question
-        return None
-
-    if weekly_file.exists():
-        try:
-            with open(weekly_file, "r") as f:
-                weekly_data = json.load(f)
-                if isinstance(weekly_data, list):
-                    for data in weekly_data:
-                        question_str: str = data["question"]
-                        question_dict: Dict = get_question_from_list(question_str, weekly_interpretation)
-                        if question_dict is None:
-                            question_dict = {"question": question_str, "answers": {}}
-                            weekly_interpretation.append(question_dict)
-                        question_dict["answers"][data['site']] = data["answer"]
-                else:
-                    logger.warning(f"Weekly interpretation has wrong format: {weekly_file}")
-        except (json.JSONDecodeError, FileNotFoundError) as e:
-            logger.warning(f"Could not load weekly interpretation from {weekly_file}: {str(e)}")
-    
-    # Format for template
+    # Format for template (without the weekly interpretation section)
     return {
         "week_key": week_data["week_key"],
         "week_display": week_data["week_display"],
         "sites": sites,
         "site_content": site_content,
-        "interpretation": weekly_interpretation,
         "runs": week_data["runs"]
     }
 
@@ -247,22 +221,78 @@ def generate_weekly_reports(weeks_data: Dict, sites: List[str], template_dir_pat
     return weekly_html
 
 
-def generate_index_page(weeks_data: Dict, template_dir_path: Path) -> str:
+def generate_index_page(weeks_data: Dict, template_dir_path: Path, job_dirs_root: Path) -> str:
     """
-    Generate an index page with links to all weekly reports.
+    Generate an index page with links to all weekly reports and the latest weekly summary.
     
     :param weeks_data: Dictionary containing data organized by week
     :param template_dir_path: Path to templates directory
+    :param job_dirs_root: Root directory containing all job directories
     :return: HTML content for the index page
     """
+    from src.media_lens.common import is_last_day_of_week, SITES
+    import datetime
+    
+    # Create base content dictionary
     index_content = {
         "report_timestamp": weeks_data["report_timestamp"],
         "weeks": weeks_data["weeks"]
     }
     
+    # Get the current date and check if it's Sunday
+    today = datetime.datetime.now(datetime.timezone.utc)
+    
+    # Try to load the weekly summary for the latest week with fallback
+    if weeks_data["weeks"]:
+        from src.media_lens.storage_adapter import StorageAdapter
+        storage = StorageAdapter()
+        
+        # Iterate through weeks (newest first) until we find an available interpretation
+        found_valid_weekly = False
+        for week in weeks_data["weeks"]:
+            week_key = week["week_key"]
+            weekly_file_path = f"weekly-{week_key}-interpreted.json"
+            
+            if storage.file_exists(weekly_file_path):
+                try:
+                    weekly_data = storage.read_json(weekly_file_path)
+                    if isinstance(weekly_data, list):
+                        # Process the weekly summary data for the template
+                        weekly_summary = []
+                        for data in weekly_data:
+                            question_str = data.get("question", "")
+                            site = data.get("site", "")
+                            answer = data.get("answer", "")
+                            
+                            # Find or create a question entry
+                            question_entry = next((q for q in weekly_summary if q["question"] == question_str), None)
+                            if question_entry is None:
+                                question_entry = {"question": question_str, "answers": {}}
+                                weekly_summary.append(question_entry)
+                            
+                            # Add answer for this site
+                            if site:
+                                question_entry["answers"][site] = answer
+                        
+                        # Add weekly summary to index content
+                        index_content["weekly_summary"] = weekly_summary
+                        index_content["weekly_summary_date"] = week["week_display"].replace("Week of ", "")
+                        index_content["sites"] = SITES
+                        
+                        logger.info(f"Added weekly summary to index page for week {week_key}")
+                        found_valid_weekly = True
+                        break  # Stop looking after finding first valid weekly summary
+                    else:
+                        logger.warning(f"Weekly interpretation has wrong format: {weekly_file_path}")
+                except (json.JSONDecodeError) as e:
+                    logger.warning(f"Could not load weekly interpretation from {weekly_file_path}: {str(e)}")
+                    
+        if not found_valid_weekly:
+            logger.warning("No valid weekly interpretation found for any week")
+    
     return generate_html_with_template(
         template_dir_path,
-        "index_template.j2",  # We'll create this template
+        "index_template.j2",
         index_content
     )
 
@@ -290,15 +320,17 @@ def generate_html_from_path(job_dirs_root: Path, sites: list[str], template_dir_
     # Generate weekly HTML files
     weekly_html = generate_weekly_reports(weeks_data, sites, template_dir_path, job_dirs_root)
     
+    from src.media_lens.storage_adapter import StorageAdapter
+    storage = StorageAdapter()
+    
     # Write weekly HTML files
     for week_key, html in weekly_html.items():
-        with open(job_dirs_root / f"medialens-{week_key}.html", "w") as f:
-            f.write(html)
+        weekly_file_path = f"medialens-{week_key}.html"
+        storage.write_text(weekly_file_path, html)
     
     # Generate and return index page
-    index_html = generate_index_page(weeks_data, template_dir_path)
-    with open(job_dirs_root / "medialens.html", "w") as f:
-        f.write(index_html)
+    index_html = generate_index_page(weeks_data, template_dir_path, job_dirs_root)
+    storage.write_text("medialens.html", index_html)
     
     return index_html
 

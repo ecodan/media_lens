@@ -99,6 +99,26 @@ python src/media_lens/runner.py
 
 # Run single module
 python -m src.media_lens.<module_path>
+
+# Start and Stop
+1. CLI:
+  # Start a run
+  python src/media_lens/runner.py run -s harvest extract deploy -o /path/to/output
+
+  # Stop a run (from another terminal)
+  python src/media_lens/runner.py stop
+
+2. HTTP API:
+  # Start a run
+  curl -X POST http://localhost:8080/run -H "Content-Type: application/json" -d '{"steps": ["harvest", "extract", "deploy"]}'
+
+  # Check status
+  curl http://localhost:8080/status
+
+  # Stop a run
+  curl -X POST http://localhost:8080/stop/your-run-id
+
+
 ```
 
 ## License

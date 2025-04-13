@@ -42,63 +42,6 @@
             border-radius: 0.25rem;
         }
 
-        .interpretation-section {
-            margin-bottom: 0;
-            padding: 1.5rem;
-            background-color: #f8f9fa;
-            border-radius: 0.25rem 0.25rem 0 0;
-            max-height: 400px;
-            overflow: hidden;
-            transition: max-height 0.3s ease-out;
-            position: relative;
-        }
-
-        .interpretation-section:not(.expanded)::after {
-            content: '';
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            height: 70px;
-            background: linear-gradient(transparent, #f8f9fa);
-            pointer-events: none;
-        }
-
-        .interpretation-section.expanded {
-            max-height: 2000px;
-        }
-
-        .toggle-interpretation {
-            display: block;
-            width: 100%;
-            text-align: center;
-            padding: 8px;
-            background-color: #e9ecef;
-            border: none;
-            border-radius: 0 0 0.25rem 0.25rem;
-            cursor: pointer;
-            margin-bottom: 2rem;
-            font-weight: 500;
-            color: #0d6efd;
-        }
-
-        .toggle-interpretation:hover {
-            background-color: #dee2e6;
-            color: #0a58ca;
-        }
-
-        .toggle-interpretation::after {
-            content: '▼';
-            display: inline-block;
-            margin-left: 5px;
-            font-size: 0.8em;
-            transition: transform 0.3s;
-        }
-
-        .interpretation-section.expanded + .toggle-interpretation::after {
-            transform: rotate(180deg);
-        }
-
         @media (max-width: 767.98px) {
             .data-row [class*="col-"] {
                 margin-bottom: 1rem;
@@ -143,31 +86,6 @@
     </div>
 
     <div class="container">
-        <!-- Weekly Interpretation Section -->
-        <div class="interpretation-section" id="interpretationSection">
-            <h3>Weekly Media Analysis</h3>
-            <div class="row g-0 header-row p-2">
-                <div class="col-12 col-md-3">Question</div>
-                {% for site in sites %}
-                <div class="col-12 col-md-3">{{ site }}</div>
-                {% endfor %}
-            </div>
-            {% for row in interpretation %}
-            <div class="row g-0 data-row p-2 border-top">
-                <div class="col-12 col-md-3 p-3">
-                    <b>{{ row.question }}</b>
-                </div>
-                {% for site in sites %}
-                <div class="col-12 col-md-3 p-3" data-label="{{ site}}">
-                    {{ row.answers[site] }}
-                </div>
-                {% endfor %}
-            </div>
-            {% endfor %}
-        </div>
-        <button class="toggle-interpretation" id="toggleInterpretation">Show More</button>
-        
-
         <!-- Table of Contents -->
         <div class="my-4">
             <h3>Jump to Date</h3>
@@ -250,13 +168,5 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-    document.getElementById('toggleInterpretation').addEventListener('click', function() {
-        const section = document.getElementById('interpretationSection');
-        const button = document.getElementById('toggleInterpretation');
-        section.classList.toggle('expanded');
-        button.textContent = section.classList.contains('expanded') ? 'Show Less' : 'Show More';
-    });
-    </script>
 </body>
 </html>

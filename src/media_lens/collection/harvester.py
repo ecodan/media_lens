@@ -1,5 +1,4 @@
 import asyncio
-from datetime import datetime, timezone
 import logging
 import traceback
 from pathlib import Path
@@ -9,6 +8,7 @@ import dotenv
 from src.media_lens.collection.cleaner import WebpageCleaner, cleaner_for_site
 from src.media_lens.collection.scraper import WebpageScraper
 from src.media_lens.common import LOGGER_NAME, utc_timestamp, get_project_root, SITES, UTC_REGEX_PATTERN_BW_COMPAT, UTC_DATE_PATTERN_BW_COMPAT, utc_bw_compat_timestamp
+from src.media_lens.storage_adapter import StorageAdapter
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -19,6 +19,7 @@ class Harvester(object):
 
     def __init__(self, outdir: Path):
         self.outdir = outdir
+        self.storage = StorageAdapter()
 
     async def re_harvest(self, job_dir: Path, sites: list[str]):
         """
@@ -31,9 +32,13 @@ class Harvester(object):
         logger.info(f"Reprocessing {len(sites)} sites in {job_dir.name}")
         for site in sites:
             try:
-                with open(job_dir / f"{site}.html", "r") as f:
-                    content: str = f.read()
-                    await self._clean_site(job_dir, content, site)
+                # Use the storage adapter to read content
+                content_path = f"{job_dir.name}/{site}.html"
+                if self.storage.file_exists(content_path):
+                    content: str = self.storage.read_text(content_path)
+                    await self._clean_site(job_dir.name, content, site)
+                else:
+                    logger.warning(f"Content file not found for {site} in {job_dir.name}")
             except Exception as e:
                 logger.error(f"Failed to re-harvest {site}: {e}")
                 traceback.print_exc()
@@ -47,26 +52,39 @@ class Harvester(object):
         """
         logger.info(f"Harvesting {len(sites)} sites")
         scraper: WebpageScraper = WebpageScraper()
-        artifacts_dir: Path = self.outdir / utc_bw_compat_timestamp()
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create a timestamped directory
+        timestamp = utc_bw_compat_timestamp()
+        directory_path = timestamp
+        self.storage.create_directory(directory_path)
+        
+        # For backward compatibility, we'll also create the local directory
+        # if we're using local storage
+        artifacts_dir: Path = self.outdir / timestamp
+        if not self.storage.use_cloud:
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+        
         for site in sites:
             try:
                 logger.info(f"Harvesting {site}")
                 content: str = await scraper.get_page_content(url="https://" + site, browser_type=browser_type)
-                logger.info(f"Writing {site} to {artifacts_dir}")
-                with open(str(artifacts_dir / f"{site}.html"), "w", encoding="utf-8") as f:
-                    f.write(content)
-                await self._clean_site(artifacts_dir, content, site)
+                
+                logger.info(f"Writing {site} to {directory_path}")
+                # Use the storage adapter to write content
+                file_path = f"{directory_path}/{site}.html"
+                self.storage.write_text(file_path, content, encoding="utf-8")
+                
+                await self._clean_site(directory_path, content, site)
             except Exception as e:
                 logger.error(f"Failed to harvest {site}: {e}")
                 traceback.print_exc()
+        
         return artifacts_dir
 
-    @staticmethod
-    async def _clean_site(artifacts_dir, content, site):
+    async def _clean_site(self, directory_path, content, site):
         """
-        Clean the content of the site and save it to the artifacts dir.
-        :param artifacts_dir: the directory to save the cleaned content
+        Clean the content of the site and save it to the directory.
+        :param directory_path: the directory path to save the cleaned content
         :param content: the HTML content to clean
         :param site: the site that produced the content
         :return:
@@ -76,9 +94,11 @@ class Harvester(object):
         cleaner: WebpageCleaner = WebpageCleaner(site_cleaner=cleaner_for_site(site))
         clean_content: str = cleaner.clean_html(content)
         clean_content = cleaner.filter_text_elements(clean_content)
-        logger.debug(f"Writing clean {site} to {artifacts_dir}")
-        with open(str(artifacts_dir / f"{site}-clean.html"), "w", encoding="utf-8") as f:
-            f.write(clean_content)
+        
+        logger.debug(f"Writing clean {site} to {directory_path}")
+        # Use the storage adapter to write cleaned content
+        clean_file_path = f"{directory_path}/{site}-clean.html"
+        self.storage.write_text(clean_file_path, clean_content, encoding="utf-8")
 
 
 ####################

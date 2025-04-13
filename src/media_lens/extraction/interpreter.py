@@ -128,8 +128,15 @@ class LLMWebsiteInterpreter:
     """
     Class to interpret and answer questions about the content of a website using a large language model (LLM).
     """
-    def __init__(self, agent: Agent):
+    def __init__(self, agent: Agent, storage=None, last_n_days=None):
         self.agent: Agent = agent
+        self.last_n_days = last_n_days  # If set, only use content from the last N days
+        # Initialize storage adapter if not provided
+        if storage is None:
+            from src.media_lens.storage_adapter import StorageAdapter
+            self.storage = StorageAdapter()
+        else:
+            self.storage = storage
 
     @retry(
         stop=stop_after_attempt(3),
@@ -149,9 +156,14 @@ class LLMWebsiteInterpreter:
         logger.info(f"Interpreting {len(files)} files")
         content: List[Dict] = []
         for file in files:
-            with open(file, "rb") as f:
-                article: dict = json.load(f)
-                content.append(article)
+            # Handle either Path objects or string paths
+            file_path = str(file) if hasattr(file, 'name') else file
+            # Extract only the relative path if it's an absolute path
+            if hasattr(file, 'name') and self.storage.local_root in file.parents:
+                file_path = str(file.relative_to(self.storage.local_root))
+            
+            article: dict = self.storage.read_json(file_path)
+            content.append(article)
         return self.interpret(content)
 
     def interpret(self, content: list) -> List:
@@ -172,9 +184,36 @@ class LLMWebsiteInterpreter:
                     content=payload
                 )
             )
-            content = json.loads(response)
-            return content
-
+            
+            # Sanitize response before parsing JSON
+            sanitized_response = None
+            if response.strip().startswith("["):
+                # assume JSON
+                sanitized_response = ''.join(char for char in response if ord(char) >= 32 or char in '\n\r\t')
+            elif "</thinking>" in response:
+                # assume CoT response
+                trimmed_response = re.search(r"</thinking>(.*)", response, re.DOTALL)
+                if trimmed_response:
+                    sanitized_response = ''.join(char for char in trimmed_response.group(1) if ord(char) >= 32 or char in '\n\r\t')
+            else:
+                # Neither JSON nor CoT - create an empty list with an error message
+                logger.warning(f"Unexpected response format: {response[:100]}...")
+                return [{
+                    "question": "Analysis could not be processed",
+                    "answer": "Due to technical limitations, the analysis could not be processed."
+                }]
+            
+            # Try to parse JSON if we have a sanitized response
+            if sanitized_response:
+                try:
+                    content = json.loads(sanitized_response)
+                    return content
+                except json.JSONDecodeError as json_err:
+                    logger.error(f"JSON parse error: {str(json_err)}")
+                    return []
+            else:
+                return []
+                
         except Exception as e:
             logger.error(f"Error extracting news content: {str(e)}")
             print(traceback.format_exc())
@@ -393,23 +432,23 @@ class LLMWebsiteInterpreter:
                 continue
 
             # Check if weekly interpretation already exists to avoid redoing work
-            weekly_file = job_dirs_root / f"weekly-{week_key}-interpreted.json"
+            weekly_file_path = f"weekly-{week_key}-interpreted.json"
+            weekly_file = job_dirs_root / weekly_file_path
 
-            if weekly_file.exists() and not overwrite:
+            if self.storage.file_exists(weekly_file_path) and not overwrite:
                 logger.info(f"Weekly interpretation for {week_key} already exists and overwrite=False")
                 
                 # Even though we're not overwriting, add the file to results for the return value
-                with open(weekly_file, "r") as f:
-                    try:
-                        existing_interpretation = json.load(f)
-                        week_record = {
-                            "week": week_key,
-                            "file_path": weekly_file,
-                            "interpretation": existing_interpretation
-                        }
-                        ret.append(week_record)
-                    except json.JSONDecodeError:
-                        logger.error(f"Failed to decode JSON from existing file {weekly_file}")
+                try:
+                    existing_interpretation = self.storage.read_json(weekly_file_path)
+                    week_record = {
+                        "week": week_key,
+                        "file_path": weekly_file,
+                        "interpretation": existing_interpretation
+                    }
+                    ret.append(week_record)
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to decode JSON from existing file {weekly_file_path}")
             else:
                 try:
                     # Interpret weekly content
@@ -447,25 +486,48 @@ class LLMWebsiteInterpreter:
                     ret.append(fallback)
         return ret
 
-    @staticmethod
-    def _gather_content(dirs, sites) -> dict:
+    def _gather_content(self, dirs, sites) -> dict:
         # Gather all content from all sites for this week
         all_content: dict = {}
+        
+        # If last_n_days is set, calculate the cutoff date
+        cutoff_date = None
+        if self.last_n_days:
+            cutoff_date = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=self.last_n_days)
+            logger.info(f"Limiting content to the last {self.last_n_days} days (since {cutoff_date.strftime('%Y-%m-%d')})")
+        
         for site in sites:
             site_content = []
             all_content[site] = site_content
 
             # Get all articles for this site from all job dirs in this week
             for job_dir in dirs:
-                article_files = list(job_dir.glob(f"{site}-clean-article-*.json"))
+                job_dir_name = job_dir.name if hasattr(job_dir, 'name') else job_dir
+                
+                # Check if this job directory is within our date range if cutoff_date is set
+                if cutoff_date:
+                    from src.media_lens.common import get_utc_datetime_from_timestamp
+                    try:
+                        job_datetime = get_utc_datetime_from_timestamp(job_dir_name)
+                        if job_datetime < cutoff_date:
+                            logger.debug(f"Skipping {job_dir_name} as it's before the cutoff date of {cutoff_date}")
+                            continue
+                    except ValueError:
+                        # If we can't parse the date, include it anyway
+                        logger.warning(f"Could not parse date from job dir {job_dir_name}, including anyway")
+                
+                # Use storage adapter to find article files
+                pattern = f"{site}-clean-article-*.json"
+                article_files = self.storage.get_files_by_pattern(job_dir_name, pattern)
+                
                 job_content: List = []
-                for file in sorted(article_files):
-                    with open(file, "r") as f:
-                        try:
-                            article = json.load(f)
-                            job_content.append(article)
-                        except json.JSONDecodeError:
-                            logger.error(f"Failed to decode JSON from {file}")
+                for file_path in sorted(article_files):
+                    try:
+                        article = self.storage.read_json(file_path)
+                        job_content.append(article)
+                    except json.JSONDecodeError:
+                        logger.error(f"Failed to decode JSON from {file_path}")
+                
                 site_content.append(job_content)
 
         return all_content
@@ -474,8 +536,10 @@ class LLMWebsiteInterpreter:
 ##########################
 # TEST
 def interpret_single_job(job_dir_root: Path, working_dir_name: str, site: str):
+    from src.media_lens.storage_adapter import StorageAdapter
     agent: Agent = ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL)
-    interpreter = LLMWebsiteInterpreter(agent=agent)
+    storage = StorageAdapter()
+    interpreter = LLMWebsiteInterpreter(agent=agent, storage=storage)
 
     # process job
     working_dir = job_dir_root / working_dir_name
@@ -483,14 +547,18 @@ def interpret_single_job(job_dir_root: Path, working_dir_name: str, site: str):
     print(json.dumps(interpreter.interpret_from_files(files), indent=2))
 
 def interpret_week(job_dirs_root: Path, sites: list[str], overwrite: bool = False, specific_weeks: List[str] = None, current_week_only: bool = True):
+    from src.media_lens.storage_adapter import StorageAdapter
     agent: Agent = ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL)
-    interpreter = LLMWebsiteInterpreter(agent=agent)
+    storage = StorageAdapter()
+    interpreter = LLMWebsiteInterpreter(agent=agent, storage=storage)
+    
     # process week
     content: list[dict] = interpreter.interpret_weeks(job_dirs_root=job_dirs_root, sites=sites, overwrite=overwrite, specific_weeks=specific_weeks, current_week_only=current_week_only)
     for result in content:
         print(json.dumps(result['interpretation'], indent=2))
-        with open(result['file_path'], "w") as f:
-            f.write(json.dumps(result['interpretation'], indent=2))
+        # Use storage adapter to write the file
+        file_name = os.path.basename(str(result['file_path']))
+        storage.write_text(file_name, json.dumps(result['interpretation'], indent=2))
 
 
 if __name__ == '__main__':

@@ -151,10 +151,9 @@ class LLMHeadlineExtractor(HeadlineExtractor):
     """
     Extractor class that uses a large language model (LLM) to extract headlines and key stories from HTML content.
     """
-    def __init__(self, agent: Agent, artifacts_dir: Path):
+    def __init__(self, agent: Agent):
         super().__init__()
         self.agent: Agent = agent
-        self.artifacts_dir = artifacts_dir
         self.stats = RetryStats()
 
     @retry(
@@ -242,8 +241,7 @@ def main(working_dir: Path):
         model=ANTHROPIC_MODEL
     )
     extractor: LLMHeadlineExtractor = LLMHeadlineExtractor(
-        agent=agent,
-        artifacts_dir=working_dir
+        agent=agent
     )
     for file in working_dir.glob("*-clean.html"):
         with open(file, "r") as f:

@@ -8,6 +8,7 @@ from typing import List, Dict
 import pytest
 
 from src.media_lens.common import utc_timestamp
+from src.media_lens.storage_adapter import StorageAdapter
 
 
 @pytest.fixture
@@ -59,13 +60,24 @@ def sample_article_json():
 
 
 @pytest.fixture
-def sample_job_directory(temp_dir):
-    """Create a sample job directory with test data files."""
+def test_storage_adapter(monkeypatch, temp_dir):
+    """Create a storage adapter instance for testing."""
+    # Set environment for local testing
+    monkeypatch.setenv("USE_CLOUD_STORAGE", "false")
+    monkeypatch.setenv("LOCAL_STORAGE_PATH", str(temp_dir))
+    
+    return StorageAdapter()
+
+@pytest.fixture
+def sample_job_directory(temp_dir, test_storage_adapter):
+    """Create a sample job directory with test data files using the storage adapter."""
     # Create job directory with timestamp name in the backwards-compatible format
     # Use a fixed timestamp for testing to ensure consistent week key generation
     fixed_timestamp = "2025-02-26_153000"  # Format: YYYY-MM-DD_HHMMSS
     job_dir = temp_dir / fixed_timestamp
     job_dir.mkdir(exist_ok=True)
+    
+    storage = test_storage_adapter
     
     # Sample site data
     sites = ["www.test1.com", "www.test2.com"]
@@ -73,12 +85,10 @@ def sample_job_directory(temp_dir):
     # Create sample files for each site
     for site in sites:
         # Create HTML file
-        with open(job_dir / f"{site}.html", "w") as f:
-            f.write("<html><body>Test content</body></html>")
+        storage.write_text(f"{fixed_timestamp}/{site}.html", "<html><body>Test content</body></html>")
         
         # Create cleaned HTML file
-        with open(job_dir / f"{site}-clean.html", "w") as f:
-            f.write("<html><body>Cleaned content</body></html>")
+        storage.write_text(f"{fixed_timestamp}/{site}-clean.html", "<html><body>Cleaned content</body></html>")
         
         # Create articles
         for i in range(3):
@@ -88,8 +98,7 @@ def sample_job_directory(temp_dir):
                 "url": f"/{site}/article-{i+1}"
             }
             
-            with open(job_dir / f"{site}-clean-article-{i}.json", "w") as f:
-                json.dump(article, f)
+            storage.write_json(f"{fixed_timestamp}/{site}-clean-article-{i}.json", article)
         
         # Create extracted data
         extracted = {
@@ -107,8 +116,7 @@ def sample_job_directory(temp_dir):
             ]
         }
         
-        with open(job_dir / f"{site}-clean-extracted.json", "w") as f:
-            json.dump(extracted, f)
+        storage.write_json(f"{fixed_timestamp}/{site}-clean-extracted.json", extracted)
         
         # Create interpreted data
         interpreted = [
@@ -122,8 +130,7 @@ def sample_job_directory(temp_dir):
             }
         ]
         
-        with open(job_dir / f"{site}-interpreted.json", "w") as f:
-            json.dump(interpreted, f)
+        storage.write_json(f"{fixed_timestamp}/{site}-interpreted.json", interpreted)
     
     return job_dir
 

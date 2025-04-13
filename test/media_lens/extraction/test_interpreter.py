@@ -9,24 +9,24 @@ from anthropic import APIError
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
 
 
-def test_interpret_from_files(temp_dir, mock_llm_agent):
+def test_interpret_from_files(temp_dir, mock_llm_agent, test_storage_adapter):
     """Test interpret_from_files method with sample files."""
     # Create test interpreter with mock agent
-    interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent)
+    interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent, storage=test_storage_adapter)
     
-    # Create test files
+    # Create test files using storage adapter
+    storage = test_storage_adapter
     file_paths = []
     for i in range(3):
-        file_path = temp_dir / f"test-article-{i}.json"
-        with open(file_path, "w") as f:
-            json.dump({
-                "title": f"Test Article {i}",
-                "text": f"This is the content of article {i}."
-            }, f)
-        file_paths.append(file_path)
+        file_path = f"test-article-{i}.json"
+        storage.write_json(file_path, {
+            "title": f"Test Article {i}",
+            "text": f"This is the content of article {i}."
+        })
+        file_paths.append(f"{temp_dir}/{file_path}")
     
     # Call interpret_from_files
-    result = interpreter.interpret_from_files(file_paths)
+    result = interpreter.interpret_from_files([Path(p) for p in file_paths])
     
     # Verify results
     assert isinstance(result, list)
@@ -35,10 +35,10 @@ def test_interpret_from_files(temp_dir, mock_llm_agent):
     assert "answer" in result[0]
 
 
-def test_interpret(mock_llm_agent):
+def test_interpret(mock_llm_agent, test_storage_adapter):
     """Test interpret method with sample content."""
-    # Create test interpreter with mock agent
-    interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent)
+    # Create test interpreter with mock agent and storage adapter
+    interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent, storage=test_storage_adapter)
     
     # Create test content
     content = [
@@ -63,13 +63,13 @@ def test_interpret(mock_llm_agent):
 
 
 @patch('src.media_lens.extraction.interpreter.json.loads')
-def test_interpret_with_json_error(mock_json_loads, mock_llm_agent):
+def test_interpret_with_json_error(mock_json_loads, mock_llm_agent, test_storage_adapter):
     """Test error handling when JSON parsing fails."""
     # Make json.loads raise an exception
     mock_json_loads.side_effect = json.JSONDecodeError("Invalid JSON", "", 0)
     
-    # Create test interpreter with mock agent
-    interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent)
+    # Create test interpreter with mock agent and storage adapter
+    interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent, storage=test_storage_adapter)
     
     # Create test content
     content = [
@@ -86,10 +86,10 @@ def test_interpret_with_json_error(mock_json_loads, mock_llm_agent):
     assert result == []
 
 
-def test_interpret_weeks_content(mock_llm_agent, temp_dir):
+def test_interpret_weeks_content(mock_llm_agent, temp_dir, test_storage_adapter):
     """Test interpret_site_content method."""
-    # Create test interpreter with mock agent
-    interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent)
+    # Create test interpreter with mock agent and storage adapter
+    interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent, storage=test_storage_adapter)
     
     # Create test content structure for a single site
     site = "www.test1.com"
@@ -115,10 +115,10 @@ def test_interpret_weeks_content(mock_llm_agent, temp_dir):
     assert "answer" in result[0]
 
 
-def test_interpret_weeks_content_error_handling(mock_llm_agent):
+def test_interpret_weeks_content_error_handling(mock_llm_agent, test_storage_adapter):
     """Test error handling in interpret_site_content."""
-    # Create test interpreter with mock agent
-    interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent)
+    # Create test interpreter with mock agent and storage adapter
+    interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent, storage=test_storage_adapter)
     
     # Create invalid content structure
     site = "www.test1.com"
