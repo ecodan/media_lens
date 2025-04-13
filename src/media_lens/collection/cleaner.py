@@ -70,7 +70,7 @@ class FoxNewsCleaner(PatternBasedCleaner):
 
 class CleanerConfig:
     SITE_PATTERNS = {
-        "www.cnn.com": ['[class*="headline"]'],
+        "www.cnn.com": ['[class*="headline"]', '[class*="title"]'],
         "www.bbc.com": ['h2[data-testid*="headline"]'],
         "www.foxnews.com": ["article", "[class*='info']"]
     }
