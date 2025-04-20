@@ -27,14 +27,33 @@ class StorageAdapter:
         self.local_root = Path(os.getenv('LOCAL_STORAGE_PATH', str(Path.cwd() / "working/out")))
         
         if self.use_cloud:
-            self.client = storage.Client()
-            # Create bucket if it doesn't exist (for emulator)
             try:
-                self.bucket = self.client.get_bucket(self.bucket_name)
+                # Explicitly check if credentials file exists before creating client
+                creds_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+                if creds_path and os.path.isfile(creds_path):
+                    logger.info(f"Using credentials from {creds_path}")
+                    self.client = storage.Client()
+                else:
+                    logger.info(f"Using default credentials (credentials file not found at {creds_path})")
+                    # Try to use default credentials, fall back to anonymous access if needed
+                    try:
+                        self.client = storage.Client()
+                    except Exception:
+                        logger.warning("Failed to get default credentials, falling back to anonymous client")
+                        self.client = storage.Client(project="anonymous")
+                
+                # Create bucket if it doesn't exist (for emulator)
+                try:
+                    self.bucket = self.client.get_bucket(self.bucket_name)
+                except Exception as e:
+                    logger.info(f"Bucket {self.bucket_name} doesn't exist, creating: {str(e)}")
+                    self.bucket = self.client.create_bucket(self.bucket_name)
+                    logger.info(f"Created bucket: {self.bucket_name}")
             except Exception as e:
-                logger.info(f"Bucket {self.bucket_name} doesn't exist, creating: {str(e)}")
-                self.bucket = self.client.create_bucket(self.bucket_name)
-                logger.info(f"Created bucket: {self.bucket_name}")
+                logger.error(f"Error initializing storage client: {str(e)}")
+                # Fall back to local storage if cloud fails
+                self.use_cloud = False
+                logger.info("Falling back to local storage due to error")
         
         logger.info(f"Storage adapter initialized. Using cloud: {self.use_cloud}")
     

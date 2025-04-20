@@ -18,7 +18,8 @@ services:
     volumes:
       - ./:/app
       - app_data:/app/working
-      - ./keys/medialens-d479cf10632d.json:/app/keys/medialens-d479cf10632d.json:ro
+      # Mount the entire keys directory
+      - ./keys:/app/keys:ro
       - ./.playwright:/app/.playwright
 #    depends_on:
 #      - storage
