@@ -7,7 +7,7 @@ services:
     environment:
       - GOOGLE_CLOUD_PROJECT=medialens
       - GOOGLE_APPLICATION_CREDENTIALS=/app/keys/medialens-d479cf10632d.json
-      - STORAGE_EMULATOR_HOST=http://storage:9023
+#      - STORAGE_EMULATOR_HOST=http://storage:9023
       - GCP_STORAGE_BUCKET=media-lens-storage
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - USE_CLOUD_STORAGE=true
@@ -19,8 +19,9 @@ services:
       - ./:/app
       - app_data:/app/working
       - ./keys/medialens-d479cf10632d.json:/app/keys/medialens-d479cf10632d.json:ro
-    depends_on:
-      - storage
+      - ./.playwright:/app/.playwright
+#    depends_on:
+#      - storage
 
   storage:
     image: oittaa/gcp-storage-emulator
