@@ -15,6 +15,7 @@ services:
       - FTP_USERNAME=${FTP_USERNAME:-user}
       - FTP_KEY_PATH=${FTP_KEY_PATH:-/app/keys/id_ed25519}
       - FTP_REMOTE_PATH=${FTP_REMOTE_PATH:-/var/www/html}
+      - USE_WORKLOAD_IDENTITY=true
     volumes:
       - ./:/app
       - app_data:/app/working

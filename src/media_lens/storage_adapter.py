@@ -28,18 +28,27 @@ class StorageAdapter:
         
         if self.use_cloud:
             try:
-                # Explicitly check if credentials file exists before creating client
+                # Determine authentication method
                 creds_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-                if creds_path and os.path.isfile(creds_path):
+                use_workload_identity = os.getenv('USE_WORKLOAD_IDENTITY', 'false').lower() == 'true'
+                
+                if use_workload_identity:
+                    # Using workload identity (VM's service account)
+                    logger.info("Using workload identity (VM's service account)")
+                    self.client = storage.Client()
+                elif creds_path and os.path.isfile(creds_path):
+                    # Using explicit credentials file
                     logger.info(f"Using credentials from {creds_path}")
                     self.client = storage.Client()
                 else:
-                    logger.info(f"Using default credentials (credentials file not found at {creds_path})")
-                    # Try to use default credentials, fall back to anonymous access if needed
+                    # Try default credentials
+                    logger.info(f"Using default credentials (no explicit config found)")
                     try:
                         self.client = storage.Client()
-                    except Exception:
-                        logger.warning("Failed to get default credentials, falling back to anonymous client")
+                    except Exception as e:
+                        logger.warning(f"Failed to get default credentials: {str(e)}")
+                        # Fall back to anonymous/unauthenticated client as last resort
+                        logger.warning("Falling back to anonymous client - limited functionality")
                         self.client = storage.Client(project="anonymous")
                 
                 # Create bucket if it doesn't exist (for emulator)

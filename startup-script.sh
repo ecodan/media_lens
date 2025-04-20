@@ -128,10 +128,37 @@ FTP_KEY_PATH=${FTP_KEY_PATH:-/app/keys/id_ed25519}
 FTP_REMOTE_PATH=${FTP_REMOTE_PATH:-/var/www/html}
 EOL
 
-# Copy service account key from GCS bucket
+# Set up service account key securely
 mkdir -p keys
-echo "Copying service account key from storage bucket..."
-gsutil cp gs://media-lens-storage/keys/${GOOGLE_APPLICATION_CREDENTIALS} keys/ || echo "Failed to copy service account key - check bucket permissions"
+echo "Setting up service account authentication..."
+
+# Option 1: Use workload identity federation (preferred for GCP)
+if [ -z "${GOOGLE_APPLICATION_CREDENTIALS}" ]; then
+  echo "No explicit credentials file specified, using workload identity"
+  # Add an environment variable to indicate we're using workload identity
+  echo "USE_WORKLOAD_IDENTITY=true" >> .env
+  # The container will inherit the VM's service account permissions
+  
+# Option 2: Access the key from Secret Manager
+else
+  echo "Fetching service account key from Secret Manager..."
+  KEY_NAME="medialens-sa-key"
+  
+  # Check if Secret Manager CLI is available
+  if command -v gcloud > /dev/null; then
+    gcloud secrets versions access latest --secret=${KEY_NAME} > keys/${GOOGLE_APPLICATION_CREDENTIALS} || \
+    echo "Failed to fetch key from Secret Manager - check permissions or create the secret with:"
+    echo "  cat YOUR_KEY_FILE | gcloud secrets create ${KEY_NAME} --data-file=- --replication-policy=automatic"
+  else
+    echo "gcloud command not available, please install Google Cloud SDK or manually add the key file"
+    echo "Failed to set up credentials" 
+  fi
+fi
+
+# Ensure the key file has proper permissions if it exists
+if [ -f keys/${GOOGLE_APPLICATION_CREDENTIALS} ]; then
+  chmod 600 keys/${GOOGLE_APPLICATION_CREDENTIALS}
+fi
 
 # Run the Docker container
 echo "Starting Docker container..."
