@@ -34,8 +34,21 @@ class WebpageScraper:
         
         try:
             playwright = await async_playwright().start()
-            # Launch browser in stealth mode
-            browser = await playwright.chromium.launch(headless=True)
+            # Launch browser in stealth mode with cloud-optimized settings
+            browser = await playwright.chromium.launch(
+                headless=True,
+                timeout=180000,  # 3 minute timeout for browser launch
+                args=[
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--single-process',
+                    '--disable-gpu'
+                ]
+            )
             
             if browser_type == WebpageScraper.BrowserType.DESKTOP:
                 context = await browser.new_context(

@@ -1,0 +1,33 @@
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - GOOGLE_CLOUD_PROJECT=medialens
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/keys/medialens-d479cf10632d.json
+      - STORAGE_EMULATOR_HOST=http://storage:9023
+      - GCP_STORAGE_BUCKET=media-lens-storage
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - USE_CLOUD_STORAGE=true
+      - FTP_HOSTNAME=${FTP_HOSTNAME:-localhost}
+      - FTP_USERNAME=${FTP_USERNAME:-user}
+      - FTP_KEY_PATH=${FTP_KEY_PATH:-/app/keys/id_ed25519}
+      - FTP_REMOTE_PATH=${FTP_REMOTE_PATH:-/var/www/html}
+    volumes:
+      - ./:/app
+      - app_data:/app/working
+      - ./keys/medialens-d479cf10632d.json:/app/keys/medialens-d479cf10632d.json:ro
+    depends_on:
+      - storage
+
+  storage:
+    image: oittaa/gcp-storage-emulator
+    ports:
+      - "9023:9023"
+    environment:
+      - PORT=9023
+
+volumes:
+  app_data:
