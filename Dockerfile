@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-# Install system dependencies for Playwright
+# Install system dependencies for Playwright and git
 RUN apt-get update && apt-get install -y \
     fonts-liberation \
     libasound2 \
@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y \
     libx11-xcb1 \
     libpangocairo-1.0-0 \
     libxss1 \
+    git \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
@@ -36,12 +37,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --root-user-action=ignore -r requirements.txt
 
 # Install Playwright browsers with system dependencies
-# Use PLAYWRIGHT_BROWSERS_PATH=0 to install browsers in the Docker image itself
-ENV PLAYWRIGHT_BROWSERS_PATH=/app/.playwright/browsers
+# Use PLAYWRIGHT_BROWSERS_PATH=0 to install browsers in the global location
+ENV PLAYWRIGHT_BROWSERS_PATH=0
 RUN python -m playwright install --with-deps chromium
-
-# Copy the application code (after installing browsers to improve caching)
-COPY . .
+RUN python -c "from playwright.sync_api import sync_playwright; sync_playwright().start()" || echo "Playwright initialization attempted"
 
 # Create directories
 RUN mkdir -p /app/working/out
@@ -55,9 +54,4 @@ ENV USE_CLOUD_STORAGE=true
 
 # Expose the port
 EXPOSE 8080
-
-# Use Gunicorn to run the Flask app
-# Increased timeout from 120 to 600 seconds to accommodate long-running page cleaning
-# Using sync worker since the app runs as a scheduled job, not a long-running service
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--timeout", "600", "--log-level", "info", "src.media_lens.cloud_entrypoint:app"]
 
