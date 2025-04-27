@@ -1,9 +1,11 @@
 #!/bin/bash
 set -e
 
+STARTUP_VERSION="1.4.1"
+
 # Log all commands for debugging
 exec > >(tee -a /var/log/startup-script.log) 2>&1
-echo "Starting startup script at $(date)"
+echo "Starting startup script at $(date) version: $(STARTUP_VERSION)"
 
 # Install Docker if not installed
 if ! command -v docker &> /dev/null; then
@@ -60,9 +62,13 @@ echo "Setting up Docker container..."
 docker stop media-lens || true
 docker rm media-lens || true
 
-# Pull the base image (in case it's in a registry and not local)
-echo "Pulling media-lens-base image..."
-docker pull media-lens-base || echo "Image not in registry, using local image"
+# Check if the image exists locally
+if ! sudo docker image inspect gcr.io/medialens/media-lens >/dev/null 2>&1; then
+  echo "Image not found locally, building..."
+  sudo docker build -t gcr.io/medialens/media-lens .
+else
+  echo "Using existing local Docker image"
+fi
 
 # Run the container
 echo "Starting media-lens container..."
@@ -77,8 +83,8 @@ docker run -d \
   -e GCP_STORAGE_BUCKET=media-lens-storage \
   -e USE_CLOUD_STORAGE=true \
   -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
-  media-lens-base \
-  gunicorn --bind 0.0.0.0:8080 --workers 1 --timeout 600 --log-level info src.media_lens.cloud_entrypoint:app
+  gcr.io/medialens/media-lens \
+  gunicorn --bind 0.0.0.0:8080 --workers 1 --timeout 600 --log-level info media_lens.cloud_entrypoint:app
 
 # Check if container started
 if docker ps | grep -q media-lens; then

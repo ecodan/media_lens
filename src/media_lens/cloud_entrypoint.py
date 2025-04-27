@@ -7,9 +7,9 @@ import asyncio
 from pathlib import Path
 from threading import Thread
 
-from src.media_lens.common import create_logger, LOGGER_NAME, get_working_dir, RunState
-from src.media_lens.runner import run, Steps, process_weekly_content, summarize_all
-from src.media_lens.storage_adapter import StorageAdapter
+from media_lens.common import create_logger, LOGGER_NAME, get_working_dir, RunState
+from media_lens.runner import run, Steps, process_weekly_content, summarize_all
+from media_lens.storage_adapter import StorageAdapter
 
 # Initialize Flask app
 app = Flask(__name__)
