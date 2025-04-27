@@ -76,12 +76,22 @@ Create a `.env` in the project root with the following keys:
 ```bash
 ANTHROPIC_API_KEY=
 
+# set these if using the "deploy" step
 FTP_HOSTNAME=
 FTP_USERNAME=
 FTP_KEY_PATH=
 FTP_PORT=
 FTP_PASSPHRASE=
 FTP_REMOTE_PATH=
+
+# set to true to use Google Cloud Storage
+USE_CLOUD_STORAGE=false
+LOCAL_STORAGE_PATH=$(pwd)/working/out
+
+# set these if USE_CLOUD_STORAGE is true
+GOOGLE_API_KEY=
+GOOGLE_APPLICATION_CREDENTIALS=
+
 ```
 
 
@@ -96,6 +106,12 @@ python src/media_lens/runner.py
 
 # Run full pipeline from harvest to deploy
 ./run_harvest_to_deploy.sh
+
+# run individual steps
+python src/media_lens/runner.py run -s <step1> <step2> ... -o /path/to/output
+
+# override default sites
+python src/media_lens/runner.py run -s <step1> <step2> -o /path/to/output --sites <site1> <site2>
 
 # Run single module
 python -m src.media_lens.<module_path>

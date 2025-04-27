@@ -14,7 +14,7 @@ import dotenv
 from dateparser.utils.strptime import strptime
 
 from src.media_lens.collection.harvester import Harvester
-from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL, get_working_dir, UTC_REGEX_PATTERN_BW_COMPAT, RunState
+from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL, get_working_dir, UTC_REGEX_PATTERN_BW_COMPAT, RunState, SITES_DEFAULT
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
@@ -612,6 +612,12 @@ def main():
         type=str,
         help='Optional run ID for tracking (auto-generated if not provided)'
     )
+    run_parser.add_argument(
+        "--sites",
+        nargs='+',
+        help="List of sites to include"
+    )  # Accepts multiple sites
+
 
     # Summarize daily news command with option to force resummarization if no summary present
     summarize_parser = subparsers.add_parser('summarize', help='Summarize daily news')
@@ -649,7 +655,8 @@ def main():
     
     # Stop command
     stop_parser = subparsers.add_parser('stop', help='Stop a currently running workflow')
-    
+
+    global SITES
 
     args = parser.parse_args()
     dotenv.load_dotenv()
@@ -659,6 +666,12 @@ def main():
 
     if args.command == 'run':
         steps = [Steps(step) for step in args.steps]
+        if args.sites:
+            SITES.extend(args.sites)
+        else:
+            SITES = SITES_DEFAULT
+
+        logger.info(f"Using sites: {', '.join(SITES)}")
         run_result = asyncio.run(run(
             steps=steps, 
             out_dir=args.output_dir, 

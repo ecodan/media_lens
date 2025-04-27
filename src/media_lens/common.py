@@ -112,11 +112,13 @@ def get_working_dir() -> Path:
     else:
         return Path(__file__).parent.parent.parent / "working"
 
-SITES: list[str] = [
+SITES_DEFAULT: list[str] = [
     'www.cnn.com',
     'www.bbc.com',
     'www.foxnews.com'
 ]
+
+SITES: list[str] = []
 
 # ANTHROPIC_MODEL: str = "claude-3-7-sonnet-latest"
 ANTHROPIC_MODEL: str = "claude-3-5-haiku-latest"

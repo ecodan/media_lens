@@ -25,7 +25,14 @@ class StorageAdapter:
         self.bucket_name = os.getenv("GCP_STORAGE_BUCKET", "media-lens-storage")
         self.use_cloud = os.getenv('USE_CLOUD_STORAGE', 'false').lower() == 'true'
         self.local_root = Path(os.getenv('LOCAL_STORAGE_PATH', str(Path.cwd() / "working/out")))
-        
+
+        logger.info(f"Using cloud storage: {self.use_cloud}")
+        if self.use_cloud:
+            logger.info(f"Cloud storage bucket: {self.bucket_name}")
+        else:
+            logger.info(f"Local storage path: {self.local_root}")
+
+        # Initialize cloud storage client if needed
         if self.use_cloud:
             try:
                 # Determine authentication method

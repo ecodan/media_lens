@@ -9,10 +9,10 @@ services:
       - GIT_BRANCH=${GIT_BRANCH:-"master"}
       - GOOGLE_CLOUD_PROJECT=medialens
       - GOOGLE_APPLICATION_CREDENTIALS=/app/keys/medialens-d479cf10632d.json
-#      - STORAGE_EMULATOR_HOST=http://storage:9023
+      - STORAGE_EMULATOR_HOST=${STORAGE_EMULATOR_HOST:-http://storage:9023}
       - GCP_STORAGE_BUCKET=media-lens-storage
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - USE_CLOUD_STORAGE=true
+      - USE_CLOUD_STORAGE=${USE_CLOUD_STORAGE:-true}
       - FTP_HOSTNAME=${FTP_HOSTNAME:-localhost}
       - FTP_USERNAME=${FTP_USERNAME:-user}
       - FTP_KEY_PATH=${FTP_KEY_PATH:-/app/keys/id_ed25519}
@@ -24,10 +24,10 @@ services:
       - app_data:/app/working
       # Mount the entire keys directory
       - ./keys:/app/keys:ro
-      - ./.playwright:/app/.playwright
-    command: ["/app/startup-script.sh"]
-#    depends_on:
-#      - storage
+    # The container-startup.sh script will be used by default (defined in Dockerfile)
+    # command: ["/app/container-startup.sh"]
+    depends_on:
+      - storage
 
   storage:
     image: oittaa/gcp-storage-emulator

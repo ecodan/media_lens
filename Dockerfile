@@ -36,11 +36,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir --root-user-action=ignore -r requirements.txt
 
-# Install Playwright browsers with system dependencies
-# Use PLAYWRIGHT_BROWSERS_PATH=0 to install browsers in the global location
+# Install Playwright and browsers with system dependencies
 ENV PLAYWRIGHT_BROWSERS_PATH=0
-RUN python -m playwright install --with-deps chromium
-RUN python -c "from playwright.sync_api import sync_playwright; sync_playwright().start()" || echo "Playwright initialization attempted"
+RUN python -m playwright install chromium
+RUN python -m playwright install-deps
+RUN python -m playwright init || echo "Playwright init attempted"
 
 # Create directories
 RUN mkdir -p /app/working/out
@@ -52,6 +52,20 @@ RUN mkdir -p /app/keys
 ENV PYTHONPATH=/app
 ENV USE_CLOUD_STORAGE=true
 
+# Copy source code 
+COPY src /app/src
+
+# Copy configs
+COPY config /app/config
+
+# Copy both startup scripts (one for VM, one for container)
+COPY startup-script.sh /app/vm-startup-script.sh
+COPY container-startup.sh /app/container-startup.sh
+RUN chmod +x /app/*.sh
+
 # Expose the port
 EXPOSE 8080
+
+# Set container startup script as default command
+CMD ["/app/container-startup.sh"]
 
