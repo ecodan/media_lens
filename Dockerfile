@@ -49,7 +49,7 @@ RUN mkdir -p /app/working/out
 RUN mkdir -p /app/keys
 
 # Set environment variables
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app/src
 ENV USE_CLOUD_STORAGE=true
 
 # Copy source code 

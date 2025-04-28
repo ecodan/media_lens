@@ -80,11 +80,12 @@ docker run -d \
   -e GIT_REPO_URL="${GIT_REPO_URL}" \
   -e GIT_BRANCH="${GIT_BRANCH}" \
   -e GOOGLE_CLOUD_PROJECT=medialens \
+  -e GOOGLE_APPLICATION_CREDENTIALS="/app/keys/${GOOGLE_APPLICATION_CREDENTIALS}" \
   -e GCP_STORAGE_BUCKET=media-lens-storage \
   -e USE_CLOUD_STORAGE=true \
+  -e USE_WORKLOAD_IDENTITY=true \
   -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
-  gcr.io/medialens/media-lens \
-  gunicorn --bind 0.0.0.0:8080 --workers 1 --timeout 600 --log-level info media_lens.cloud_entrypoint:app
+  gcr.io/medialens/media-lens
 
 # Check if container started
 if docker ps | grep -q media-lens; then

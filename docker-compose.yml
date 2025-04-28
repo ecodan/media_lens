@@ -5,10 +5,10 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - GIT_REPO_URL=${GIT_REPO_URL:-"https://github.com/yourusername/media-lens.git"}
+      - GIT_REPO_URL=${GIT_REPO_URL:-"https://github.com/ecodan/media-lens.git"}
       - GIT_BRANCH=${GIT_BRANCH:-"master"}
       - GOOGLE_CLOUD_PROJECT=medialens
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/keys/medialens-d479cf10632d.json
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/keys/${GOOGLE_APPLICATION_CREDENTIALS}
       - STORAGE_EMULATOR_HOST=${STORAGE_EMULATOR_HOST:-http://storage:9023}
       - GCP_STORAGE_BUCKET=media-lens-storage
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
