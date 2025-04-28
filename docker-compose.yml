@@ -29,8 +29,11 @@ services:
       # Mount the keys directory for credentials
       - ${KEYS_DIR:-./keys}:/app/keys:ro
     # The container-startup.sh script will be used by default (defined in Dockerfile)
+    # Only make app depend on storage when running locally with the storage emulator
     depends_on:
-      - storage
+      storage:
+        condition: service_started
+        required: false
     profiles:
       # This service is always enabled
       - standard
@@ -46,7 +49,6 @@ services:
       - PORT=9023
     profiles: 
       # This service is only enabled for local development, not in cloud
-      - standard
       - local
 
 volumes:

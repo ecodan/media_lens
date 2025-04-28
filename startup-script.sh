@@ -1,11 +1,11 @@
 #!/bin/bash
 set -e
 
-STARTUP_VERSION="1.5.1"
+STARTUP_VERSION="1.5.2"
 
 # Log all commands for debugging
 exec > >(tee -a /var/log/startup-script.log) 2>&1
-echo "Starting startup script at $(date) version: $(STARTUP_VERSION)"
+echo "Starting startup script at $(date) version: ${STARTUP_VERSION}"
 
 # Install Docker if not installed
 if ! command -v docker &> /dev/null; then
@@ -87,8 +87,8 @@ EOF
 echo "Starting services with docker-compose using cloud profile..."
 cd /app
 export WORKING_DIR="/app/working"
-export KEYS_DIR="/app/keys"
-docker-compose --profile cloud up -d
+# Start only the app service explicitly to avoid dependency issues
+docker-compose --profile cloud up -d app
 
 # Check if app container started
 container_name=$(docker-compose ps -q app 2>/dev/null)
