@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-STARTUP_VERSION="1.5.0"
+STARTUP_VERSION="1.5.1"
 
 # Log all commands for debugging
 exec > >(tee -a /var/log/startup-script.log) 2>&1
@@ -24,10 +24,11 @@ fi
 # Install Docker Compose if not installed
 if ! command -v docker-compose &> /dev/null; then
     echo "Docker Compose not found, installing..."
-    apt-get update
-    apt-get install -y docker-compose-plugin
-    # Create symlink for convenience
-    ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose 2>/dev/null || true
+    # Install Docker Compose standalone binary (more reliable across distributions)
+    COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | cut -d\" -f4)
+    echo "Installing Docker Compose version ${COMPOSE_VERSION}..."
+    curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    chmod +x /usr/local/bin/docker-compose
     echo "Docker Compose installed successfully"
 fi
 
