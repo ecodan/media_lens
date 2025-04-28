@@ -39,24 +39,25 @@ class StorageAdapter:
                 creds_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
                 use_workload_identity = os.getenv('USE_WORKLOAD_IDENTITY', 'false').lower() == 'true'
                 
+                # Log which authentication method we're using
                 if use_workload_identity:
-                    # Using workload identity (VM's service account)
                     logger.info("Using workload identity (VM's service account)")
-                    self.client = storage.Client()
                 elif creds_path and os.path.isfile(creds_path):
-                    # Using explicit credentials file
-                    logger.info(f"Using credentials from {creds_path}")
-                    self.client = storage.Client()
+                    logger.info(f"Using explicit credentials from {creds_path}")
+                elif creds_path:
+                    logger.warning(f"Credentials path provided but is not a file: {creds_path}")
+                    logger.info("Will try default credentials")
                 else:
-                    # Try default credentials
-                    logger.info(f"Using default credentials (no explicit config found)")
-                    try:
-                        self.client = storage.Client()
-                    except Exception as e:
-                        logger.warning(f"Failed to get default credentials: {str(e)}")
-                        # Fall back to anonymous/unauthenticated client as last resort
-                        logger.warning("Falling back to anonymous client - limited functionality")
-                        self.client = storage.Client(project="anonymous")
+                    logger.info("No explicit credentials found, using default credentials")
+                
+                # Create the storage client
+                try:
+                    self.client = storage.Client()
+                except Exception as e:
+                    logger.warning(f"Failed to create storage client: {str(e)}")
+                    # Fall back to anonymous/unauthenticated client as last resort
+                    logger.warning("Falling back to anonymous client - limited functionality")
+                    self.client = storage.Client(project="anonymous")
                 
                 # Create bucket if it doesn't exist (for emulator)
                 try:

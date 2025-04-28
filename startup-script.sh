@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-STARTUP_VERSION="1.4.1"
+STARTUP_VERSION="1.5.0"
 
 # Log all commands for debugging
 exec > >(tee -a /var/log/startup-script.log) 2>&1
@@ -19,6 +19,16 @@ if ! command -v docker &> /dev/null; then
     systemctl enable docker
     systemctl start docker
     echo "Docker installed successfully"
+fi
+
+# Install Docker Compose if not installed
+if ! command -v docker-compose &> /dev/null; then
+    echo "Docker Compose not found, installing..."
+    apt-get update
+    apt-get install -y docker-compose-plugin
+    # Create symlink for convenience
+    ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose 2>/dev/null || true
+    echo "Docker Compose installed successfully"
 fi
 
 # Make sure Docker is running
@@ -58,41 +68,36 @@ mkdir -p /app/working/out
 mkdir -p /app/keys
 
 echo "Setting up Docker container..."
-# Stop any existing container
-docker stop media-lens || true
-docker rm media-lens || true
+# Stop any existing containers
+docker-compose down 2>/dev/null || true
 
-# Check if the image exists locally
-if ! sudo docker image inspect gcr.io/medialens/media-lens >/dev/null 2>&1; then
-  echo "Image not found locally, building..."
-  sudo docker build -t gcr.io/medialens/media-lens .
-else
-  echo "Using existing local Docker image"
-fi
+# Create .env file for docker-compose with cloud-specific settings
+cat > /app/.env << EOF
+GIT_REPO_URL=${GIT_REPO_URL:-"https://github.com/ecodan/media_lens.git"}
+GIT_BRANCH=${GIT_BRANCH:-"master"}
+GOOGLE_CLOUD_PROJECT=medialens
+GCP_STORAGE_BUCKET=media-lens-storage
+USE_CLOUD_STORAGE=true
+USE_WORKLOAD_IDENTITY=true
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+EOF
 
-# Run the container
-echo "Starting media-lens container..."
-docker run -d \
-  --name media-lens \
-  -p 8080:8080 \
-  --volume /app/working:/app/working \
-  --volume /app/keys:/app/keys:ro \
-  -e GIT_REPO_URL="${GIT_REPO_URL}" \
-  -e GIT_BRANCH="${GIT_BRANCH}" \
-  -e GOOGLE_CLOUD_PROJECT=medialens \
-  -e GOOGLE_APPLICATION_CREDENTIALS="/app/keys/${GOOGLE_APPLICATION_CREDENTIALS}" \
-  -e GCP_STORAGE_BUCKET=media-lens-storage \
-  -e USE_CLOUD_STORAGE=true \
-  -e USE_WORKLOAD_IDENTITY=true \
-  -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
-  gcr.io/medialens/media-lens
+# Run docker-compose with the cloud profile to start only necessary services
+echo "Starting services with docker-compose using cloud profile..."
+cd /app
+export WORKING_DIR="/app/working"
+export KEYS_DIR="/app/keys"
+docker-compose --profile cloud up -d
+
+# Check if app container started
+container_name=$(docker-compose ps -q app 2>/dev/null)
 
 # Check if container started
-if docker ps | grep -q media-lens; then
+if [ -n "$container_name" ] && docker ps | grep -q "$container_name"; then
   echo "Container started successfully at $(date)"
 else
-  echo "Container failed to start. Docker logs:" 
-  docker logs media-lens || echo "No logs available"
+  echo "Container failed to start. Docker compose logs:" 
+  docker-compose logs || echo "No logs available"
   exit 1
 fi
 

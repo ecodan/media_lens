@@ -2,39 +2,52 @@
 services:
   app:
     build: .
+    container_name: media-lens
     ports:
       - "8080:8080"
     environment:
       - GIT_REPO_URL=${GIT_REPO_URL:-"https://github.com/ecodan/media-lens.git"}
       - GIT_BRANCH=${GIT_BRANCH:-"master"}
-      - GOOGLE_CLOUD_PROJECT=medialens
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/keys/${GOOGLE_APPLICATION_CREDENTIALS}
-      - STORAGE_EMULATOR_HOST=${STORAGE_EMULATOR_HOST:-http://storage:9023}
-      - GCP_STORAGE_BUCKET=media-lens-storage
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-medialens}
+      - GCP_STORAGE_BUCKET=${GCP_STORAGE_BUCKET:-media-lens-storage}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - USE_CLOUD_STORAGE=${USE_CLOUD_STORAGE:-true}
+      - USE_WORKLOAD_IDENTITY=${USE_WORKLOAD_IDENTITY:-true}
+      # These variables have different defaults depending on environment:
+      # - For cloud (production): Use workload identity, no storage emulator
+      # - For local (development): Use storage emulator, explicit credentials
+      - STORAGE_EMULATOR_HOST=${STORAGE_EMULATOR_HOST:-}
       - FTP_HOSTNAME=${FTP_HOSTNAME:-localhost}
       - FTP_USERNAME=${FTP_USERNAME:-user}
       - FTP_KEY_PATH=${FTP_KEY_PATH:-/app/keys/id_ed25519}
       - FTP_REMOTE_PATH=${FTP_REMOTE_PATH:-/var/www/html}
-      - USE_WORKLOAD_IDENTITY=true
+      # Only set credentials path if explicitly provided and not using workload identity
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
     volumes:
-      # Don't mount the code directory anymore, code will be cloned at startup
-      # - ./:/app
-      - app_data:/app/working
-      # Mount the entire keys directory
-      - ./keys:/app/keys:ro
+      # Mount working directory for output files
+      - ${WORKING_DIR:-./working}:/app/working
+      # Mount the keys directory for credentials
+      - ${KEYS_DIR:-./keys}:/app/keys:ro
     # The container-startup.sh script will be used by default (defined in Dockerfile)
-    # command: ["/app/container-startup.sh"]
     depends_on:
       - storage
+    profiles:
+      # This service is always enabled
+      - standard
+      - cloud
+      - local
 
   storage:
     image: oittaa/gcp-storage-emulator
+    container_name: media-lens-storage
     ports:
       - "9023:9023"
     environment:
       - PORT=9023
+    profiles: 
+      # This service is only enabled for local development, not in cloud
+      - standard
+      - local
 
 volumes:
   app_data:
