@@ -72,12 +72,34 @@ echo "Setting up Docker container..."
 # Stop any existing containers
 docker-compose down 2>/dev/null || true
 
+# Retrieve ANTHROPIC_API_KEY from Secret Manager if not already set
+if [ -z "${ANTHROPIC_API_KEY}" ]; then
+    echo "ANTHROPIC_API_KEY not found in environment, retrieving from Secret Manager..."
+    # Get the Google Cloud project ID from metadata server if not already set
+    if [ -z "${GOOGLE_CLOUD_PROJECT}" ]; then
+        GOOGLE_CLOUD_PROJECT=$(curl -s "http://metadata.google.internal/computeMetadata/v1/project/project-id" -H "Metadata-Flavor: Google")
+    fi
+    
+    # Check if gcloud is installed
+    if command -v gcloud &> /dev/null; then
+        # Use the VM's service account to access the secret
+        ANTHROPIC_API_KEY=$(gcloud secrets versions access latest --secret="anthropic-api-key" --project="${GOOGLE_CLOUD_PROJECT:-medialens}")
+        if [ -z "${ANTHROPIC_API_KEY}" ]; then
+            echo "WARNING: Failed to retrieve ANTHROPIC_API_KEY from Secret Manager"
+        else
+            echo "Successfully retrieved ANTHROPIC_API_KEY from Secret Manager"
+        fi
+    else
+        echo "WARNING: gcloud not installed, cannot retrieve ANTHROPIC_API_KEY from Secret Manager"
+    fi
+fi
+
 # Create .env file for docker-compose with cloud-specific settings
 cat > /app/.env << EOF
 GIT_REPO_URL=${GIT_REPO_URL:-"https://github.com/ecodan/media_lens.git"}
 GIT_BRANCH=${GIT_BRANCH:-"master"}
-GOOGLE_CLOUD_PROJECT=medialens
-GCP_STORAGE_BUCKET=media-lens-storage
+GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-medialens}
+GCP_STORAGE_BUCKET=${GCP_STORAGE_BUCKET:-media-lens-storage}
 USE_CLOUD_STORAGE=true
 USE_WORKLOAD_IDENTITY=true
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
