@@ -38,7 +38,7 @@ class StorageAdapter:
                 # Determine authentication method
                 creds_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
                 use_workload_identity = os.getenv('USE_WORKLOAD_IDENTITY', 'false').lower() == 'true'
-                
+
                 # Log which authentication method we're using
                 if use_workload_identity:
                     logger.info("Using workload identity (VM's service account)")
@@ -49,7 +49,7 @@ class StorageAdapter:
                     logger.info("Will try default credentials")
                 else:
                     logger.info("No explicit credentials found, using default credentials")
-                
+
                 # Create the storage client
                 try:
                     self.client = storage.Client()
@@ -58,7 +58,7 @@ class StorageAdapter:
                     # Fall back to anonymous/unauthenticated client as last resort
                     logger.warning("Falling back to anonymous client - limited functionality")
                     self.client = storage.Client(project="anonymous")
-                
+
                 # Create bucket if it doesn't exist (for emulator)
                 try:
                     self.bucket = self.client.get_bucket(self.bucket_name)

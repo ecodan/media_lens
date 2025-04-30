@@ -27,4 +27,5 @@ wheels/
 
 *~
 *.bak
-*.backup
+*.backup**/__pycache__/
+*.pyc
