@@ -28,6 +28,8 @@ services:
       - ${WORKING_DIR:-./working}:/app/working
       # Mount the keys directory for credentials
       - ${KEYS_DIR:-./keys}:/app/keys:ro
+      # Mount the VM's application default credentials for workload identity
+      - /etc/google/auth:/etc/google/auth:ro
     # The container-startup.sh script will be used by default (defined in Dockerfile)
     # Only make app depend on storage when running locally with the storage emulator
     depends_on:
