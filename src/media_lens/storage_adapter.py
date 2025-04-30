@@ -35,8 +35,11 @@ class StorageAdapter:
                 logger.info(f"Bucket {self.bucket_name} doesn't exist, creating: {str(e)}")
                 self.bucket = self.client.create_bucket(self.bucket_name)
                 logger.info(f"Created bucket: {self.bucket_name}")
-        
-        logger.info(f"Storage adapter initialized. Using cloud: {self.use_cloud}")
+
+        if self.use_cloud:
+            logger.info(f"Storage adapter initialized. Using cloud: {self.use_cloud} with bucket: {self.bucket_name}")
+        else:
+            logger.info(f"Storage adapter initialized. Using local storage at: {self.local_root}")
     
     def write_text(self, path: Union[str, Path], content: str, encoding: str = "utf-8") -> str:
         """
