@@ -38,10 +38,19 @@ class StorageAdapter:
                 # Determine authentication method
                 creds_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
                 use_workload_identity = os.getenv('USE_WORKLOAD_IDENTITY', 'false').lower() == 'true'
+                project_id = os.getenv('GOOGLE_CLOUD_PROJECT', 'medialens')
 
                 # Log which authentication method we're using
                 if use_workload_identity:
                     logger.info("Using workload identity (VM's service account)")
+                    # Check common credential paths for debugging
+                    for path in ['/var/run/secrets/cloud.google.com', '/var/google-cloud/auth', '/etc/google/auth']:
+                        if os.path.exists(path):
+                            logger.info(f"Found credential directory: {path}")
+                            for file in os.listdir(path):
+                                logger.info(f"  - {file}")
+                        else:
+                            logger.info(f"Credential path not found: {path}")
                 elif creds_path and os.path.isfile(creds_path):
                     logger.info(f"Using explicit credentials from {creds_path}")
                 elif creds_path:
@@ -52,12 +61,27 @@ class StorageAdapter:
 
                 # Create the storage client
                 try:
-                    self.client = storage.Client()
+                    # Explicitly specify project ID when using workload identity
+                    if use_workload_identity:
+                        logger.info(f"Creating storage client with explicit project ID: {project_id}")
+                        self.client = storage.Client(project=project_id)
+                    else:
+                        self.client = storage.Client()
                 except Exception as e:
                     logger.warning(f"Failed to create storage client: {str(e)}")
-                    # Fall back to anonymous/unauthenticated client as last resort
-                    logger.warning("Falling back to anonymous client - limited functionality")
-                    self.client = storage.Client(project="anonymous")
+                    logger.warning("Falling back to explicit service account key if available")
+                    
+                    # Try service account key from keys directory as fallback
+                    key_file = '/app/keys/medialens-d479cf10632d.json'
+                    if os.path.exists(key_file):
+                        logger.info(f"Found service account key file: {key_file}")
+                        from google.oauth2 import service_account
+                        credentials = service_account.Credentials.from_service_account_file(key_file)
+                        self.client = storage.Client(credentials=credentials, project=project_id)
+                    else:
+                        # Fall back to anonymous client as last resort
+                        logger.warning("No service account key found, falling back to anonymous client")
+                        self.client = storage.Client(project="anonymous")
 
                 # Create bucket if it doesn't exist (for emulator)
                 try:

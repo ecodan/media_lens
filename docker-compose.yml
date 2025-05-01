@@ -29,6 +29,9 @@ services:
       # Mount the keys directory for credentials
       - ${KEYS_DIR:-./keys}:/app/keys:ro
       # Mount the VM's application default credentials for workload identity
+      - /var/run/secrets/cloud.google.com:/var/run/secrets/cloud.google.com:ro
+      # Alternative credential paths that might exist on VM
+      - /var/google-cloud/auth:/var/google-cloud/auth:ro
       - /etc/google/auth:/etc/google/auth:ro
     # The container-startup.sh script will be used by default (defined in Dockerfile)
     # Only make app depend on storage when running locally with the storage emulator
