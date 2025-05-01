@@ -3,6 +3,7 @@ import json
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union, BinaryIO
+from google.auth import default
 
 # Import cloud storage conditionally
 if os.getenv('USE_CLOUD_STORAGE', 'false').lower() == 'true':
@@ -43,14 +44,6 @@ class StorageAdapter:
                 # Log which authentication method we're using
                 if use_workload_identity:
                     logger.info("Using workload identity (VM's service account)")
-                    # Check common credential paths for debugging
-                    for path in ['/var/run/secrets/cloud.google.com', '/var/google-cloud/auth', '/etc/google/auth']:
-                        if os.path.exists(path):
-                            logger.info(f"Found credential directory: {path}")
-                            for file in os.listdir(path):
-                                logger.info(f"  - {file}")
-                        else:
-                            logger.info(f"Credential path not found: {path}")
                 elif creds_path and os.path.isfile(creds_path):
                     logger.info(f"Using explicit credentials from {creds_path}")
                 elif creds_path:
@@ -63,8 +56,9 @@ class StorageAdapter:
                 try:
                     # Explicitly specify project ID when using workload identity
                     if use_workload_identity:
-                        logger.info(f"Creating storage client with explicit project ID: {project_id}")
-                        self.client = storage.Client(project=project_id)
+                        logger.info(f"Creating storage client with default credentials and project ID: {project_id}")
+                        credentials, _ = default()
+                        self.client = storage.Client(credentials=credentials, project=project_id)
                     else:
                         self.client = storage.Client()
                 except Exception as e:
@@ -86,8 +80,9 @@ class StorageAdapter:
                 # Create bucket if it doesn't exist (for emulator)
                 try:
                     self.bucket = self.client.get_bucket(self.bucket_name)
+                    logger.info(f"Using existing bucket: {self.bucket_name}")
                 except Exception as e:
-                    logger.info(f"Bucket {self.bucket_name} doesn't exist, creating: {str(e)}")
+                    logger.error(f"Unable to access bucket {self.bucket_name}: {str(e)}")
                     self.bucket = self.client.create_bucket(self.bucket_name)
                     logger.info(f"Created bucket: {self.bucket_name}")
             except Exception as e:
