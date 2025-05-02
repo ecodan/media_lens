@@ -115,31 +115,4 @@ docker-compose --profile cloud up -d app
 # Check if app container started
 container_name=$(docker-compose ps -q app 2>/dev/null)
 
-# Check if container started - more robust check
-if [ -n "$container_name" ]; then
-  echo "Container ID: $container_name"
-  if docker ps | grep -q "$container_name"; then
-    echo "Container started successfully at $(date)"
-  else
-    # Check with docker-compose ps instead which is more reliable
-    if docker-compose ps | grep -q "app.*running"; then
-      echo "Container started successfully at $(date) (confirmed via docker-compose ps)"
-    else
-      echo "Container failed to start. Docker compose logs:" 
-      docker-compose logs || echo "No logs available"
-      exit 1
-    fi
-  fi
-else
-  echo "Container ID not found, checking with docker-compose ps"
-  # Additional check with docker-compose ps
-  if docker-compose ps | grep -q "app.*running"; then
-    echo "Container started successfully at $(date) (confirmed via docker-compose ps)"
-  else
-    echo "Container failed to start. Docker compose logs:" 
-    docker-compose logs || echo "No logs available"
-    exit 1
-  fi
-fi
-
 echo "Startup script completed at $(date)"

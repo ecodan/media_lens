@@ -2,6 +2,7 @@
 services:
   app:
     build: .
+    image: python/media-lens:1.0
     container_name: media-lens
     ports:
       - "8080:8080"
