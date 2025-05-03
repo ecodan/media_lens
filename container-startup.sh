@@ -9,9 +9,15 @@ mkdir -p /app/working/out
 # Make sure the Python path is set correctly
 export PYTHONPATH=/app/src
 
-# Check for GCP Workload Identity
+# Check for GCP credentials
 echo "Checking for GCP credentials..."
-if [ "$USE_WORKLOAD_IDENTITY" = "true" ]; then
+
+# Check if explicit credentials file is provided through env var
+if [ -n "$GOOGLE_APPLICATION_CREDENTIALS" ] && [ -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+    echo "Using credentials from: $GOOGLE_APPLICATION_CREDENTIALS"
+    # For debugging only - don't log credentials in production
+    echo "Credentials file exists and is readable"
+elif [ "$USE_WORKLOAD_IDENTITY" = "true" ]; then
     echo "Workload identity enabled, checking VM credential paths"
     # Check common credential paths and create symlinks if needed
     for src_path in /var/run/secrets/cloud.google.com/*; do
@@ -29,6 +35,18 @@ if [ "$USE_WORKLOAD_IDENTITY" = "true" ]; then
     if [ -f "/var/run/secrets/cloud.google.com/service-account.json" ]; then
         echo "Setting GOOGLE_APPLICATION_CREDENTIALS to /var/run/secrets/cloud.google.com/service-account.json"
         export GOOGLE_APPLICATION_CREDENTIALS="/var/run/secrets/cloud.google.com/service-account.json"
+    fi
+else
+    # Check if any JSON files exist in the /app/keys directory
+    echo "Looking for credentials in /app/keys directory..."
+    key_files=$(ls -1 /app/keys/*.json 2>/dev/null)
+    if [ -n "$key_files" ]; then
+        # Use the first JSON file found
+        cred_file=$(echo "$key_files" | head -1)
+        echo "Found credential file: $cred_file"
+        export GOOGLE_APPLICATION_CREDENTIALS="$cred_file"
+    else
+        echo "WARNING: No credential files found in /app/keys directory"
     fi
 fi
 

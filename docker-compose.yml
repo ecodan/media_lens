@@ -13,7 +13,7 @@ services:
       - GCP_STORAGE_BUCKET=${GCP_STORAGE_BUCKET:-media-lens-storage}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - USE_CLOUD_STORAGE=${USE_CLOUD_STORAGE:-true}
-      - USE_WORKLOAD_IDENTITY=${USE_WORKLOAD_IDENTITY:-true}
+      - USE_WORKLOAD_IDENTITY=${USE_WORKLOAD_IDENTITY:-false}
       # These variables have different defaults depending on environment:
       # - For cloud (production): Use workload identity, no storage emulator
       # - For local (development): Use storage emulator, explicit credentials
@@ -22,8 +22,8 @@ services:
       - FTP_USERNAME=${FTP_USERNAME:-user}
       - FTP_KEY_PATH=${FTP_KEY_PATH:-/app/keys/id_ed25519}
       - FTP_REMOTE_PATH=${FTP_REMOTE_PATH:-/var/www/html}
-      # Only set credentials path if explicitly provided and not using workload identity
-      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
+      # Path to service account credentials file, use VM environment variable with fallback
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-/app/keys/medialens-service-account.json}
     volumes:
       # Mount working directory for output files
       - ${WORKING_DIR:-./working}:/app/working

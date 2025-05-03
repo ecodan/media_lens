@@ -41,22 +41,19 @@ class StorageAdapter:
                 use_workload_identity = os.getenv('USE_WORKLOAD_IDENTITY', 'false').lower() == 'true'
                 project_id = os.getenv('GOOGLE_CLOUD_PROJECT', 'medialens')
 
-                # Log which authentication method we're using
-                if use_workload_identity:
-                    logger.info("Using workload identity (VM's service account)")
-                elif creds_path and os.path.isfile(creds_path):
-                    logger.info(f"Using explicit credentials from {creds_path}")
-                elif creds_path:
-                    logger.warning(f"Credentials path provided but is not a file: {creds_path}")
-                    logger.info("Will try default credentials")
-                else:
-                    logger.info("No explicit credentials found, using default credentials")
-
-                # Create the storage client
+                # First try to use explicit service account file from the keys directory
                 try:
-                    # Explicitly specify project ID when using workload identity
-                    if use_workload_identity:
+                    # Check if credential file exists at the path provided by GOOGLE_APPLICATION_CREDENTIALS
+                    if creds_path and os.path.isfile(creds_path):
+                        logger.info(f"Using explicit credentials from {creds_path}")
+                        from google.oauth2 import service_account
+                        credentials = service_account.Credentials.from_service_account_file(creds_path)
+                        self.client = storage.Client(credentials=credentials, project=project_id)
+                    # If workload identity is enabled and no explicit credential file
+                    elif use_workload_identity:
+                        logger.info("Using workload identity (VM's service account)")
                         logger.info(f"Creating storage client with default credentials and project ID: {project_id}")
+                        
                         # Add explicit environment variable for Google Application Default Credentials discovery
                         if 'GOOGLE_APPLICATION_CREDENTIALS' not in os.environ:
                             logger.info("GOOGLE_APPLICATION_CREDENTIALS not set, checking VM credential paths")
@@ -75,21 +72,34 @@ class StorageAdapter:
                         credentials, _ = default()
                         self.client = storage.Client(credentials=credentials, project=project_id)
                     else:
+                        # If no explicit credentials and not using workload identity, try default client
+                        logger.info("No explicit credentials found, trying default client")
                         self.client = storage.Client()
                 except Exception as e:
                     logger.warning(f"Failed to create storage client: {str(e)}")
-                    logger.warning("Falling back to explicit service account key if available")
+                    logger.warning("Searching for credential files in /app/keys directory")
                     
-                    # Try service account key from keys directory as fallback
-                    key_file = '/app/keys/medialens-d479cf10632d.json'
-                    if os.path.exists(key_file):
-                        logger.info(f"Found service account key file: {key_file}")
-                        from google.oauth2 import service_account
-                        credentials = service_account.Credentials.from_service_account_file(key_file)
-                        self.client = storage.Client(credentials=credentials, project=project_id)
-                    else:
+                    # Search for any JSON credential files in the keys directory
+                    found_key = False
+                    keys_dir = '/app/keys'
+                    if os.path.isdir(keys_dir):
+                        for filename in os.listdir(keys_dir):
+                            if filename.endswith('.json'):
+                                key_file = os.path.join(keys_dir, filename)
+                                logger.info(f"Trying service account key file: {key_file}")
+                                try:
+                                    from google.oauth2 import service_account
+                                    credentials = service_account.Credentials.from_service_account_file(key_file)
+                                    self.client = storage.Client(credentials=credentials, project=project_id)
+                                    found_key = True
+                                    logger.info(f"Successfully authenticated with {key_file}")
+                                    break
+                                except Exception as key_error:
+                                    logger.warning(f"Failed to use {key_file}: {str(key_error)}")
+                    
+                    if not found_key:
                         # Fall back to anonymous client as last resort
-                        logger.warning("No service account key found, falling back to anonymous client")
+                        logger.warning("No valid service account keys found, falling back to anonymous client")
                         self.client = storage.Client(project="anonymous")
 
                 # Create bucket if it doesn't exist (for emulator)

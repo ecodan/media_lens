@@ -43,7 +43,12 @@ GIT_BRANCH=${GIT_BRANCH:-"master"}
 
 # Create app directory if it doesn't exist
 mkdir -p /app
+mkdir -p /app/keys
 cd /app
+
+# Ensure the keys directory exists and has proper permissions
+echo "Setting up credentials directory..."
+chmod 700 /app/keys
 
 # Clear app directory of any previous content except directories we want to preserve
 echo "Cleaning app directory..."
@@ -94,6 +99,18 @@ if [ -z "${ANTHROPIC_API_KEY}" ]; then
     fi
 fi
 
+# Check for service account JSON files in the keys directory
+SERVICE_ACCOUNT_FILE=$(ls -1 /app/keys/*.json 2>/dev/null | head -1)
+if [ -n "$SERVICE_ACCOUNT_FILE" ]; then
+    echo "Found service account file: $SERVICE_ACCOUNT_FILE"
+    export GOOGLE_APPLICATION_CREDENTIALS="$SERVICE_ACCOUNT_FILE"
+    export USE_WORKLOAD_IDENTITY=false
+else 
+    echo "No service account JSON files found in /app/keys. Falling back to workload identity."
+    export USE_WORKLOAD_IDENTITY=true
+    export GOOGLE_APPLICATION_CREDENTIALS=""
+fi
+
 # Create .env file for docker-compose with cloud-specific settings
 cat > /app/.env << EOF
 GIT_REPO_URL=${GIT_REPO_URL:-"https://github.com/ecodan/media_lens.git"}
@@ -101,7 +118,8 @@ GIT_BRANCH=${GIT_BRANCH:-"master"}
 GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-medialens}
 GCP_STORAGE_BUCKET=${GCP_STORAGE_BUCKET:-media-lens-storage}
 USE_CLOUD_STORAGE=true
-USE_WORKLOAD_IDENTITY=true
+USE_WORKLOAD_IDENTITY=${USE_WORKLOAD_IDENTITY}
+GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 EOF
 
