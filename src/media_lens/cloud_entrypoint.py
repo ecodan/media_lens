@@ -83,7 +83,11 @@ def run_pipeline():
         
         # Convert string steps to enum
         steps = [Steps(step) for step in requested_steps]
-        
+
+        global SITES
+        if data.get('sites'):
+            SITES = data.get('sites')
+
         # Generate a unique run ID
         run_id = data.get('run_id', str(uuid.uuid4())[:8])
         

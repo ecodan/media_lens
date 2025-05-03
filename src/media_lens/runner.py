@@ -667,9 +667,7 @@ def main():
     if args.command == 'run':
         steps = [Steps(step) for step in args.steps]
         if args.sites:
-            SITES.extend(args.sites)
-        else:
-            SITES = SITES_DEFAULT
+            SITES = args.sites
 
         logger.info(f"Using sites: {', '.join(SITES)}")
         run_result = asyncio.run(run(

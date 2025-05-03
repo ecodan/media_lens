@@ -118,7 +118,7 @@ SITES_DEFAULT: list[str] = [
     'www.foxnews.com'
 ]
 
-SITES: list[str] = []
+SITES: list[str] = SITES_DEFAULT
 
 # ANTHROPIC_MODEL: str = "claude-3-7-sonnet-latest"
 ANTHROPIC_MODEL: str = "claude-3-5-haiku-latest"
