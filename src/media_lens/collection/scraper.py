@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import traceback
 from enum import Enum
 from pathlib import Path
@@ -30,24 +31,35 @@ class WebpageScraper:
         logger.info(f"Fetching webpage content: {url} with browser type: {browser_type.name}")
         playwright = None
         browser = None
+        context = None
+        page = None
         content = None
         
         try:
             playwright = await async_playwright().start()
-            # Launch browser in stealth mode with cloud-optimized settings
+            
+            # Different browser args for containerized vs local environments
+            base_args = [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--disable-gpu'
+            ]
+            
+            # Add container-specific args if running in Docker/cloud environment
+            if os.getenv('USE_CLOUD_STORAGE') == 'true' or os.path.exists('/.dockerenv'):
+                base_args.extend(['--no-zygote', '--single-process'])
+                logger.debug("Using container-optimized browser args")
+            else:
+                logger.debug("Using local development browser args")
+            
+            # Launch browser in stealth mode with environment-optimized settings
             browser = await playwright.chromium.launch(
                 headless=True,
                 timeout=180000,  # 3 minute timeout for browser launch
-                args=[
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-accelerated-2d-canvas',
-                    '--no-first-run',
-                    '--no-zygote',
-                    '--single-process',
-                    '--disable-gpu'
-                ]
+                args=base_args
             )
             
             if browser_type == WebpageScraper.BrowserType.DESKTOP:
@@ -81,27 +93,49 @@ class WebpageScraper:
                 logger.debug("loading page...")
                 # Navigate to the page with increased timeout
                 await page.goto(url, wait_until='networkidle', timeout=120000)  # 120 seconds timeout
+                logger.debug("page loaded, waiting for DOM content...")
 
                 # Wait for content to load with a longer timeout
                 await page.wait_for_load_state('domcontentloaded', timeout=120000)  # 120 seconds timeout
+                logger.debug("DOM content loaded, getting content...")
+                
+                # Get the content if no exceptions occurred
+                content = await page.content()
+                logger.debug(f"Content retrieved successfully, length: {len(content)}")
             except asyncio.TimeoutError:
-                logger.warning(f"Timeout while loading page: {url}; scraping what content is available.")
+                logger.warning(f"Timeout while loading page: {url}; attempting to get partial content.")
+                try:
+                    content = await page.content()
+                except Exception as content_error:
+                    logger.error(f"Could not get content after timeout: {str(content_error)}")
+                    content = None
             except Exception as e:
-                logger.warning(f"Error while loading page: {url}; {str(e)}; scraping what content is available.")
-
-            # Get page content (may be truncated in case of timeout)
-            content = await page.content()
-            logger.debug("finished loading page.")
-            
-            return content
+                logger.warning(f"Error while loading page: {url}; {str(e)}; attempting to get partial content.")
+                try:
+                    content = await page.content()
+                except Exception as content_error:
+                    logger.error(f"Could not get content after error: {str(content_error)}")
+                    content = None
 
         except Exception as e:
             logger.error(f"Error fetching page content: {str(e)}")
             traceback.print_exc()
-            raise e
+            content = None
             
         finally:
             # Properly close resources in reverse order
+            if page:
+                try:
+                    await page.close()
+                except Exception as e:
+                    logger.warning(f"Error closing page: {str(e)}")
+                    
+            if context:
+                try:
+                    await context.close()
+                except Exception as e:
+                    logger.warning(f"Error closing context: {str(e)}")
+                    
             if browser:
                 try:
                     await browser.close()
@@ -113,6 +147,8 @@ class WebpageScraper:
                     await playwright.stop()
                 except Exception as e:
                     logger.warning(f"Error stopping playwright: {str(e)}")
+        
+        return content
 
 
 ######################################################

@@ -134,6 +134,24 @@ class TestStorageAdapter:
         test_files = storage_adapter.list_files("test")
         assert len(test_files) == 1
         assert "test/file3.txt" in test_files
+
+    def test_list_directories(self, storage_adapter):
+        """Test listing directories"""
+        # Create some test files in different directories
+        storage_adapter.write_text("file1.txt", "content1")  # Root level
+        storage_adapter.write_text("dir1/file2.txt", "content2")
+        storage_adapter.write_text("dir2/subdir/file3.txt", "content3")
+        storage_adapter.write_text("dir2/file4.txt", "content4")
+        storage_adapter.write_text("2024-01-01T10:30:00.000Z/file5.txt", "content5")  # UTC pattern
+        
+        # List all directories
+        all_dirs = storage_adapter.list_directories()
+        expected_dirs = {"dir1", "dir2", "dir2/subdir", "2024-01-01T10:30:00.000Z"}
+        assert set(all_dirs) == expected_dirs
+        
+        # List directories with prefix
+        dir2_dirs = storage_adapter.list_directories("dir2")
+        assert "dir2/subdir" in dir2_dirs
     
     def test_get_files_by_pattern(self, storage_adapter):
         """Test finding files by pattern"""

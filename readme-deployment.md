@@ -176,33 +176,40 @@ Due to the complexity of Playwright and its browser dependencies, Media Lens is 
      --schedule="0 6 * * *" \
      --uri="https://compute.googleapis.com/compute/v1/projects/medialens/zones/us-central1-a/instances/media-lens-vm/start" \
      --http-method=POST \
-     --oauth-service-account-email=458497915682-compute@developer.gserviceaccount.com
+     --oauth-service-account-email=458497915682-compute@developer.gserviceaccount.com \
+     --location="us-central1"
    
    # Schedule VM to stop after jobs complete
    gcloud scheduler jobs create http stop-media-lens-vm \
      --schedule="0 9 * * *" \
      --uri="https://compute.googleapis.com/compute/v1/projects/medialens/zones/us-central1-a/instances/media-lens-vm/stop" \
      --http-method=POST \
-     --oauth-service-account-email=458497915682-compute@developer.gserviceaccount.com
-   
-   # Schedule application runs (HTTP trigger to the app running on the VM)
-   gcloud scheduler jobs create http daily-media-lens-run \
-     --schedule="0 7 * * *" \
-     --uri="http://EXTERNAL_IP:8080/run" \
-     --http-method=POST \
-     --message-body='{"steps":["harvest","extract","summarize_daily","interpret_weekly","format"]}' \
-     --headers="Content-Type=application/json"
-   
-   # Weekly processing (Sunday)
-   gcloud scheduler jobs create http weekly-media-lens-processing \
-     --schedule="0 6 * * 0" \
-     --uri="http://EXTERNAL_IP:8080/weekly" \
-     --http-method=POST \
-     --message-body='{"current_week_only":true}' \
-     --headers="Content-Type=application/json"
-   ```
-   Replace `EXTERNAL_IP` with your VM's external IP address.
+     --oauth-service-account-email=458497915682-compute@developer.gserviceaccount.com \
+     --location="us-central1"
 
+   # Set up a cron job on the VM to trigger the application
+   # SSH into the VM
+   sudo crontab -e
+   # Add the following line to run the application every day at 7 AM PT
+   0 16 * * * /usr/local/bin/run-container-job.sh
+   ```
+   Create run_container-job.sh in the VM with the following content:
+   ```bash
+   #!/bin/bash
+   curl -X POST \
+     -H "Content-Type: application/json" \
+     -d '{
+       "steps": [
+         "harvest",
+         "extract",
+         "summarize_daily",
+         "interpret_weekly",
+         "format",
+         "deploy"
+       ]
+     }' \
+   http://0.0.0.0:8080/run
+    ```
 6. **Test the Deployment**
    ```bash
    # Check if the application is running

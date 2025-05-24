@@ -8,7 +8,7 @@ from threading import Thread
 
 from src.media_lens.common import create_logger, LOGGER_NAME, get_working_dir, RunState
 from src.media_lens.runner import run, Steps, process_weekly_content, summarize_all
-from src.media_lens.storage_adapter import StorageAdapter
+from src.media_lens.storage import shared_storage
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -20,8 +20,8 @@ logger = logging.getLogger(LOGGER_NAME)
 # Set working directory
 WORKING_DIR = Path(get_working_dir()) / "out"
 
-# Create storage adapter
-storage = StorageAdapter()
+# Use shared storage adapter
+storage = shared_storage
 
 # Dictionary to track running tasks
 active_runs = {}

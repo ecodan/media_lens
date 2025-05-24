@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 
 import dotenv
 from jinja2 import Environment, FileSystemLoader
+from src.media_lens.storage import shared_storage
+import datetime
 
 from src.media_lens.common import (
     UTC_REGEX_PATTERN_BW_COMPAT, LOGGER_NAME, SITES, get_project_root,
@@ -88,8 +90,7 @@ def organize_runs_by_week(job_dirs: List[Path], sites: List[str]) -> Dict[str, A
         
         # Process each site
         for site in sites:
-            from src.media_lens.storage_adapter import StorageAdapter
-            storage = StorageAdapter()
+            storage = shared_storage
             
             # Get job directory name
             job_dir_name = job_dir.name if hasattr(job_dir, 'name') else job_dir
@@ -157,7 +158,7 @@ def organize_runs_by_week(job_dirs: List[Path], sites: List[str]) -> Dict[str, A
     return result
 
 
-def generate_weekly_content(week_data: Dict, sites: List[str], job_dirs_root: Path) -> Dict:
+def generate_weekly_content(week_data: Dict, sites: List[str]) -> Dict:
     """
     Process all runs in a week to create a weekly summary.
     
@@ -197,21 +198,20 @@ def generate_weekly_content(week_data: Dict, sites: List[str], job_dirs_root: Pa
     }
 
 
-def generate_weekly_reports(weeks_data: Dict, sites: List[str], template_dir_path: Path, job_dirs_root: Path) -> Dict[str, str]:
+def generate_weekly_reports(weeks_data: Dict, sites: List[str], template_dir_path: Path) -> Dict[str, str]:
     """
     Generate HTML reports for each week.
     
     :param weeks_data: Dictionary containing data organized by week
     :param sites: List of media sites
     :param template_dir_path: Path to templates directory
-    :param job_dirs_root: Root directory containing all job directories
     :return: Dictionary mapping week keys to HTML content
     """
     weekly_html = {}
     
     # Generate HTML for each week
     for week in weeks_data["weeks"]:
-        week_content = generate_weekly_content(week, sites, job_dirs_root)
+        week_content = generate_weekly_content(week, sites)
         weekly_html[week["week_key"]] = generate_html_with_template(
             template_dir_path,
             "weekly_template.j2",
@@ -221,18 +221,14 @@ def generate_weekly_reports(weeks_data: Dict, sites: List[str], template_dir_pat
     return weekly_html
 
 
-def generate_index_page(weeks_data: Dict, template_dir_path: Path, job_dirs_root: Path) -> str:
+def generate_index_page(weeks_data: Dict, template_dir_path: Path) -> str:
     """
     Generate an index page with links to all weekly reports and the latest weekly summary.
     
     :param weeks_data: Dictionary containing data organized by week
     :param template_dir_path: Path to templates directory
-    :param job_dirs_root: Root directory containing all job directories
     :return: HTML content for the index page
     """
-    from src.media_lens.common import is_last_day_of_week, SITES
-    import datetime
-    
     # Create base content dictionary
     index_content = {
         "report_timestamp": weeks_data["report_timestamp"],
@@ -244,8 +240,7 @@ def generate_index_page(weeks_data: Dict, template_dir_path: Path, job_dirs_root
     
     # Try to load the weekly summary for the latest week with fallback
     if weeks_data["weeks"]:
-        from src.media_lens.storage_adapter import StorageAdapter
-        storage = StorageAdapter()
+        storage = shared_storage
         
         # Iterate through weeks (newest first) until we find an available interpretation
         found_valid_weekly = False
@@ -297,31 +292,34 @@ def generate_index_page(weeks_data: Dict, template_dir_path: Path, job_dirs_root
     )
 
 
-def generate_html_from_path(job_dirs_root: Path, sites: list[str], template_dir_path: Path) -> str:
+def generate_html_from_path(sites: list[str], template_dir_path: Path) -> str:
     """
     Revised method to generate HTML from a path, now handling weekly organization.
     
-    :param job_dirs_root: the parent dir of all job dirs with UTC dates as names
     :param sites: list of media sites that will be covered
     :param template_dir_path: full path to location of Jinja2 templates
     :return: HTML content for the index page
     """
-    logger.info(f"Generating HTML for {len(sites)} sites in {job_dirs_root}")
+    logger.info(f"Generating HTML for {len(sites)} sites")
+    storage = shared_storage
+
+    # Get all job directories using the storage adapter
+    all_dirs = storage.list_directories()
+    dir_names = set()
     
-    # Get all job directories
-    dirs = [
-        node for node in job_dirs_root.iterdir() 
-        if node.is_dir() and re.match(UTC_REGEX_PATTERN_BW_COMPAT, node.name)
-    ]
+    # Filter directory names that match UTC pattern
+    for dir_name in all_dirs:
+        if re.match(UTC_REGEX_PATTERN_BW_COMPAT, dir_name):
+            dir_names.add(dir_name)
+                
+    # Convert to Path objects for backward compatibility
+    dirs = [Path(storage.get_absolute_path(dir_name)) for dir_name in dir_names]
     
     # Organize runs by week
     weeks_data = organize_runs_by_week(dirs, sites)
     
     # Generate weekly HTML files
-    weekly_html = generate_weekly_reports(weeks_data, sites, template_dir_path, job_dirs_root)
-    
-    from src.media_lens.storage_adapter import StorageAdapter
-    storage = StorageAdapter()
+    weekly_html = generate_weekly_reports(weeks_data, sites, template_dir_path)
     
     # Write weekly HTML files
     for week_key, html in weekly_html.items():
@@ -329,7 +327,7 @@ def generate_html_from_path(job_dirs_root: Path, sites: list[str], template_dir_
         storage.write_text(weekly_file_path, html)
     
     # Generate and return index page
-    index_html = generate_index_page(weeks_data, template_dir_path, job_dirs_root)
+    index_html = generate_index_page(weeks_data, template_dir_path)
     storage.write_text("medialens.html", index_html)
     
     return index_html
@@ -337,12 +335,12 @@ def generate_html_from_path(job_dirs_root: Path, sites: list[str], template_dir_
 
 #########################################
 # TEST
-def main(job_dirs_root: Path):
+def main():
     template_dir_path: Path = Path(get_project_root() / "config/templates")
-    html: str = generate_html_from_path(job_dirs_root, SITES, template_dir_path)
+    html: str = generate_html_from_path(SITES, template_dir_path)
     # Weekly HTML files and index file are written inside generate_html_from_path
 
 if __name__ == '__main__':
     dotenv.load_dotenv()
     logging.basicConfig(level=logging.INFO)
-    main(Path(get_project_root() / "working/out"))
+    main()

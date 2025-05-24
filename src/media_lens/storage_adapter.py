@@ -23,9 +23,10 @@ class StorageAdapter:
     between local and cloud storage backends.
     """
     def __init__(self):
-        self.bucket_name = os.getenv("GCP_STORAGE_BUCKET", "media-lens-storage")
+        self.bucket_name = os.getenv("GCP_STORAGE_BUCKET")
         self.use_cloud = os.getenv('USE_CLOUD_STORAGE', 'false').lower() == 'true'
-        self.local_root = Path(os.getenv('LOCAL_STORAGE_PATH', str(Path.cwd() / "working/out")))
+        local_path = os.getenv('LOCAL_STORAGE_PATH', './working')
+        self.local_root = Path(local_path)
 
         logger.info(f"Using cloud storage: {self.use_cloud}")
         if self.use_cloud:
@@ -39,7 +40,7 @@ class StorageAdapter:
                 # Determine authentication method
                 creds_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
                 use_workload_identity = os.getenv('USE_WORKLOAD_IDENTITY', 'false').lower() == 'true'
-                project_id = os.getenv('GOOGLE_CLOUD_PROJECT', 'medialens')
+                project_id = os.getenv('GOOGLE_CLOUD_PROJECT')
 
                 # First try to use explicit service account file from the keys directory
                 try:
@@ -284,6 +285,32 @@ class StorageAdapter:
                     rel_path = p.relative_to(self.local_root)
                     files.append(str(rel_path))
             return files
+
+    def list_directories(self, prefix: str = "") -> List[str]:
+        """List directories in storage with the given prefix"""
+        if self.use_cloud:
+            # For cloud storage, directories are implicit from file paths
+            blobs = self.bucket.list_blobs(prefix=prefix)
+            dirs = set()
+            for blob in blobs:
+                parts = blob.name.split('/')
+                for i in range(1, len(parts)):
+                    dir_path = '/'.join(parts[:i])
+                    if dir_path.startswith(prefix):
+                        dirs.add(dir_path)
+            return sorted(list(dirs))
+        else:
+            # For local storage
+            path = self.local_root / prefix
+            if not path.exists():
+                return []
+            
+            dirs = []
+            for p in Path(path).rglob('*'):
+                if p.is_dir():
+                    rel_path = p.relative_to(self.local_root)
+                    dirs.append(str(rel_path))
+            return dirs
     
     def file_exists(self, path: Union[str, Path]) -> bool:
         """Check if a file exists in storage"""

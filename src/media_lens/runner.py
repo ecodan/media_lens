@@ -21,10 +21,10 @@ from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
 from src.media_lens.extraction.summarizer import DailySummarizer
 from src.media_lens.presentation.deployer import upload_file
 from src.media_lens.presentation.html_formatter import generate_html_from_path
-from src.media_lens.storage_adapter import StorageAdapter
+from src.media_lens.storage import shared_storage
 
 logger = logging.getLogger(LOGGER_NAME)
-storage = StorageAdapter()
+storage = shared_storage
 
 
 class Steps(Enum):
@@ -82,12 +82,11 @@ async def interpret(job_dir, sites):
             storage.write_json(output_path, fallback)
 
 
-async def interpret_weekly(job_dirs_root, sites, current_week_only=True, overwrite=False, specific_weeks=None):
+async def interpret_weekly(sites, current_week_only=True, overwrite=False, specific_weeks=None):
     """
     Perform weekly interpretation on content from specified weeks.
     This will run every Sunday to analyze the last seven days of data.
     
-    :param job_dirs_root: Root directory containing all job directories
     :param sites: List of media sites to interpret
     :param current_week_only: If True, only interpret the current week
     :param overwrite: If True, overwrite existing weekly interpretations
@@ -120,7 +119,7 @@ async def interpret_weekly(job_dirs_root, sites, current_week_only=True, overwri
     # Check if previous week was processed (in case we missed a Sunday)
     previous_week_date = today - datetime.timedelta(days=7)
     previous_week = get_week_key(previous_week_date)
-    previous_week_file_path = f"{job_dirs_root}/weekly-{previous_week}-interpreted.json"
+    previous_week_file_path = f"weekly-{previous_week}-interpreted.json"
     
     # Use storage adapter to check if file exists
     if not storage.file_exists(previous_week_file_path) and not specific_weeks:
@@ -143,7 +142,6 @@ async def interpret_weekly(job_dirs_root, sites, current_week_only=True, overwri
             interpreter.last_n_days = None
             
         weekly_results: list[dict] = interpreter.interpret_weeks(
-            job_dirs_root=job_dirs_root, 
             sites=sites,
             current_week_only=False,  # We're handling this logic ourselves
             overwrite=overwrite,
@@ -170,13 +168,10 @@ async def extract(job_dir):
     await extractor.run(delay_between_sites_secs=60)
 
 
-async def format_output(jobs_root: Path) -> None:
+async def format_output() -> None:
     """
     Generate all HTML output files from the content in the jobs directory.
     
-    Args:
-        jobs_root: Root directory containing all job directories
-        
     Returns:
         None
     """
@@ -184,18 +179,15 @@ async def format_output(jobs_root: Path) -> None:
     template_dir_path: str = str(get_project_root() / "config/templates")
     
     # Generate all HTML files (index and weekly pages)
-    index_html: str = generate_html_from_path(jobs_root, SITES, template_dir_path)
+    generate_html_from_path(SITES, Path(template_dir_path))
     
-    logger.info(f"HTML files generated successfully in {jobs_root}")
+    logger.info("HTML files generated successfully")
 
 
-async def deploy_output(jobs_root: Path) -> None:
+async def deploy_output() -> None:
     """
     Deploy generated HTML files to the remote server.
     
-    Args:
-        jobs_root: Root directory containing all job directories and generated HTML files
-        
     Returns:
         None
     """
@@ -208,102 +200,95 @@ async def deploy_output(jobs_root: Path) -> None:
     logger.info(f"Deploying files to {remote_path}")
     
     # Upload the main index page
-    index_local_path = f"{jobs_root}/medialens.html"
+    index_local_path = "medialens.html"
     if storage.file_exists(index_local_path):
         logger.info(f"Uploading main index file: {index_local_path}")
-        local_temp_path = str(jobs_root / "medialens.html")  # For backward compatibility with upload_file
+        local_temp_path = storage.get_absolute_path("medialens.html")  # For backward compatibility with upload_file
         # Get content from storage and write to temp file then upload
         index_content = storage.read_text(index_local_path)
         with open(local_temp_path, "w") as f:
             f.write(index_content)
-        upload_file(local_temp_path, remote_path)
+        upload_file(Path(local_temp_path), remote_path)
     else:
         logger.warning(f"Main index file not found at {index_local_path}")
     
     # Find and upload all weekly pages using storage adapter pattern matching
-    weekly_files = storage.get_files_by_pattern(jobs_root, "medialens-*.html")
+    weekly_files = storage.get_files_by_pattern("", "medialens-*.html")
     logger.info(f"Found {len(weekly_files)} weekly HTML files")
     
     for weekly_file in weekly_files:
         logger.info(f"Uploading weekly file: {weekly_file}")
         # Get content and write to temp file then upload
         file_content = storage.read_text(weekly_file)
-        local_temp_path = str(jobs_root / os.path.basename(weekly_file))
+        local_temp_path = storage.get_absolute_path(os.path.basename(weekly_file))
         with open(local_temp_path, "w") as f:
             f.write(file_content)
-        upload_file(local_temp_path, remote_path)
+        upload_file(Path(local_temp_path), remote_path)
     
-    # Get subdirectories using storage.list_files for subdirectories
-    all_files = storage.list_files(jobs_root)
+    # Get subdirectories using storage.list_directories
+    all_dirs = storage.list_directories("")
     subdirs = set()
-    for file in all_files:
-        if "/" in file:  # This indicates it's in a subdirectory
-            subdir = file.split("/")[0]
-            if subdir != "__pycache__":
-                subdirs.add(subdir)
+    for subdir in all_dirs:
+        if subdir != "__pycache__":
+            subdirs.add(subdir)
     
     # Look for any additional medialens HTML files in subdirectories
     for subdir in subdirs:
-        subdir_path = f"{jobs_root}/{subdir}"
+        subdir_path = subdir
         html_files = storage.get_files_by_pattern(subdir_path, "medialens*.html")
         for html_file in html_files:
             logger.info(f"Uploading additional HTML file from subdirectory: {html_file}")
             # Get content and write to temp file then upload
             file_content = storage.read_text(html_file)
-            local_temp_path = str(jobs_root / os.path.basename(html_file))
+            local_temp_path = storage.get_absolute_path(os.path.basename(html_file))
             with open(local_temp_path, "w") as f:
                 f.write(file_content)
-            upload_file(local_temp_path, remote_path)
+            upload_file(Path(local_temp_path), remote_path)
 
 
-async def format_and_deploy(jobs_root: Path) -> None:
+async def format_and_deploy() -> None:
     """
     Generate HTML files and deploy them to the remote server.
     This function is kept for backward compatibility.
     
-    Args:
-        jobs_root: Root directory containing all job directories
-        
     Returns:
         None
     """
-    await format_output(jobs_root)
-    await deploy_output(jobs_root)
+    await format_output()
+    await deploy_output()
 
 
-async def reprocess_scraped_content(job_dir, out_dir=None):
+async def reprocess_scraped_content(job_dir):
     # Use string representation instead of Path.name
     job_dir_str = str(job_dir)
     job_dir_name = job_dir_str.split('/')[-1] if '/' in job_dir_str else job_dir_str
     logger.debug(f"Reprocessing scraped content for {job_dir_name}")
-    harvester: Harvester = Harvester(outdir=out_dir)
+    harvester: Harvester = Harvester()
     await harvester.re_harvest(job_dir=job_dir, sites=SITES)
     await extract(job_dir)
     # await interpret(job_dir, SITES)
 
 
-async def reprocess_all_scraped_content(out_dir: Path):
-    logger.info(f"Reprocessing scraped content in {out_dir} for sites {SITES}")
+async def reprocess_all_scraped_content():
+    logger.info(f"Reprocessing scraped content for sites {SITES}")
 
-    # Get all directories in out_dir using storage adapter
-    all_files = storage.list_files(out_dir)
+    # Get all directories using storage adapter
+    all_dirs = storage.list_directories("")
     job_dirs = set()
     
-    # Extract directory names that match UTC pattern
-    for file in all_files:
-        if "/" in file:
-            dir_name = file.split("/")[0]
-            if re.match(UTC_REGEX_PATTERN_BW_COMPAT, dir_name):
-                job_dirs.add(dir_name)
+    # Filter directory names that match UTC pattern
+    for dir_name in all_dirs:
+        if re.match(UTC_REGEX_PATTERN_BW_COMPAT, dir_name):
+            job_dirs.add(dir_name)
     
     for job_dir_name in job_dirs:
-        job_dir_path = Path(storage.get_absolute_path(f"{out_dir}/{job_dir_name}"))
-        await reprocess_scraped_content(job_dir_path, out_dir)
+        job_dir_path = Path(storage.get_absolute_path(job_dir_name))
+        await reprocess_scraped_content(job_dir_path)
 
 
 async def complete_job(job_dir: Path, steps: list[str]):
     if Steps.HARVEST.value in steps:
-        harvester: Harvester = Harvester(outdir=job_dir)
+        harvester: Harvester = Harvester()
         await harvester.harvest(sites=SITES)
 
     if Steps.EXTRACT.value in steps:
@@ -313,41 +298,39 @@ async def complete_job(job_dir: Path, steps: list[str]):
         await interpret(job_dir, SITES)
 
 
-async def complete_all_jobs(out_dir: Path, steps: list[str]):
+async def complete_all_jobs(steps: list[str]):
     # First, process individual job directories
-    # Get all directories in out_dir using storage adapter
-    all_files = storage.list_files(out_dir)
+    # Get all directories using storage adapter
+    all_dirs = storage.list_directories("")
     job_dirs = set()
     
-    # Extract directory names that match UTC pattern
-    for file in all_files:
-        if "/" in file:
-            dir_name = file.split("/")[0]
-            if re.match(UTC_REGEX_PATTERN_BW_COMPAT, dir_name):
-                job_dirs.add(dir_name)
+    # Filter directory names that match UTC pattern
+    for dir_name in all_dirs:
+        if re.match(UTC_REGEX_PATTERN_BW_COMPAT, dir_name):
+            job_dirs.add(dir_name)
     
     for job_dir_name in job_dirs:
-        job_dir_path = Path(storage.get_absolute_path(f"{out_dir}/{job_dir_name}"))
+        job_dir_path = Path(storage.get_absolute_path(job_dir_name))
         await complete_job(job_dir_path, steps)
 
     # Then handle weekly interpretation if requested
     # The modified interpret_weekly will only run on the last day of the week
     # or if a previous week was missed
     if Steps.INTERPRET_WEEKLY.value in steps:
-        await interpret_weekly(out_dir, SITES, current_week_only=True, overwrite=False)
+        await interpret_weekly("", SITES, current_week_only=True, overwrite=False)
 
     # Format output if requested
     if Steps.FORMAT.value in steps:
-        await format_output(out_dir)
+        await format_output()
         
     # Finally, deploy if requested
     if Steps.DEPLOY.value in steps:
-        await deploy_output(out_dir)
+        await deploy_output()
 
 
-async def run_new_analysis(out_dir: Path):
+async def run_new_analysis():
     # Harvest
-    harvester: Harvester = Harvester(outdir=out_dir)
+    harvester: Harvester = Harvester()
     artifacts_dir = await harvester.harvest(sites=SITES)
 
     # Extract
@@ -357,26 +340,25 @@ async def run_new_analysis(out_dir: Path):
     # await interpret(artifacts_dir, SITES)
 
     # Format output
-    await format_output(out_dir)
+    await format_output()
     
     # Deploy output
-    await deploy_output(out_dir)
+    await deploy_output()
 
 
-async def process_weekly_content(out_dir: Path, current_week_only: bool = True, 
-                             overwrite: bool = False, specific_weeks: List[str] = None):
+async def process_weekly_content(current_week_only: bool = True, 
+                       overwrite: bool = False, specific_weeks: List[str] = None):
     """
     Process weekly content and deploy the results.
     This function now respects the last-day-of-week logic in interpret_weekly.
     
-    :param out_dir: Directory containing the job directories
     :param current_week_only: If True, only process the current week
     :param overwrite: If True, overwrite existing weekly interpretations
     :param specific_weeks: If provided, only process these specific weeks
     """
     # Interpret weekly content - will only run on last day of week or for missed weeks
     await interpret_weekly(
-        out_dir, 
+        "", 
         SITES, 
         current_week_only=current_week_only, 
         overwrite=overwrite, 
@@ -384,18 +366,17 @@ async def process_weekly_content(out_dir: Path, current_week_only: bool = True,
     )
 
     # Format output
-    await format_output(out_dir)
+    await format_output()
     
     # Deploy output
-    await deploy_output(out_dir)
+    await deploy_output()
 
 
-async def reinterpret_weeks_from_date(out_dir: Path, start_date: datetime, overwrite: bool = True):
+async def reinterpret_weeks_from_date(start_date: datetime, overwrite: bool = True):
     """
     Reinterpret all weeks from a given start date up to the current week.
     Will only process weeks that fall on Sundays.
     
-    :param out_dir: Directory containing the job directories
     :param start_date: The date to start reinterpreting from (will include the week containing this date)
     :param overwrite: If True, overwrite existing weekly interpretations
     """
@@ -429,47 +410,41 @@ async def reinterpret_weeks_from_date(out_dir: Path, start_date: datetime, overw
     
     # Process all the weeks
     await process_weekly_content(
-        out_dir=out_dir,
         current_week_only=False,
         overwrite=overwrite,
         specific_weeks=weeks_to_process
     )
 
-async def summarize_all(out_dir: Path, force: bool = False):
-    logger.info(f"Summarizing extracted content in {out_dir}")
+async def summarize_all(force: bool = False):
+    logger.info("Summarizing extracted content")
     summarizer: DailySummarizer = DailySummarizer(agent=ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL))
 
-    # Get all directories in out_dir using storage adapter
-    all_files = storage.list_files(out_dir)
+    # Get all directories using storage adapter
+    all_dirs = storage.list_directories("")
     job_dirs = set()
     
-    # Extract directory names that match UTC pattern
-    for file in all_files:
-        # Get the first part of the path which should be the job dir name
-        if "/" in file:
-            dir_name = file.split("/")[0]
-            # Check if it matches the UTC regex pattern
-            if re.match(UTC_REGEX_PATTERN_BW_COMPAT, dir_name):
-                job_dirs.add(dir_name)
+    # Filter directory names that match UTC pattern
+    for dir_name in all_dirs:
+        # Check if it matches the UTC regex pattern
+        if re.match(UTC_REGEX_PATTERN_BW_COMPAT, dir_name):
+            job_dirs.add(dir_name)
     
     for job_dir_name in job_dirs:
-        job_dir = f"{out_dir}/{job_dir_name}"
         # Check if summary file already exists
-        summary_file_path = f"{job_dir}/daily_news.txt"
+        summary_file_path = f"{job_dir_name}/daily_news.txt"
         if storage.file_exists(summary_file_path) and not force:
             logger.info(f"Summary already exists for {job_dir_name}, skipping...")
         else:
             # Convert to Path for compatibility with summarizer
-            job_dir_path = Path(storage.get_absolute_path(job_dir))
+            job_dir_path = Path(storage.get_absolute_path(job_dir_name))
             summarizer.generate_summary_from_job_dir(job_dir_path)
 
-async def run(steps: list[Steps], out_dir: Path, **kwargs) -> dict:
+async def run(steps: list[Steps], **kwargs) -> dict:
     """
     Execute the media lens pipeline with the specified steps.
     
     Args:
         steps: List of Steps to execute
-        out_dir: Output directory for artifacts
         **kwargs: Additional arguments
         
     Returns:
@@ -487,32 +462,26 @@ async def run(steps: list[Steps], out_dir: Path, **kwargs) -> dict:
         "error": None
     }
     
-    # Make sure the directory exists using storage adapter
-    if not storage.file_exists(out_dir):
-        # Create directory if it doesn't exist
-        storage.create_directory(out_dir)
-        logger.info(f"Created output directory {out_dir}")
+    # Storage adapter handles directory creation automatically
 
     if 'job_dir' not in kwargs or kwargs['job_dir'] == "latest":
         # find the latest job dir using storage adapter
-        all_files = storage.list_files(out_dir)
+        all_dirs = storage.list_directories("")
         job_dirs = set()
         
-        # Extract directory names that match UTC pattern
-        for file in all_files:
-            if "/" in file:
-                dir_name = file.split("/")[0]
-                if re.match(UTC_REGEX_PATTERN_BW_COMPAT, dir_name):
-                    job_dirs.add(dir_name)
+        # Filter directory names that match UTC pattern
+        for dir_name in all_dirs:
+            if re.match(UTC_REGEX_PATTERN_BW_COMPAT, dir_name):
+                job_dirs.add(dir_name)
                     
         if job_dirs:
             # Get the latest job dir by sorting and taking the most recent
             artifacts_dir_name = sorted(job_dirs)[-1]  # UTC timestamps sort chronologically
-            artifacts_dir = Path(storage.get_absolute_path(f"{out_dir}/{artifacts_dir_name}"))
+            artifacts_dir = Path(storage.get_absolute_path(artifacts_dir_name))
         else:
             artifacts_dir = None
     else:
-        job_dir_path = f"{out_dir}/{kwargs['job_dir']}"
+        job_dir_path = kwargs['job_dir']
         if not storage.file_exists(job_dir_path):
             raise FileNotFoundError(f"Job directory {job_dir_path} does not exist")
         artifacts_dir = Path(storage.get_absolute_path(job_dir_path))
@@ -521,7 +490,7 @@ async def run(steps: list[Steps], out_dir: Path, **kwargs) -> dict:
         if Steps.HARVEST in steps and not RunState.stop_requested():
             # Harvest
             logger.info(f"[Run {run_id}] Starting harvest step")
-            harvester: Harvester = Harvester(outdir=out_dir)
+            harvester: Harvester = Harvester()
             # reassign artifacts_dir to new dir
             artifacts_dir = await harvester.harvest(sites=SITES)
             result["completed_steps"].append(Steps.HARVEST.value)
@@ -529,7 +498,7 @@ async def run(steps: list[Steps], out_dir: Path, **kwargs) -> dict:
         elif Steps.REHARVEST in steps and not RunState.stop_requested():
             # Re-Harvest
             logger.info(f"[Run {run_id}] Starting re-harvest step")
-            harvester: Harvester = Harvester(outdir=out_dir)
+            harvester: Harvester = Harvester()
             await harvester.re_harvest(sites=SITES, job_dir=artifacts_dir)
             result["completed_steps"].append(Steps.REHARVEST.value)
 
@@ -548,7 +517,7 @@ async def run(steps: list[Steps], out_dir: Path, **kwargs) -> dict:
         if Steps.INTERPRET_WEEKLY in steps and not RunState.stop_requested():
             # Interpret weekly content
             logger.info(f"[Run {run_id}] Starting weekly interpretation step")
-            await interpret_weekly(out_dir, SITES, current_week_only=True, overwrite=True)
+            await interpret_weekly(SITES, current_week_only=True, overwrite=True)
             result["completed_steps"].append(Steps.INTERPRET_WEEKLY.value)
 
         if Steps.SUMMARIZE_DAILY in steps and not RunState.stop_requested():
@@ -561,13 +530,13 @@ async def run(steps: list[Steps], out_dir: Path, **kwargs) -> dict:
         if Steps.FORMAT in steps and not RunState.stop_requested():
             # Format output
             logger.info(f"[Run {run_id}] Starting format step")
-            await format_output(out_dir)
+            await format_output()
             result["completed_steps"].append(Steps.FORMAT.value)
 
         if Steps.DEPLOY in steps and not RunState.stop_requested():
             # Deploy output
             logger.info(f"[Run {run_id}] Starting deployment step")
-            await deploy_output(out_dir)
+            await deploy_output()
             result["completed_steps"].append(Steps.DEPLOY.value)
             
         if RunState.stop_requested():
@@ -602,12 +571,6 @@ def main():
         help='Job directory to process (default: latest)'
     )
     run_parser.add_argument(
-        '-o', '--output-dir',
-        type=Path,
-        required=True,
-        help='Output directory for artifacts'
-    )
-    run_parser.add_argument(
         '--run-id',
         type=str,
         help='Optional run ID for tracking (auto-generated if not provided)'
@@ -622,12 +585,6 @@ def main():
     # Summarize daily news command with option to force resummarization if no summary present
     summarize_parser = subparsers.add_parser('summarize', help='Summarize daily news')
     summarize_parser.add_argument(
-        '-o', '--output-dir',
-        type=Path,
-        required=True,
-        help='Output directory for artifacts'
-    )
-    summarize_parser.add_argument(
         '-f', '--force',
         action='store_true',
         help='Force resummarization even if summary exists'
@@ -640,12 +597,6 @@ def main():
         type=str,
         required=True,
         help='Start date in YYYY-MM-DD format'
-    )
-    reinterpret_parser.add_argument(
-        '-o', '--output-dir',
-        type=Path,
-        required=True,
-        help='Output directory for artifacts'
     )
     reinterpret_parser.add_argument(
         '--no-overwrite',
@@ -672,7 +623,6 @@ def main():
         logger.info(f"Using sites: {', '.join(SITES)}")
         run_result = asyncio.run(run(
             steps=steps, 
-            out_dir=args.output_dir, 
             job_dir=args.job_dir,
             run_id=args.run_id if hasattr(args, 'run_id') and args.run_id else None
         ))
@@ -685,15 +635,13 @@ def main():
         print(f"Run {run_result['run_id']} completed with status: {run_result['status']}")
     elif args.command == 'summarize':
         # Summarize daily news
-        # Don't convert to Path, use string directly
-        out_dir = args.output_dir
         force = args.force
         if force:
             logger.info("Force resummarization of daily news")
-            asyncio.run(summarize_all(out_dir))
+            asyncio.run(summarize_all())
         else:
             logger.info("Summarizing daily news without force")
-            asyncio.run(summarize_all(out_dir))
+            asyncio.run(summarize_all())
     elif args.command == 'reinterpret-weeks':
         # Reinterpret weekly content from a specified date
         try:
@@ -702,7 +650,6 @@ def main():
             logger.info(f"Reinterpreting weekly content from {args.date}")
             
             asyncio.run(reinterpret_weeks_from_date(
-                out_dir=args.output_dir,
                 start_date=start_date,
                 overwrite=not args.no_overwrite
             ))

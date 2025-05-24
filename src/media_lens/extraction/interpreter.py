@@ -14,6 +14,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL, UTC_REGEX_PATTERN_BW_COMPAT, get_utc_datetime_from_timestamp, get_week_key, SITES, create_logger
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
+from src.media_lens.storage import shared_storage
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -133,8 +134,7 @@ class LLMWebsiteInterpreter:
         self.last_n_days = last_n_days  # If set, only use content from the last N days
         # Initialize storage adapter if not provided
         if storage is None:
-            from src.media_lens.storage_adapter import StorageAdapter
-            self.storage = StorageAdapter()
+            self.storage = shared_storage
         else:
             self.storage = storage
 
@@ -369,12 +369,11 @@ class LLMWebsiteInterpreter:
         return selected_articles
 
 
-    def interpret_weeks(self, job_dirs_root: Path, sites: list[str], overwrite: bool = False,
+    def interpret_weeks(self, sites: list[str], overwrite: bool = False,
                         current_week_only: bool = True, specific_weeks: List[str] = None) -> list[dict]:
         """
         Perform weekly interpretation on content from specified weeks.
         
-        :param job_dirs_root: Path to the root directory containing all job directories
         :param sites: List of media sites to interpret
         :param overwrite: If True, overwrite existing weekly interpretations
         :param current_week_only: If True, only interpret the current week
@@ -388,9 +387,9 @@ class LLMWebsiteInterpreter:
         
         # Group job directories by week
         weeks = {}
-        for job_dir in job_dirs_root.iterdir():
-            if job_dir.is_dir() and re.match(UTC_REGEX_PATTERN_BW_COMPAT, job_dir.name):
-                job_datetime = get_utc_datetime_from_timestamp(job_dir.name)
+        for job_dir in self.storage.list_directories():
+            if re.match(UTC_REGEX_PATTERN_BW_COMPAT, job_dir):
+                job_datetime = get_utc_datetime_from_timestamp(job_dir)
                 week_key = get_week_key(job_datetime)
 
                 if week_key not in weeks:
@@ -433,7 +432,6 @@ class LLMWebsiteInterpreter:
 
             # Check if weekly interpretation already exists to avoid redoing work
             weekly_file_path = f"weekly-{week_key}-interpreted.json"
-            weekly_file = job_dirs_root / weekly_file_path
 
             if self.storage.file_exists(weekly_file_path) and not overwrite:
                 logger.info(f"Weekly interpretation for {week_key} already exists and overwrite=False")
@@ -443,7 +441,7 @@ class LLMWebsiteInterpreter:
                     existing_interpretation = self.storage.read_json(weekly_file_path)
                     week_record = {
                         "week": week_key,
-                        "file_path": weekly_file,
+                        "file_path": weekly_file_path,
                         "interpretation": existing_interpretation
                     }
                     ret.append(week_record)
@@ -466,7 +464,7 @@ class LLMWebsiteInterpreter:
                     # Save weekly interpretation
                     week_record = {
                         "week": week_key,
-                        "file_path": weekly_file,
+                        "file_path": weekly_file_path,
                         "interpretation": weekly_interpretation
                     }
                     ret.append(week_record)
@@ -476,7 +474,7 @@ class LLMWebsiteInterpreter:
                     # Create a fallback interpretation
                     fallback = {
                         "week": week_key,
-                        "file_path": weekly_file,
+                        "file_path": weekly_file_path,
                         "interpretation": {
                             "question": "Weekly analysis unavailable",
                             "answer": "The weekly analysis could not be generated due to technical limitations."
@@ -536,10 +534,8 @@ class LLMWebsiteInterpreter:
 ##########################
 # TEST
 def interpret_single_job(job_dir_root: Path, working_dir_name: str, site: str):
-    from src.media_lens.storage_adapter import StorageAdapter
     agent: Agent = ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL)
-    storage = StorageAdapter()
-    interpreter = LLMWebsiteInterpreter(agent=agent, storage=storage)
+    interpreter = LLMWebsiteInterpreter(agent=agent, storage=shared_storage)
 
     # process job
     working_dir = job_dir_root / working_dir_name
@@ -547,18 +543,16 @@ def interpret_single_job(job_dir_root: Path, working_dir_name: str, site: str):
     print(json.dumps(interpreter.interpret_from_files(files), indent=2))
 
 def interpret_week(job_dirs_root: Path, sites: list[str], overwrite: bool = False, specific_weeks: List[str] = None, current_week_only: bool = True):
-    from src.media_lens.storage_adapter import StorageAdapter
     agent: Agent = ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL)
-    storage = StorageAdapter()
-    interpreter = LLMWebsiteInterpreter(agent=agent, storage=storage)
+    interpreter = LLMWebsiteInterpreter(agent=agent, storage=shared_storage)
     
     # process week
-    content: list[dict] = interpreter.interpret_weeks(job_dirs_root=job_dirs_root, sites=sites, overwrite=overwrite, specific_weeks=specific_weeks, current_week_only=current_week_only)
+    content: list[dict] = interpreter.interpret_weeks(sites=sites, overwrite=overwrite, specific_weeks=specific_weeks, current_week_only=current_week_only)
     for result in content:
         print(json.dumps(result['interpretation'], indent=2))
         # Use storage adapter to write the file
         file_name = os.path.basename(str(result['file_path']))
-        storage.write_text(file_name, json.dumps(result['interpretation'], indent=2))
+        shared_storage.write_text(file_name, json.dumps(result['interpretation'], indent=2))
 
 
 if __name__ == '__main__':

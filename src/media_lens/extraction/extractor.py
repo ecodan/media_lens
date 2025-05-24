@@ -11,7 +11,7 @@ from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL
 from src.media_lens.extraction.agent import ClaudeLLMAgent, Agent
 from src.media_lens.extraction.headliner import LLMHeadlineExtractor
 from src.media_lens.extraction.collector import ArticleCollector
-from src.media_lens.storage_adapter import StorageAdapter
+from src.media_lens.storage import shared_storage
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -21,7 +21,7 @@ class ContextExtractor:
     """
     def __init__(self, agent: Agent, working_dir=None):
         super().__init__()
-        self.storage = StorageAdapter()
+        self.storage = shared_storage
         self.working_dir = working_dir
         agent: Agent = agent
         self.headline_extractor: LLMHeadlineExtractor = LLMHeadlineExtractor(

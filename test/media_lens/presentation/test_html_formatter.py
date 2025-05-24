@@ -72,8 +72,11 @@ def test_generate_html_with_template(temp_dir):
     assert "<li>Item 3</li>" in html
 
 
-def test_organize_runs_by_week(sample_job_directory):
+def test_organize_runs_by_week(sample_job_directory, test_storage_adapter, monkeypatch):
     """Test organizing job runs by calendar week."""
+    # Patch the shared storage to use our test storage adapter
+    monkeypatch.setattr("src.media_lens.presentation.html_formatter.shared_storage", test_storage_adapter)
+    
     # Get all directories from the sample job directory
     job_dirs = [sample_job_directory]
     sites = ["www.test1.com", "www.test2.com"]
@@ -114,7 +117,7 @@ def test_generate_weekly_content(sample_job_directory, temp_dir, test_storage_ad
     storage.write_text(f"weekly-{week_data['week_key']}-interpreted.json", '[]')
     
     # Call generate_weekly_content
-    weekly_content = generate_weekly_content(week_data, sites, temp_dir)
+    weekly_content = generate_weekly_content(week_data, sites)
     
     # Check result structure
     assert weekly_content["week_key"] == week_data["week_key"]
@@ -126,8 +129,11 @@ def test_generate_weekly_content(sample_job_directory, temp_dir, test_storage_ad
     assert "interpretation" not in weekly_content
 
 
-def test_generate_index_page(sample_job_directory, temp_dir, test_storage_adapter):
+def test_generate_index_page(sample_job_directory, temp_dir, test_storage_adapter, monkeypatch):
     """Test generating the index page with the latest weekly summary."""
+    # Patch the shared storage to use our test storage adapter
+    monkeypatch.setattr("src.media_lens.presentation.html_formatter.shared_storage", test_storage_adapter)
+    
     # First organize runs by week
     job_dirs = [sample_job_directory]
     sites = ["www.test1.com", "www.test2.com"]
@@ -191,15 +197,18 @@ def test_generate_index_page(sample_job_directory, temp_dir, test_storage_adapte
     storage.write_text("templates/index_template.j2", index_template)
     
     # Call generate_index_page
-    html = generate_index_page(weeks_data, template_dir, temp_dir)
+    html = generate_index_page(weeks_data, template_dir)
     
     # Check that HTML was generated and includes the weekly summary
     assert html is not None
     assert "Weekly Media Analysis" in html
     assert "Test Question 1" in html
     
-def test_generate_html_from_path(sample_job_directory, temp_dir, test_storage_adapter):
+def test_generate_html_from_path(sample_job_directory, temp_dir, test_storage_adapter, monkeypatch):
     """Test the main HTML generation function."""
+    # Patch the shared storage to use our test storage adapter
+    monkeypatch.setattr("src.media_lens.presentation.html_formatter.shared_storage", test_storage_adapter)
+    
     # Get the storage adapter from the fixture
     storage = test_storage_adapter
     
@@ -289,7 +298,7 @@ def test_generate_html_from_path(sample_job_directory, temp_dir, test_storage_ad
     
     # Call generate_html_from_path
     sites = ["www.test1.com", "www.test2.com"]
-    html = generate_html_from_path(temp_dir, sites, template_dir)
+    html = generate_html_from_path(sites, template_dir)
     
     # Check that HTML was generated
     assert html is not None

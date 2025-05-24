@@ -7,7 +7,7 @@ import paramiko
 import dotenv
 
 from src.media_lens.common import get_project_root
-from src.media_lens.storage_adapter import StorageAdapter
+from src.media_lens.storage import shared_storage
 
 
 def upload_file(local_file: Path, remote_path: str):
@@ -23,7 +23,7 @@ def upload_file(local_file: Path, remote_path: str):
     if use_cloud:
         # When using cloud storage, we can make the file public via a web URL
         # or set up a Google Cloud CDN in front of the bucket
-        storage = StorageAdapter()
+        storage = shared_storage
         
         # If local_file is a Path object, convert to string to get the file name
         file_name = local_file.name if hasattr(local_file, 'name') else os.path.basename(str(local_file))

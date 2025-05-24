@@ -8,7 +8,7 @@ import dotenv
 from src.media_lens.collection.cleaner import WebpageCleaner, cleaner_for_site
 from src.media_lens.collection.scraper import WebpageScraper
 from src.media_lens.common import LOGGER_NAME, utc_timestamp, get_project_root, SITES, UTC_REGEX_PATTERN_BW_COMPAT, UTC_DATE_PATTERN_BW_COMPAT, utc_bw_compat_timestamp
-from src.media_lens.storage_adapter import StorageAdapter
+from src.media_lens.storage import shared_storage
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -17,9 +17,8 @@ class Harvester(object):
     Orchestrates the harvesting of web pages and their cleaning.
     """
 
-    def __init__(self, outdir: Path):
-        self.outdir = outdir
-        self.storage = StorageAdapter()
+    def __init__(self):
+        self.storage = shared_storage
 
     async def re_harvest(self, job_dir: Path, sites: list[str]):
         """
@@ -58,16 +57,17 @@ class Harvester(object):
         directory_path = timestamp
         self.storage.create_directory(directory_path)
         
-        # For backward compatibility, we'll also create the local directory
-        # if we're using local storage
-        artifacts_dir: Path = self.outdir / timestamp
-        if not self.storage.use_cloud:
-            artifacts_dir.mkdir(parents=True, exist_ok=True)
+        # Get path for backward compatibility with methods that expect Path objects
+        artifacts_dir: Path = Path(self.storage.get_absolute_path(timestamp))
         
         for site in sites:
             try:
                 logger.info(f"Harvesting {site}")
                 content: str = await scraper.get_page_content(url="https://" + site, browser_type=browser_type)
+                
+                if content is None:
+                    logger.error(f"Failed to get content for {site}, skipping...")
+                    continue
                 
                 logger.info(f"Writing {site} to {directory_path}")
                 # Use the storage adapter to write content
