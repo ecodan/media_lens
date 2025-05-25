@@ -43,7 +43,7 @@ def generate_html_with_template(template_dir_path: Path, template_name: str, con
     """
     Generate HTML using a Jinja2 template.
     """
-    logger.info(f"Generating HTML with template {template_name} in {template_dir_path}")
+    logger.debug(f"Generating HTML with template {template_name} in path {template_dir_path}")
     env = Environment(loader=FileSystemLoader(template_dir_path))
     template = env.get_template(template_name)
     html_output = template.render(**content)
@@ -122,7 +122,8 @@ def organize_runs_by_week(job_dirs: List[Path], sites: List[str]) -> Dict[str, A
             # Load interpreted data
             interpreted_path = f"{job_dir_name}/{site}-interpreted.json"
             if not storage.file_exists(interpreted_path):
-                logger.warning(f"Interpreted file not found: {interpreted_path}")
+                # this is expected if daily interpretation is not active
+                logger.debug(f"Interpreted file not found: {interpreted_path}")
             else:
                 interpreted = storage.read_json(interpreted_path)
                 run_data['interpreted'].append({
@@ -281,7 +282,8 @@ def generate_index_page(weeks_data: Dict, template_dir_path: Path) -> str:
                         logger.warning(f"Weekly interpretation has wrong format: {weekly_file_path}")
                 except (json.JSONDecodeError) as e:
                     logger.warning(f"Could not load weekly interpretation from {weekly_file_path}: {str(e)}")
-                    
+            else:
+                logger.debug(f"Weekly interpretation file not found: {weekly_file_path}")
         if not found_valid_weekly:
             logger.warning("No valid weekly interpretation found for any week")
     
@@ -324,6 +326,7 @@ def generate_html_from_path(sites: list[str], template_dir_path: Path) -> str:
     # Write weekly HTML files
     for week_key, html in weekly_html.items():
         weekly_file_path = f"medialens-{week_key}.html"
+        logger.debug(f"Writing weekly HTML for week {week_key} to {weekly_file_path}")
         storage.write_text(weekly_file_path, html)
     
     # Generate and return index page

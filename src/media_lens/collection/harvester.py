@@ -60,24 +60,44 @@ class Harvester(object):
         # Get path for backward compatibility with methods that expect Path objects
         artifacts_dir: Path = Path(self.storage.get_absolute_path(timestamp))
         
-        for site in sites:
+        async def scrape_site(site):
             try:
-                logger.info(f"Harvesting {site}")
+                logger.info(f"Scraping {site}")
                 content: str = await scraper.get_page_content(url="https://" + site, browser_type=browser_type)
                 
                 if content is None:
                     logger.error(f"Failed to get content for {site}, skipping...")
-                    continue
+                    return None, site
                 
                 logger.info(f"Writing {site} to {directory_path}")
                 # Use the storage adapter to write content
                 file_path = f"{directory_path}/{site}.html"
                 self.storage.write_text(file_path, content, encoding="utf-8")
                 
-                await self._clean_site(directory_path, content, site)
+                return content, site
             except Exception as e:
-                logger.error(f"Failed to harvest {site}: {e}")
+                logger.error(f"Failed to scrape {site}: {e}")
                 traceback.print_exc()
+                return None, site
+        
+        # Phase 1: Scrape all sites concurrently
+        logger.info("Phase 1: Scraping all sites concurrently")
+        scrape_results = await asyncio.gather(*[scrape_site(site) for site in sites], return_exceptions=True)
+        
+        # Phase 2: Clean all successfully scraped content
+        logger.info("Phase 2: Cleaning scraped content")
+        for result in scrape_results:
+            if isinstance(result, Exception):
+                logger.error(f"Scraping failed with exception: {result}")
+                continue
+                
+            content, site = result
+            if content is not None:
+                try:
+                    await self._clean_site(directory_path, content, site)
+                except Exception as e:
+                    logger.error(f"Failed to clean {site}: {e}")
+                    traceback.print_exc()
         
         return artifacts_dir
 

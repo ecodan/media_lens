@@ -91,26 +91,26 @@ class WebpageScraper:
 
             try:
                 logger.debug("loading page...")
-                # Navigate to the page with increased timeout
-                await page.goto(url, wait_until='networkidle', timeout=120000)  # 120 seconds timeout
-                logger.debug("page loaded, waiting for DOM content...")
+                # Navigate to the page with faster load strategy
+                await page.goto(url, wait_until='domcontentloaded', timeout=60000)  # 60 seconds timeout
+                logger.debug("page loaded, waiting for additional content...")
 
-                # Wait for content to load with a longer timeout
-                await page.wait_for_load_state('domcontentloaded', timeout=120000)  # 120 seconds timeout
-                logger.debug("DOM content loaded, getting content...")
+                # Wait for dynamic content to load (ads, lazy-loaded content, etc.)
+                await asyncio.sleep(15)
+                logger.debug("getting content...")
                 
                 # Get the content if no exceptions occurred
                 content = await page.content()
                 logger.debug(f"Content retrieved successfully, length: {len(content)}")
             except asyncio.TimeoutError:
-                logger.warning(f"Timeout while loading page: {url}; attempting to get partial content.")
+                logger.warning(f"Timeout while loading page: {url}; scraping what content is available.")
                 try:
                     content = await page.content()
                 except Exception as content_error:
                     logger.error(f"Could not get content after timeout: {str(content_error)}")
                     content = None
             except Exception as e:
-                logger.warning(f"Error while loading page: {url}; {str(e)}; attempting to get partial content.")
+                logger.warning(f"Error while loading page: {url}; {str(e)}; scraping what content is available.")
                 try:
                     content = await page.content()
                 except Exception as content_error:

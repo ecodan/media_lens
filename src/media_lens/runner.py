@@ -14,7 +14,7 @@ import dotenv
 from dateparser.utils.strptime import strptime
 
 from src.media_lens.collection.harvester import Harvester
-from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL, get_working_dir, UTC_REGEX_PATTERN_BW_COMPAT, RunState, SITES_DEFAULT
+from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL, get_working_dir, UTC_REGEX_PATTERN_BW_COMPAT, RunState, SITES_DEFAULT, is_last_day_of_week, get_week_key
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
@@ -22,9 +22,10 @@ from src.media_lens.extraction.summarizer import DailySummarizer
 from src.media_lens.presentation.deployer import upload_file
 from src.media_lens.presentation.html_formatter import generate_html_from_path
 from src.media_lens.storage import shared_storage
+from src.media_lens.storage_adapter import StorageAdapter
 
-logger = logging.getLogger(LOGGER_NAME)
-storage = shared_storage
+logger: logging.Logger = logging.getLogger(LOGGER_NAME)
+storage: StorageAdapter = shared_storage
 
 
 class Steps(Enum):
@@ -82,7 +83,7 @@ async def interpret(job_dir, sites):
             storage.write_json(output_path, fallback)
 
 
-async def interpret_weekly(sites, current_week_only=True, overwrite=False, specific_weeks=None):
+async def interpret_weekly(current_week_only=True, overwrite=False, specific_weeks=None):
     """
     Perform weekly interpretation on content from specified weeks.
     This will run every Sunday to analyze the last seven days of data.
@@ -92,7 +93,6 @@ async def interpret_weekly(sites, current_week_only=True, overwrite=False, speci
     :param overwrite: If True, overwrite existing weekly interpretations
     :param specific_weeks: If provided, only interpret these specific weeks (e.g. ["2025-W08", "2025-W09"])
     """
-    from src.media_lens.common import is_last_day_of_week, get_week_key
     
     agent: Agent = ClaudeLLMAgent(
         api_key=os.getenv("ANTHROPIC_API_KEY"),
@@ -142,7 +142,7 @@ async def interpret_weekly(sites, current_week_only=True, overwrite=False, speci
             interpreter.last_n_days = None
             
         weekly_results: list[dict] = interpreter.interpret_weeks(
-            sites=sites,
+            sites=SITES,
             current_week_only=False,  # We're handling this logic ourselves
             overwrite=overwrite,
             specific_weeks=weeks_to_process
@@ -246,104 +246,6 @@ async def deploy_output() -> None:
             upload_file(Path(local_temp_path), remote_path)
 
 
-async def format_and_deploy() -> None:
-    """
-    Generate HTML files and deploy them to the remote server.
-    This function is kept for backward compatibility.
-    
-    Returns:
-        None
-    """
-    await format_output()
-    await deploy_output()
-
-
-async def reprocess_scraped_content(job_dir):
-    # Use string representation instead of Path.name
-    job_dir_str = str(job_dir)
-    job_dir_name = job_dir_str.split('/')[-1] if '/' in job_dir_str else job_dir_str
-    logger.debug(f"Reprocessing scraped content for {job_dir_name}")
-    harvester: Harvester = Harvester()
-    await harvester.re_harvest(job_dir=job_dir, sites=SITES)
-    await extract(job_dir)
-    # await interpret(job_dir, SITES)
-
-
-async def reprocess_all_scraped_content():
-    logger.info(f"Reprocessing scraped content for sites {SITES}")
-
-    # Get all directories using storage adapter
-    all_dirs = storage.list_directories("")
-    job_dirs = set()
-    
-    # Filter directory names that match UTC pattern
-    for dir_name in all_dirs:
-        if re.match(UTC_REGEX_PATTERN_BW_COMPAT, dir_name):
-            job_dirs.add(dir_name)
-    
-    for job_dir_name in job_dirs:
-        job_dir_path = Path(storage.get_absolute_path(job_dir_name))
-        await reprocess_scraped_content(job_dir_path)
-
-
-async def complete_job(job_dir: Path, steps: list[str]):
-    if Steps.HARVEST.value in steps:
-        harvester: Harvester = Harvester()
-        await harvester.harvest(sites=SITES)
-
-    if Steps.EXTRACT.value in steps:
-        await extract(job_dir)
-
-    if Steps.INTERPRET.value in steps:
-        await interpret(job_dir, SITES)
-
-
-async def complete_all_jobs(steps: list[str]):
-    # First, process individual job directories
-    # Get all directories using storage adapter
-    all_dirs = storage.list_directories("")
-    job_dirs = set()
-    
-    # Filter directory names that match UTC pattern
-    for dir_name in all_dirs:
-        if re.match(UTC_REGEX_PATTERN_BW_COMPAT, dir_name):
-            job_dirs.add(dir_name)
-    
-    for job_dir_name in job_dirs:
-        job_dir_path = Path(storage.get_absolute_path(job_dir_name))
-        await complete_job(job_dir_path, steps)
-
-    # Then handle weekly interpretation if requested
-    # The modified interpret_weekly will only run on the last day of the week
-    # or if a previous week was missed
-    if Steps.INTERPRET_WEEKLY.value in steps:
-        await interpret_weekly("", SITES, current_week_only=True, overwrite=False)
-
-    # Format output if requested
-    if Steps.FORMAT.value in steps:
-        await format_output()
-        
-    # Finally, deploy if requested
-    if Steps.DEPLOY.value in steps:
-        await deploy_output()
-
-
-async def run_new_analysis():
-    # Harvest
-    harvester: Harvester = Harvester()
-    artifacts_dir = await harvester.harvest(sites=SITES)
-
-    # Extract
-    await extract(artifacts_dir)
-
-    # Interpret individual run
-    # await interpret(artifacts_dir, SITES)
-
-    # Format output
-    await format_output()
-    
-    # Deploy output
-    await deploy_output()
 
 
 async def process_weekly_content(current_week_only: bool = True, 
@@ -358,8 +260,6 @@ async def process_weekly_content(current_week_only: bool = True,
     """
     # Interpret weekly content - will only run on last day of week or for missed weeks
     await interpret_weekly(
-        "", 
-        SITES, 
         current_week_only=current_week_only, 
         overwrite=overwrite, 
         specific_weeks=specific_weeks
@@ -380,7 +280,6 @@ async def reinterpret_weeks_from_date(start_date: datetime, overwrite: bool = Tr
     :param start_date: The date to start reinterpreting from (will include the week containing this date)
     :param overwrite: If True, overwrite existing weekly interpretations
     """
-    from src.media_lens.common import get_week_key
     
     # Make sure start_date has timezone info
     if start_date.tzinfo is None:
@@ -517,7 +416,7 @@ async def run(steps: list[Steps], **kwargs) -> dict:
         if Steps.INTERPRET_WEEKLY in steps and not RunState.stop_requested():
             # Interpret weekly content
             logger.info(f"[Run {run_id}] Starting weekly interpretation step")
-            await interpret_weekly(SITES, current_week_only=True, overwrite=True)
+            await interpret_weekly(current_week_only=True, overwrite=True)
             result["completed_steps"].append(Steps.INTERPRET_WEEKLY.value)
 
         if Steps.SUMMARIZE_DAILY in steps and not RunState.stop_requested():
