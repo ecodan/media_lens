@@ -27,13 +27,19 @@ def temp_test_dir():
 @pytest.fixture
 def storage_adapter(monkeypatch, temp_test_dir):
     """Create a storage adapter instance for testing"""
+    # Reset the singleton before each test
+    StorageAdapter.reset_instance()
+    
     # Set environment for local testing
     monkeypatch.setenv("USE_CLOUD_STORAGE", "false")
     monkeypatch.setenv("LOCAL_STORAGE_PATH", str(temp_test_dir))
     
-    return StorageAdapter()
+    return StorageAdapter.get_instance()
 
 def test_storage_adapter_local(test_files, monkeypatch):
+    # Reset the singleton before the test
+    StorageAdapter.reset_instance()
+    
     # Set environment for local testing
     monkeypatch.setenv("USE_CLOUD_STORAGE", "false")
 
@@ -41,7 +47,7 @@ def test_storage_adapter_local(test_files, monkeypatch):
     local_root = tempfile.mkdtemp()
     monkeypatch.setenv("LOCAL_STORAGE_PATH", local_root)
 
-    adapter = StorageAdapter()
+    adapter = StorageAdapter.get_instance()
 
     # Test upload
     remote_path = "test/test_file.txt"

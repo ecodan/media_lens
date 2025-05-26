@@ -62,11 +62,14 @@ def sample_article_json():
 @pytest.fixture
 def test_storage_adapter(monkeypatch, temp_dir):
     """Create a storage adapter instance for testing."""
+    # Reset the singleton before each test
+    StorageAdapter.reset_instance()
+    
     # Set environment for local testing
     monkeypatch.setenv("USE_CLOUD_STORAGE", "false")
     monkeypatch.setenv("LOCAL_STORAGE_PATH", str(temp_dir))
     
-    return StorageAdapter()
+    return StorageAdapter.get_instance()
 
 @pytest.fixture
 def sample_job_directory(temp_dir, test_storage_adapter):

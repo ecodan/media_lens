@@ -50,7 +50,7 @@ def generate_html_with_template(template_dir_path: Path, template_name: str, con
     return html_output
 
 
-def organize_runs_by_week(job_dirs: List[Path], sites: List[str]) -> Dict[str, Any]:
+def organize_runs_by_week(job_dirs: List[Union[Path, str]], sites: List[str]) -> Dict[str, Any]:
     """
     Organize job runs by calendar week.
     
@@ -67,21 +67,27 @@ def organize_runs_by_week(job_dirs: List[Path], sites: List[str]) -> Dict[str, A
     for job_dir in job_dirs:
         logger.debug(f"Processing job_dir {job_dir}")
         
+        # Convert to string if it's a Path object
+        if isinstance(job_dir, Path):
+            job_dir_name = job_dir.name
+        else:
+            job_dir_name = str(job_dir)
+        
         # Skip directories that don't match the UTC pattern
-        if not re.match(UTC_REGEX_PATTERN_BW_COMPAT, job_dir.name):
+        if not re.match(UTC_REGEX_PATTERN_BW_COMPAT, job_dir_name):
             continue
         
         # Get UTC datetime from job directory name
-        job_utc_datetime: datetime = get_utc_datetime_from_timestamp(job_dir.name)
+        job_utc_datetime: datetime = get_utc_datetime_from_timestamp(job_dir_name)
 
         # Get week key for this job (e.g., "2025-W08")
         week_key: str = get_week_key(job_utc_datetime)
         
         # Create run data dictionary
         run_data = {
-            "run_timestamp": timestamp_bw_compat_str_as_long_date(job_dir.name),
+            "run_timestamp": timestamp_bw_compat_str_as_long_date(job_dir_name),
             "run_datetime": job_utc_datetime,
-            "job_dir": job_dir,
+            "job_dir": job_dir_name,  # Store as string for storage adapter compatibility
             "sites": sites,
             "extracted": [],
             "interpreted": [],
@@ -91,9 +97,6 @@ def organize_runs_by_week(job_dirs: List[Path], sites: List[str]) -> Dict[str, A
         # Process each site
         for site in sites:
             storage = shared_storage
-            
-            # Get job directory name
-            job_dir_name = job_dir.name if hasattr(job_dir, 'name') else job_dir
             
             # Load extracted data
             extracted_path = f"{job_dir_name}/{site}-clean-extracted.json"
@@ -314,11 +317,11 @@ def generate_html_from_path(sites: list[str], template_dir_path: Path) -> str:
         if re.match(UTC_REGEX_PATTERN_BW_COMPAT, dir_name):
             dir_names.add(dir_name)
                 
-    # Convert to Path objects for backward compatibility
-    dirs = [Path(storage.get_absolute_path(dir_name)) for dir_name in dir_names]
+    # Pass directory names directly (no need for Path objects)
+    dir_names_list = list(dir_names)
     
     # Organize runs by week
-    weeks_data = organize_runs_by_week(dirs, sites)
+    weeks_data = organize_runs_by_week(dir_names_list, sites)
     
     # Generate weekly HTML files
     weekly_html = generate_weekly_reports(weeks_data, sites, template_dir_path)

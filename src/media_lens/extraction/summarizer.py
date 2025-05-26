@@ -1,12 +1,13 @@
 import logging
 import os
 from pathlib import Path
-from typing import List
+from typing import List, Union
 
 import dotenv
 
-from src.media_lens.common import LOGGER_NAME, ANTHROPIC_MODEL, create_logger, get_working_dir
+from src.media_lens.common import LOGGER_NAME, ANTHROPIC_MODEL, create_logger
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
+from src.media_lens.storage_adapter import StorageAdapter
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -86,22 +87,37 @@ class DailySummarizer:
         logger.debug("Daily summarization process complete.")
         return summary
 
-    def generate_summary_from_job_dir(self, job_dir: Path) -> str:
+    def generate_summary_from_job_dir(self, job_dir: Union[Path, str]) -> None:
         """
         Generate summary from the job directory.
-        :param job_dir: directory containing the articles
+        :param job_dir: directory containing the articles (can be Path for local or str for storage adapter)
         :return: summary of the articles
         """
-        logger.info(f"Generating summary from job directory: {job_dir}")
-        # Get all the article files in the job directory
-        article_files = list(job_dir.glob("*clean-article-*.json"))
-        if not article_files:
-            logger.warning(f"No article files found in {job_dir}")
+        shared_storage: StorageAdapter = StorageAdapter.get_instance()
+        
+        # Convert Path to string if needed for storage adapter
+        if isinstance(job_dir, Path):
+            job_dir_str = job_dir.name if job_dir.is_absolute() else str(job_dir)
         else:
+            job_dir_str = str(job_dir)
+            
+        logger.info(f"Generating summary from job directory: {job_dir_str}")
+        
+        # Get all the article files using storage adapter
+        article_files = shared_storage.get_files_by_pattern(job_dir_str, "*clean-article-*.json")
+        
+        if not article_files:
+            logger.warning(f"No article files found in {job_dir_str}")
+        else:
+            # Convert to absolute paths for reading
+            article_file_paths = [shared_storage.get_absolute_path(f) for f in article_files]
+            
             # Generate summary from the article files
-            summary: str = self.generate_summary(article_files)
-            with open(job_dir / "daily_news.txt", "w") as f:
-                f.write(summary)
+            summary: str = self.generate_summary(article_file_paths)
+            
+            # Write summary using storage adapter
+            summary_path = f"{job_dir_str}/daily_news.txt"
+            shared_storage.write_text(summary_path, summary)
 
 
 def main(job_dir: Path):
@@ -111,7 +127,8 @@ def main(job_dir: Path):
 if __name__ == "__main__":
     dotenv.load_dotenv()
     create_logger(LOGGER_NAME)
-    job_dir: Path = Path(get_working_dir() / "out/2025-03-09_032437")
-    if not job_dir.exists():
-        raise ValueError(f"Job directory {job_dir} does not exist.")
-    main(job_dir)
+    from src.media_lens.common import get_working_dir
+    jdir: Path = Path(get_working_dir() / "out/2025-03-09_032437")
+    if not jdir.exists():
+        raise ValueError(f"Job directory {jdir} does not exist.")
+    main(jdir)

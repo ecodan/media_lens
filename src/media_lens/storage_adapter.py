@@ -21,8 +21,27 @@ class StorageAdapter:
     This adapter maintains the same directory structure and file naming
     conventions as the original application, but allows for switching
     between local and cloud storage backends.
+    
+    This class implements the singleton pattern to prevent multiple instances
+    from being created, which can cause issues in cloud deployments.
     """
+    _instance = None
+    _initialized = False
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
     def __init__(self):
+        # Prevent multiple initializations
+        if self._initialized:
+            import traceback
+            logger.warning(f"StorageAdapter.__init__() called on already initialized singleton. "
+                         f"This is harmless but inefficient. Consider using StorageAdapter.get_instance() "
+                         f"or the shared_storage from storage.py instead. Call stack:\n{traceback.format_stack()}")
+            return
+        
         self.bucket_name = os.getenv("GCP_STORAGE_BUCKET")
         self.use_cloud = os.getenv('USE_CLOUD_STORAGE', 'false').lower() == 'true'
         local_path = os.getenv('LOCAL_STORAGE_PATH', './working')
@@ -118,6 +137,28 @@ class StorageAdapter:
                 logger.info("Falling back to local storage due to error")
         
         logger.info(f"Storage adapter initialized. Using cloud: {self.use_cloud}")
+        self._initialized = True
+    
+    @classmethod
+    def get_instance(cls):
+        """
+        Get the singleton instance of StorageAdapter.
+        
+        This is the preferred way to get a StorageAdapter instance.
+        Direct instantiation using StorageAdapter() is deprecated but still works.
+        """
+        return cls()
+    
+    @classmethod
+    def reset_instance(cls):
+        """
+        Reset the singleton instance. This is primarily for testing purposes.
+        
+        Warning: This should only be used in tests as it can cause issues
+        if multiple parts of the application hold references to the old instance.
+        """
+        cls._instance = None
+        cls._initialized = False
     
     def write_text(self, path: Union[str, Path], content: str, encoding: str = "utf-8") -> str:
         """

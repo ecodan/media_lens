@@ -1,14 +1,14 @@
 import os
 import logging
+import time
 import uuid
 from flask import Flask, request, jsonify
 import asyncio
-from pathlib import Path
 from threading import Thread
 
-from src.media_lens.common import create_logger, LOGGER_NAME, get_working_dir, RunState
+from src.media_lens.common import create_logger, LOGGER_NAME, RunState, SITES
 from src.media_lens.runner import run, Steps, process_weekly_content, summarize_all
-from src.media_lens.storage import shared_storage
+from src.media_lens.storage_adapter import StorageAdapter
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -17,11 +17,8 @@ app = Flask(__name__)
 create_logger(LOGGER_NAME)
 logger = logging.getLogger(LOGGER_NAME)
 
-# Set working directory
-WORKING_DIR = Path(get_working_dir()) / "out"
-
 # Use shared storage adapter
-storage = shared_storage
+storage: StorageAdapter = StorageAdapter.get_instance()
 
 # Dictionary to track running tasks
 active_runs = {}
@@ -50,13 +47,9 @@ def health():
 def run_task_async(steps, run_id, data=None):
     """Run a task in a separate thread and track its status"""
     try:
-        # Create working directory if needed
-        os.makedirs(WORKING_DIR, exist_ok=True)
-        
         # Run the pipeline
         result = asyncio.run(run(
             steps=steps, 
-            out_dir=WORKING_DIR, 
             run_id=run_id
         ))
         
@@ -83,10 +76,11 @@ def run_pipeline():
         
         # Convert string steps to enum
         steps = [Steps(step) for step in requested_steps]
-
-        global SITES
+        
+        # Update sites if provided
         if data.get('sites'):
-            SITES = data.get('sites')
+            import src.media_lens.common
+            src.media_lens.common.SITES = data.get('sites')
 
         # Generate a unique run ID
         run_id = data.get('run_id', str(uuid.uuid4())[:8])
@@ -106,7 +100,7 @@ def run_pipeline():
             "steps": [s.value for s in steps],
             "completed_steps": [],
             "error": None,
-            "start_time": asyncio.get_event_loop().time()
+            "start_time": time.time()
         }
         
         # Start the task in a separate thread
@@ -181,9 +175,6 @@ def get_status():
 def run_weekly():
     """Endpoint to run weekly content processing"""
     try:
-        # Create working directory if needed
-        os.makedirs(WORKING_DIR, exist_ok=True)
-        
         # Parse request parameters
         data = request.get_json(silent=True) or {}
         current_week_only = data.get('current_week_only', True)
@@ -205,7 +196,7 @@ def run_weekly():
                 "specific_weeks": specific_weeks
             },
             "error": None,
-            "start_time": asyncio.get_event_loop().time()
+            "start_time": time.time()
         }
         
         # Reset run state
@@ -216,7 +207,6 @@ def run_weekly():
             try:
                 # Run weekly processing
                 asyncio.run(process_weekly_content(
-                    WORKING_DIR, 
                     current_week_only=current_week_only,
                     overwrite=overwrite,
                     specific_weeks=specific_weeks
@@ -252,9 +242,6 @@ def run_weekly():
 def run_summarize():
     """Endpoint to run daily summarization"""
     try:
-        # Create working directory if needed
-        os.makedirs(WORKING_DIR, exist_ok=True)
-        
         # Parse request parameters
         data = request.get_json(silent=True) or {}
         force = data.get('force', False)
@@ -272,7 +259,7 @@ def run_summarize():
                 "force": force
             },
             "error": None,
-            "start_time": asyncio.get_event_loop().time()
+            "start_time": time.time()
         }
         
         # Reset run state
@@ -282,7 +269,7 @@ def run_summarize():
         def run_summarize_async():
             try:
                 # Run summarization
-                asyncio.run(summarize_all(WORKING_DIR, force=force))
+                asyncio.run(summarize_all(force=force))
                 active_runs[run_id]["status"] = "success"
             except Exception as e:
                 logger.error(f"Error in summarize task {run_id}: {str(e)}", exc_info=True)

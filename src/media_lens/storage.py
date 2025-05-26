@@ -25,7 +25,7 @@ def get_shared_storage():
             # Try to load .env if environment variables aren't set
             dotenv.load_dotenv()
         logger.info("Creating shared storage adapter instance")
-        _shared_storage = StorageAdapter()
+        _shared_storage = StorageAdapter.get_instance()
     return _shared_storage
 
 # Create a property-like access for backward compatibility

@@ -334,9 +334,8 @@ async def summarize_all(force: bool = False):
         if storage.file_exists(summary_file_path) and not force:
             logger.info(f"Summary already exists for {job_dir_name}, skipping...")
         else:
-            # Convert to Path for compatibility with summarizer
-            job_dir_path = Path(storage.get_absolute_path(job_dir_name))
-            summarizer.generate_summary_from_job_dir(job_dir_path)
+            # Pass job directory name directly to summarizer
+            summarizer.generate_summary_from_job_dir(job_dir_name)
 
 async def run(steps: list[Steps], **kwargs) -> dict:
     """
@@ -375,15 +374,14 @@ async def run(steps: list[Steps], **kwargs) -> dict:
                     
         if job_dirs:
             # Get the latest job dir by sorting and taking the most recent
-            artifacts_dir_name = sorted(job_dirs)[-1]  # UTC timestamps sort chronologically
-            artifacts_dir = Path(storage.get_absolute_path(artifacts_dir_name))
+            artifacts_dir = sorted(job_dirs)[-1]  # UTC timestamps sort chronologically
         else:
             artifacts_dir = None
     else:
         job_dir_path = kwargs['job_dir']
         if not storage.file_exists(job_dir_path):
             raise FileNotFoundError(f"Job directory {job_dir_path} does not exist")
-        artifacts_dir = Path(storage.get_absolute_path(job_dir_path))
+        artifacts_dir = job_dir_path
 
     try:
         if Steps.HARVEST in steps and not RunState.stop_requested():

@@ -6,7 +6,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 import pytest
 
 from src.media_lens.runner import (
-    extract, interpret, interpret_weekly, format_and_deploy, Steps, summarize_all
+    extract, interpret, interpret_weekly, format_output, deploy_output, Steps, summarize_all
 )
 
 
