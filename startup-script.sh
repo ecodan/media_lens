@@ -124,7 +124,8 @@ ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 EOF
 
 # Merge FTP credentials from .env.ftp if it exists
-if [ -f "~/media-lens/.env.ftp" ]; then
+FTP_ENV_FILE="$HOME/media-lens/.env.ftp"
+if [ -f "$FTP_ENV_FILE" ]; then
     echo "Found FTP credentials file, merging with main .env..."
     
     # Read each line from .env.ftp and append to main .env if variable doesn't already exist
@@ -142,11 +143,11 @@ if [ -f "~/media-lens/.env.ftp" ]; then
                 echo "Variable $var_name already exists in .env, skipping"
             fi
         fi
-    done < "/app/.env.ftp"
+    done < "$FTP_ENV_FILE"
     
     echo "FTP credentials merged successfully"
 else
-    echo "No FTP credentials file found at ~/media-lens/.env.ftp"
+    echo "No FTP credentials file found at $FTP_ENV_FILE"
 fi
 
 # Run docker-compose with the cloud profile to start only necessary services
