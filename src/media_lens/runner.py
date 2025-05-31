@@ -18,6 +18,7 @@ from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, 
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
+from src.media_lens.presentation.deployer import upload_html_content_from_storage
 from src.media_lens.extraction.summarizer import DailySummarizer
 from src.media_lens.presentation.deployer import upload_file
 from src.media_lens.presentation.html_formatter import generate_html_from_path
@@ -203,12 +204,7 @@ async def deploy_output() -> None:
     index_local_path = "medialens.html"
     if storage.file_exists(index_local_path):
         logger.info(f"Uploading main index file: {index_local_path}")
-        local_temp_path = storage.get_absolute_path("medialens.html")  # For backward compatibility with upload_file
-        # Get content from storage and write to temp file then upload
-        index_content = storage.read_text(index_local_path)
-        with open(local_temp_path, "w") as f:
-            f.write(index_content)
-        upload_file(Path(local_temp_path), remote_path)
+        upload_html_content_from_storage(index_local_path, remote_path)
     else:
         logger.warning(f"Main index file not found at {index_local_path}")
     
@@ -218,12 +214,7 @@ async def deploy_output() -> None:
     
     for weekly_file in weekly_files:
         logger.info(f"Uploading weekly file: {weekly_file}")
-        # Get content and write to temp file then upload
-        file_content = storage.read_text(weekly_file)
-        local_temp_path = storage.get_absolute_path(os.path.basename(weekly_file))
-        with open(local_temp_path, "w") as f:
-            f.write(file_content)
-        upload_file(Path(local_temp_path), remote_path)
+        upload_html_content_from_storage(weekly_file, remote_path)
     
     # Get subdirectories using storage.list_directories
     all_dirs = storage.list_directories("")
@@ -238,12 +229,7 @@ async def deploy_output() -> None:
         html_files = storage.get_files_by_pattern(subdir_path, "medialens*.html")
         for html_file in html_files:
             logger.info(f"Uploading additional HTML file from subdirectory: {html_file}")
-            # Get content and write to temp file then upload
-            file_content = storage.read_text(html_file)
-            local_temp_path = storage.get_absolute_path(os.path.basename(html_file))
-            with open(local_temp_path, "w") as f:
-                f.write(file_content)
-            upload_file(Path(local_temp_path), remote_path)
+            upload_html_content_from_storage(html_file, remote_path)
 
 
 

@@ -1,6 +1,7 @@
 import logging
 import os
 import socket
+import tempfile
 from pathlib import Path
 import paramiko
 
@@ -8,6 +9,28 @@ import dotenv
 
 from src.media_lens.common import get_project_root
 from src.media_lens.storage import shared_storage
+
+
+def upload_html_content_from_storage(storage_path: str, remote_path: str) -> None:
+    """
+    Helper function to read HTML content from storage, create temp file, and upload it.
+    
+    Args:
+        storage_path: Path to the file in storage
+        remote_path: Remote path for deployment
+    """
+    # Get content from storage
+    content = shared_storage.read_text(storage_path)
+    
+    # Create temporary file and upload
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
+        f.write(content)
+        local_temp_path = f.name
+    
+    upload_file(Path(local_temp_path), remote_path)
+    
+    # Clean up temp file
+    os.unlink(local_temp_path)
 
 
 def upload_file(local_file: Path, remote_path: str):
