@@ -124,7 +124,7 @@ ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 EOF
 
 # Merge FTP credentials from .env.ftp if it exists
-if [ -f "/app/.env.ftp" ]; then
+if [ -f "~/media-lens/.env.ftp" ]; then
     echo "Found FTP credentials file, merging with main .env..."
     
     # Read each line from .env.ftp and append to main .env if variable doesn't already exist
