@@ -123,30 +123,33 @@ class WebpageScraper:
             content = None
             
         finally:
-            # Properly close resources in reverse order
+            # Properly close resources in reverse order with timeouts
+            logger.debug("Starting resource cleanup...")
             if page:
                 try:
-                    await page.close()
+                    await asyncio.wait_for(page.close(), timeout=5.0)
                 except Exception as e:
                     logger.warning(f"Error closing page: {str(e)}")
                     
             if context:
                 try:
-                    await context.close()
+                    await asyncio.wait_for(context.close(), timeout=5.0)
                 except Exception as e:
                     logger.warning(f"Error closing context: {str(e)}")
                     
             if browser:
                 try:
-                    await browser.close()
+                    await asyncio.wait_for(browser.close(), timeout=10.0)
                 except Exception as e:
                     logger.warning(f"Error closing browser: {str(e)}")
                     
             if playwright:
                 try:
-                    await playwright.stop()
+                    await asyncio.wait_for(playwright.stop(), timeout=10.0)
                 except Exception as e:
                     logger.warning(f"Error stopping playwright: {str(e)}")
+            
+            logger.debug("Resource cleanup completed")
         
         return content
 
