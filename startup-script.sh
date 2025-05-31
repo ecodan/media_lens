@@ -123,6 +123,32 @@ GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 EOF
 
+# Merge FTP credentials from .env.ftp if it exists
+if [ -f "/app/.env.ftp" ]; then
+    echo "Found FTP credentials file, merging with main .env..."
+    
+    # Read each line from .env.ftp and append to main .env if variable doesn't already exist
+    while IFS= read -r line || [ -n "$line" ]; do
+        # Skip empty lines and comments
+        if [[ -n "$line" && ! "$line" =~ ^[[:space:]]*# ]]; then
+            # Extract variable name (everything before the first =)
+            var_name=$(echo "$line" | cut -d'=' -f1)
+            
+            # Check if this variable already exists in .env
+            if ! grep -q "^${var_name}=" /app/.env; then
+                echo "Adding FTP variable: $var_name"
+                echo "$line" >> /app/.env
+            else
+                echo "Variable $var_name already exists in .env, skipping"
+            fi
+        fi
+    done < "/app/.env.ftp"
+    
+    echo "FTP credentials merged successfully"
+else
+    echo "No FTP credentials file found at /app/.env.ftp"
+fi
+
 # Run docker-compose with the cloud profile to start only necessary services
 echo "Starting services with docker-compose using cloud profile..."
 cd /app
