@@ -342,6 +342,9 @@ class LLMWebsiteInterpreter:
 
     @staticmethod
     def _pre_process_articles(max_articles_per_site, site, site_articles) -> List[Dict]:
+        # Filter out articles with no text content
+        site_articles = [article for article in site_articles if article.get('text')]
+        
         # Calculate the total number of words in all articles in site_articles
         total_words: int = sum(len(article['text'].split()) for article in site_articles)
         logger.debug(f"Total words for site {site}: {total_words}")
