@@ -167,22 +167,37 @@ def _audit_single_directory(timestamp_dir: str, sites: List[str], audit_data: di
             # Check for article files (typically 0-4, but we'll check what exists)
             try:
                 extracted_data = storage.read_json(extracted_json)
-                stories = extracted_data.get("stories", [])
-                for idx, story in enumerate(stories):
-                    article_file = f"{timestamp_dir}/{site}-clean-article-{idx}.json"
-                    if story.get("url") and not storage.file_exists(article_file):
-                        problem = f"Missing article file: {article_file}"
-                        logger.warning(problem)
-                        audit_data["problems_found"].append({
-                            "directory": timestamp_dir,
-                            "site": site,
-                            "type": "missing_article_file",
-                            "file": article_file,
-                            "description": problem,
-                            "repairable": True
-                        })
-                        needs_extraction.append((timestamp_dir, site))
-                        break  # Only need to flag once per site
+                
+                # Check if the JSON is empty or missing stories
+                if not extracted_data or not extracted_data.get("stories"):
+                    problem = f"Empty or invalid extracted JSON file: {extracted_json} - will regenerate"
+                    logger.warning(problem)
+                    needs_extraction.append((timestamp_dir, site))
+                    audit_data["problems_found"].append({
+                        "directory": timestamp_dir,
+                        "site": site,
+                        "type": "empty_extracted_json",
+                        "file": extracted_json,
+                        "description": problem,
+                        "repairable": True
+                    })
+                else:
+                    stories = extracted_data.get("stories", [])
+                    for idx, story in enumerate(stories):
+                        article_file = f"{timestamp_dir}/{site}-clean-article-{idx}.json"
+                        if story.get("url") and not storage.file_exists(article_file):
+                            problem = f"Missing article file: {article_file}"
+                            logger.warning(problem)
+                            audit_data["problems_found"].append({
+                                "directory": timestamp_dir,
+                                "site": site,
+                                "type": "missing_article_file",
+                                "file": article_file,
+                                "description": problem,
+                                "repairable": True
+                            })
+                            needs_extraction.append((timestamp_dir, site))
+                            break  # Only need to flag once per site
             except Exception as e:
                 problem = f"Error reading extracted data from {extracted_json}: {e}"
                 logger.error(problem)
@@ -304,7 +319,7 @@ async def _repair_extraction(needs_extraction: List[tuple], audit_data: dict) ->
                 })
             
         except Exception as e:
-            error_msg = f"Failed to repair extraction for {timestamp_dir}: {e}"
+            error_msg = f"LLM extraction failed for {timestamp_dir}: {e}"
             logger.error(error_msg)
             for site in sites:
                 audit_data["repairs_made"].append({
@@ -314,6 +329,15 @@ async def _repair_extraction(needs_extraction: List[tuple], audit_data: dict) ->
                     "file": f"{timestamp_dir}/{site}-clean-extracted.json",
                     "description": error_msg,
                     "success": False
+                })
+                # Also log as a problem for audit visibility
+                audit_data["problems_found"].append({
+                    "directory": timestamp_dir,
+                    "site": site,
+                    "type": "llm_extraction_error",
+                    "file": f"{timestamp_dir}/{site}-clean-extracted.json",
+                    "description": f"LLM extraction error during repair: {e}",
+                    "repairable": False
                 })
 
 
