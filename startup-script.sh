@@ -146,7 +146,7 @@ if [ -f "~/media-lens/.env.ftp" ]; then
     
     echo "FTP credentials merged successfully"
 else
-    echo "No FTP credentials file found at /app/.env.ftp"
+    echo "No FTP credentials file found at ~/media-lens/.env.ftp"
 fi
 
 # Run docker-compose with the cloud profile to start only necessary services
