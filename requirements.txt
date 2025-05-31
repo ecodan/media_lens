@@ -35,6 +35,7 @@ pytz==2025.1
 requirements-parser==0.13.0
 rsa==4.9
 schedule==1.2.2
+setuptools==69.0.0
 tenacity==9.0.0
 trafilatura==2.0.0
 Werkzeug==3.1.3
