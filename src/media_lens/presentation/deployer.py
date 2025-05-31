@@ -22,22 +22,26 @@ def upload_html_content_from_storage(storage_path: str, remote_path: str) -> Non
     # Get content from storage
     content = shared_storage.read_text(storage_path)
     
+    # Extract the original filename from storage_path
+    original_filename = Path(storage_path).name
+    
     # Create temporary file and upload
     with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
         f.write(content)
         local_temp_path = f.name
     
-    upload_file(Path(local_temp_path), remote_path)
+    upload_file(Path(local_temp_path), remote_path, original_filename)
     
     # Clean up temp file
     os.unlink(local_temp_path)
 
 
-def upload_file(local_file: Path, remote_path: str):
+def upload_file(local_file: Path, remote_path: str, target_filename: str = None):
     """
     Uploads a file to a remote server using SFTP or cloud storage.
     :param local_file: full path to the local file
     :param remote_path: relative path to the remote directory
+    :param target_filename: optional filename to use for the uploaded file (defaults to local file name)
     :return:
     """
     # Check if we're using cloud storage
@@ -48,8 +52,11 @@ def upload_file(local_file: Path, remote_path: str):
         # or set up a Google Cloud CDN in front of the bucket
         storage = shared_storage
         
-        # If local_file is a Path object, convert to string to get the file name
-        file_name = local_file.name if hasattr(local_file, 'name') else os.path.basename(str(local_file))
+        # Use target_filename if provided, otherwise extract from local_file
+        if target_filename:
+            file_name = target_filename
+        else:
+            file_name = local_file.name if hasattr(local_file, 'name') else os.path.basename(str(local_file))
         
         # First, we need to read the file content
         if storage.file_exists(file_name):
@@ -150,7 +157,8 @@ def upload_file(local_file: Path, remote_path: str):
             print("Created reports directory")
 
         # Construct remote file path
-        remote_file = f'{remote_path}/{Path(local_file).name}'
+        filename = target_filename if target_filename else Path(local_file).name
+        remote_file = f'{remote_path}/{filename}'
 
         # Upload the file
         print(f"Uploading {local_file} to {remote_file}...")

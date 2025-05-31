@@ -13,6 +13,7 @@ from typing import List, Union, Optional
 import dotenv
 from dateparser.utils.strptime import strptime
 
+from src.media_lens.auditor import audit_days
 from src.media_lens.collection.harvester import Harvester
 from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL, get_working_dir, UTC_REGEX_PATTERN_BW_COMPAT, RunState, SITES_DEFAULT, is_last_day_of_week, get_week_key
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
@@ -489,6 +490,24 @@ def main():
     
     # Stop command
     stop_parser = subparsers.add_parser('stop', help='Stop a currently running workflow')
+    
+    # Audit command
+    audit_parser = subparsers.add_parser('audit', help='Audit directories for missing or incomplete files')
+    audit_parser.add_argument(
+        '-s', '--start-date',
+        type=str,
+        help='Start date in YYYY-MM-DD format (inclusive). If not specified, audits from earliest date.'
+    )
+    audit_parser.add_argument(
+        '-e', '--end-date',
+        type=str,
+        help='End date in YYYY-MM-DD format (inclusive). If not specified, audits to latest date.'
+    )
+    audit_parser.add_argument(
+        '--no-report',
+        action='store_true',
+        help='Skip generating the audit report file (audit.txt)'
+    )
 
     global SITES
 
@@ -544,6 +563,33 @@ def main():
         # Request stop for the current run
         RunState.request_stop()
         logger.info("Stop requested for the current run")
+    elif args.command == 'audit':
+        # Audit directories for completeness
+        start_date = None
+        end_date = None
+        
+        if args.start_date:
+            try:
+                start_date = strptime(args.start_date, "%Y-%m-%d")
+                start_date = start_date.replace(tzinfo=datetime.timezone.utc)
+            except ValueError as e:
+                logger.error(f"Invalid start date format: {str(e)}")
+                print(f"Error: Invalid start date format. Use YYYY-MM-DD")
+                return
+                
+        if args.end_date:
+            try:
+                end_date = strptime(args.end_date, "%Y-%m-%d")
+                end_date = end_date.replace(tzinfo=datetime.timezone.utc)
+            except ValueError as e:
+                logger.error(f"Invalid end date format: {str(e)}")
+                print(f"Error: Invalid end date format. Use YYYY-MM-DD")
+                return
+        
+        generate_report = not args.no_report
+        logger.info(f"Starting audit from {args.start_date if args.start_date else 'earliest'} to {args.end_date if args.end_date else 'latest'}")
+        audit_days(start_date=start_date, end_date=end_date, audit_report=generate_report)
+        print("Audit completed successfully")
     else:
         parser.print_help()
 
