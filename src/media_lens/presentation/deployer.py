@@ -38,50 +38,21 @@ def upload_html_content_from_storage(storage_path: str, remote_path: str) -> Non
 
 def upload_file(local_file: Path, remote_path: str, target_filename: str = None):
     """
-    Uploads a file to a remote server using SFTP or cloud storage.
+    Uploads a file to a remote server using SFTP.
     :param local_file: full path to the local file
     :param remote_path: relative path to the remote directory
     :param target_filename: optional filename to use for the uploaded file (defaults to local file name)
     :return:
     """
-    # Check if we're using cloud storage
-    use_cloud = os.getenv('USE_CLOUD_STORAGE', 'false').lower() == 'true'
-    
-    if use_cloud:
-        # When using cloud storage, we can make the file public via a web URL
-        # or set up a Google Cloud CDN in front of the bucket
-        storage = shared_storage
-        
-        # Use target_filename if provided, otherwise extract from local_file
-        if target_filename:
-            file_name = target_filename
-        else:
-            file_name = local_file.name if hasattr(local_file, 'name') else os.path.basename(str(local_file))
-        
-        # First, we need to read the file content
-        if storage.file_exists(file_name):
-            # File already exists in storage, nothing to do
-            logging.info(f"File {file_name} already exists in cloud storage")
-            return True
-        else:
-            # File doesn't exist in storage, need to read from local and upload
-            with open(local_file, 'r') as f:
-                content = f.read()
-            
-            # Upload to cloud storage
-            storage.write_text(file_name, content)
-            logging.info(f"File {file_name} uploaded to cloud storage")
-            return True
-    else:
-        # Use traditional SFTP for non-cloud deployments
-        # Get FTP credentials
-        hostname = os.getenv("FTP_HOSTNAME")
-        # Check for IP fallback if hostname is set
-        ip_fallback = os.getenv("FTP_IP_FALLBACK")
-        username = os.getenv("FTP_USERNAME")
-        key_path = os.getenv("FTP_KEY_PATH")
-        port_str = os.getenv("FTP_PORT")
-        port: int = int(port_str) if port_str else 22
+
+    # Get FTP credentials
+    hostname = os.getenv("FTP_HOSTNAME")
+    # Check for IP fallback if hostname is set
+    ip_fallback = os.getenv("FTP_IP_FALLBACK")
+    username = os.getenv("FTP_USERNAME")
+    key_path = os.getenv("FTP_KEY_PATH")
+    port_str = os.getenv("FTP_PORT")
+    port: int = int(port_str) if port_str else 22
 
     try:
         connect_hostname = hostname
