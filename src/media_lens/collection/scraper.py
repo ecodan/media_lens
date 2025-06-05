@@ -158,14 +158,6 @@ class WebpageScraper:
                 except (Exception, asyncio.TimeoutError) as e:
                     logger.warning(f"Error stopping playwright: {str(e)}")
             
-            # Cancel any remaining tasks to prevent "Future exception was never retrieved" errors
-            tasks = [task for task in asyncio.all_tasks() if not task.done()]
-            if tasks:
-                for task in tasks:
-                    if not task.done():
-                        task.cancel()
-                # Wait briefly for cancellations to complete
-                await asyncio.sleep(0.1)
             
             logger.debug("Resource cleanup completed")
         

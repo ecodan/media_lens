@@ -185,6 +185,7 @@ fi
 echo "Starting services with docker-compose using cloud profile..."
 cd /app
 export WORKING_DIR="/app/working"
+# Use the container's persistent /app/keys directory
 # Start only the app service explicitly to avoid dependency issues
 docker-compose --profile cloud up -d app
 
