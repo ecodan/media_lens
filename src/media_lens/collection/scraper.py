@@ -125,29 +125,47 @@ class WebpageScraper:
         finally:
             # Properly close resources in reverse order with timeouts
             logger.debug("Starting resource cleanup...")
+            
+            # Give a brief moment for any pending operations to complete
+            await asyncio.sleep(0.1)
+            
             if page:
                 try:
-                    await asyncio.wait_for(page.close(), timeout=5.0)
-                except Exception as e:
-                    logger.warning(f"Error closing page: {str(e)}")
+                    if not page.is_closed():
+                        await asyncio.wait_for(page.close(), timeout=5.0)
+                except (Exception, asyncio.TimeoutError) as e:
+                    if "Target page, context or browser has been closed" not in str(e):
+                        logger.warning(f"Error closing page: {str(e)}")
                     
             if context:
                 try:
                     await asyncio.wait_for(context.close(), timeout=5.0)
-                except Exception as e:
-                    logger.warning(f"Error closing context: {str(e)}")
+                except (Exception, asyncio.TimeoutError) as e:
+                    if "Target page, context or browser has been closed" not in str(e):
+                        logger.warning(f"Error closing context: {str(e)}")
                     
             if browser:
                 try:
-                    await asyncio.wait_for(browser.close(), timeout=10.0)
-                except Exception as e:
-                    logger.warning(f"Error closing browser: {str(e)}")
+                    if browser.is_connected():
+                        await asyncio.wait_for(browser.close(), timeout=10.0)
+                except (Exception, asyncio.TimeoutError) as e:
+                    if "Target page, context or browser has been closed" not in str(e):
+                        logger.warning(f"Error closing browser: {str(e)}")
                     
             if playwright:
                 try:
                     await asyncio.wait_for(playwright.stop(), timeout=10.0)
-                except Exception as e:
+                except (Exception, asyncio.TimeoutError) as e:
                     logger.warning(f"Error stopping playwright: {str(e)}")
+            
+            # Cancel any remaining tasks to prevent "Future exception was never retrieved" errors
+            tasks = [task for task in asyncio.all_tasks() if not task.done()]
+            if tasks:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                # Wait briefly for cancellations to complete
+                await asyncio.sleep(0.1)
             
             logger.debug("Resource cleanup completed")
         

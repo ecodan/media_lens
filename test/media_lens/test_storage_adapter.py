@@ -195,3 +195,72 @@ class TestStorageAdapter:
         # Read binary back
         read_binary = storage_adapter.read_binary(file_path)
         assert read_binary == binary_content
+
+    def test_singleton_behavior(self, monkeypatch, temp_test_dir):
+        """Test that StorageAdapter behaves as a singleton"""
+        # Reset singleton first
+        StorageAdapter.reset_instance()
+        
+        # Set up environment
+        monkeypatch.setenv("USE_CLOUD_STORAGE", "false")
+        monkeypatch.setenv("LOCAL_STORAGE_PATH", str(temp_test_dir))
+        
+        # Create two instances
+        adapter1 = StorageAdapter()
+        adapter2 = StorageAdapter()
+        
+        # They should be the same instance
+        assert adapter1 is adapter2
+        assert id(adapter1) == id(adapter2)
+    
+    def test_get_instance_no_reinitialize(self, monkeypatch, temp_test_dir, caplog):
+        """Test that get_instance() doesn't reinitialize an existing singleton"""
+        import logging
+        
+        # Reset singleton first
+        StorageAdapter.reset_instance()
+        
+        # Set up environment
+        monkeypatch.setenv("USE_CLOUD_STORAGE", "false")
+        monkeypatch.setenv("LOCAL_STORAGE_PATH", str(temp_test_dir))
+        
+        # Create first instance
+        with caplog.at_level(logging.WARNING):
+            adapter1 = StorageAdapter.get_instance()
+            
+            # Get instance again - this should not trigger warning
+            adapter2 = StorageAdapter.get_instance()
+            
+            # Should be same instance
+            assert adapter1 is adapter2
+            
+            # Should not have warning about already initialized
+            warning_messages = [record.message for record in caplog.records if record.levelno == logging.WARNING]
+            reinit_warnings = [msg for msg in warning_messages if "already initialized singleton" in msg]
+            assert len(reinit_warnings) == 0
+    
+    def test_direct_instantiation_warning(self, monkeypatch, temp_test_dir, caplog):
+        """Test that direct instantiation after get_instance() shows warning"""
+        import logging
+        
+        # Reset singleton first
+        StorageAdapter.reset_instance()
+        
+        # Set up environment
+        monkeypatch.setenv("USE_CLOUD_STORAGE", "false")
+        monkeypatch.setenv("LOCAL_STORAGE_PATH", str(temp_test_dir))
+        
+        # Create instance via get_instance
+        adapter1 = StorageAdapter.get_instance()
+        
+        # Direct instantiation should show warning
+        with caplog.at_level(logging.WARNING):
+            adapter2 = StorageAdapter()
+            
+            # Should be same instance
+            assert adapter1 is adapter2
+            
+            # Should have warning about already initialized
+            warning_messages = [record.message for record in caplog.records if record.levelno == logging.WARNING]
+            reinit_warnings = [msg for msg in warning_messages if "already initialized singleton" in msg]
+            assert len(reinit_warnings) == 1

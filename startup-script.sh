@@ -77,6 +77,29 @@ echo "Setting up Docker container..."
 # Stop any existing containers
 docker-compose down 2>/dev/null || true
 
+# Check if we need to rebuild the Docker image
+CURRENT_HASH=$(git rev-parse HEAD)
+PERSISTENT_DIR="/home/$(logname)/media-lens"
+LAST_BUILD_HASH_FILE="$PERSISTENT_DIR/.last_build_hash"
+
+# Ensure the persistent directory exists
+mkdir -p "$PERSISTENT_DIR"
+
+if [ -f "$LAST_BUILD_HASH_FILE" ]; then
+    LAST_BUILD_HASH=$(cat "$LAST_BUILD_HASH_FILE")
+else
+    LAST_BUILD_HASH=""
+fi
+
+if [ "$CURRENT_HASH" != "$LAST_BUILD_HASH" ]; then
+    echo "Code has changed (${LAST_BUILD_HASH} -> ${CURRENT_HASH}), rebuilding Docker image..."
+    docker-compose build --no-cache app
+    echo "$CURRENT_HASH" > "$LAST_BUILD_HASH_FILE"
+    echo "Docker image rebuilt successfully"
+else
+    echo "No code changes detected, using existing Docker image"
+fi
+
 # Retrieve ANTHROPIC_API_KEY from Secret Manager if not already set
 if [ -z "${ANTHROPIC_API_KEY}" ]; then
     echo "ANTHROPIC_API_KEY not found in environment, retrieving from Secret Manager..."

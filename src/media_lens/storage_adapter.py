@@ -147,7 +147,10 @@ class StorageAdapter:
         This is the preferred way to get a StorageAdapter instance.
         Direct instantiation using StorageAdapter() is deprecated but still works.
         """
-        return cls()
+        if cls._instance is None:
+            cls._instance = cls.__new__(cls)
+            cls._instance.__init__()
+        return cls._instance
     
     @classmethod
     def reset_instance(cls):
