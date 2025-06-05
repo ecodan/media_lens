@@ -79,7 +79,15 @@ docker-compose down 2>/dev/null || true
 
 # Check if we need to rebuild the Docker image
 CURRENT_HASH=$(git rev-parse HEAD)
-PERSISTENT_DIR="/home/$(logname)/media-lens"
+# Use a more reliable way to get the user directory for VM environments
+if [ -n "$SUDO_USER" ]; then
+    USER_HOME="/home/$SUDO_USER"
+elif [ -n "$USER" ]; then
+    USER_HOME="/home/$USER"
+else
+    USER_HOME="/root"
+fi
+PERSISTENT_DIR="$USER_HOME/media-lens"
 LAST_BUILD_HASH_FILE="$PERSISTENT_DIR/.last_build_hash"
 
 # Ensure the persistent directory exists
@@ -147,7 +155,7 @@ ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 EOF
 
 # Merge FTP credentials from .env.ftp if it exists
-FTP_ENV_FILE="/home/$(logname)/media-lens/.env.ftp"
+FTP_ENV_FILE="$USER_HOME/media-lens/.env.ftp"
 if [ -f "$FTP_ENV_FILE" ]; then
     echo "Found FTP credentials file, merging with main .env..."
     
