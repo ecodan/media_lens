@@ -21,6 +21,9 @@ services:
       - FTP_HOSTNAME=${FTP_HOSTNAME:-localhost}
       - FTP_USERNAME=${FTP_USERNAME:-user}
       - FTP_KEY_PATH=${FTP_KEY_PATH:-/app/keys/id_ed25519}
+      - FTP_PORT=${FTP_PORT:-22}
+      - FTP_PASSPHRASE=${FTP_PASSPHRASE}
+      - FTP_IP_FALLBACK=${FTP_IP_FALLBACK}
       - FTP_REMOTE_PATH=${FTP_REMOTE_PATH:-/var/www/html}
       # Path to service account credentials file, use VM environment variable with fallback
       - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-/app/keys/medialens-service-account.json}
