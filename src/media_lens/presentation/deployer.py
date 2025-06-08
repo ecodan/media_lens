@@ -1,8 +1,10 @@
+import datetime
 import logging
 import os
 import socket
 import tempfile
 from pathlib import Path
+from typing import Optional, List
 import paramiko
 
 import dotenv
@@ -11,13 +13,108 @@ from src.media_lens.common import get_project_root
 from src.media_lens.storage import shared_storage
 
 
-def upload_html_content_from_storage(storage_path: str, remote_path: str) -> None:
+def get_deploy_cursor() -> Optional[datetime.datetime]:
+    """
+    Get the last deploy cursor timestamp from storage.
+    
+    Returns:
+        Last deployed timestamp or None if no cursor exists
+    """
+    cursor_path = "deploy_cursor.txt"
+    storage = shared_storage
+    
+    if storage.file_exists(cursor_path):
+        try:
+            cursor_str = storage.read_text(cursor_path).strip()
+            return datetime.datetime.fromisoformat(cursor_str)
+        except (ValueError, OSError) as e:
+            print(f"Could not read deploy cursor: {e}")
+            return None
+    return None
+
+
+def update_deploy_cursor(timestamp: datetime.datetime) -> None:
+    """
+    Update the deploy cursor with the latest deployed timestamp.
+    
+    Args:
+        timestamp: The timestamp to set as the new cursor
+    """
+    cursor_path = "deploy_cursor.txt"
+    storage = shared_storage
+    
+    try:
+        storage.write_text(cursor_path, timestamp.isoformat())
+        print(f"Updated deploy cursor to {timestamp.isoformat()}")
+    except Exception as e:
+        print(f"Failed to update deploy cursor: {e}")
+
+
+def reset_deploy_cursor() -> None:
+    """
+    Reset the deploy cursor to force full deployment on next run.
+    """
+    cursor_path = "deploy_cursor.txt"
+    storage = shared_storage
+    
+    try:
+        if storage.file_exists(cursor_path):
+            storage.delete_file(cursor_path)
+            print("Deploy cursor reset - next deploy will upload all files")
+    except Exception as e:
+        print(f"Failed to reset deploy cursor: {e}")
+
+
+def get_files_to_deploy(cursor: Optional[datetime.datetime] = None) -> List[str]:
+    """
+    Get list of files that need to be deployed since cursor timestamp.
+    
+    Args:
+        cursor: Cursor timestamp (None means deploy all files)
+        
+    Returns:
+        List of file paths that need deployment
+    """
+    storage = shared_storage
+    staging_dir = storage.get_staging_directory()
+    
+    # Get all HTML files in staging directory
+    all_files = storage.get_files_by_pattern(staging_dir, "*.html")
+    
+    if cursor is None:
+        print("No deploy cursor found - deploying all files")
+        return all_files
+    
+    # Filter files by modification time
+    files_to_deploy = []
+    for file_path in all_files:
+        try:
+            file_mtime = storage.get_file_modified_time(file_path)
+            if file_mtime is None:
+                # If we can't get mtime, include the file to be safe
+                print(f"Could not get modification time for {file_path}, including to be safe")
+                files_to_deploy.append(file_path)
+            elif file_mtime > cursor:
+                files_to_deploy.append(file_path)
+        except Exception as e:
+            print(f"Could not get modification time for {file_path}: {e}")
+            # If we can't get mtime, include the file to be safe
+            files_to_deploy.append(file_path)
+    
+    print(f"Found {len(files_to_deploy)} files to deploy since cursor")
+    return files_to_deploy
+
+
+def upload_html_content_from_storage(storage_path: str, remote_path: str) -> bool:
     """
     Helper function to read HTML content from storage, create temp file, and upload it.
     
     Args:
         storage_path: Path to the file in storage
         remote_path: Remote path for deployment
+        
+    Returns:
+        bool: True if upload succeeded, False otherwise
     """
     # Get content from storage
     content = shared_storage.read_text(storage_path)
@@ -30,10 +127,12 @@ def upload_html_content_from_storage(storage_path: str, remote_path: str) -> Non
         f.write(content)
         local_temp_path = f.name
     
-    upload_file(Path(local_temp_path), remote_path, original_filename)
+    success = upload_file(Path(local_temp_path), remote_path, original_filename)
     
     # Clean up temp file
     os.unlink(local_temp_path)
+    
+    return success
 
 
 def upload_file(local_file: Path, remote_path: str, target_filename: str = None):

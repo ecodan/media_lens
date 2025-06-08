@@ -20,10 +20,10 @@ from src.media_lens.job_dir import JobDir
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
-from src.media_lens.presentation.deployer import upload_html_content_from_storage
+from src.media_lens.presentation.deployer import upload_html_content_from_storage, get_deploy_cursor, update_deploy_cursor, get_files_to_deploy, reset_deploy_cursor
 from src.media_lens.extraction.summarizer import DailySummarizer
 from src.media_lens.presentation.deployer import upload_file
-from src.media_lens.presentation.html_formatter import generate_html_from_path
+from src.media_lens.presentation.html_formatter import generate_html_from_path, reset_format_cursor
 from src.media_lens.storage import shared_storage
 from src.media_lens.storage_adapter import StorageAdapter
 
@@ -192,26 +192,32 @@ async def extract(job_dir):
     await extractor.run(delay_between_sites_secs=60)
 
 
-async def format_output() -> None:
+async def format_output(force_full: bool = False) -> None:
     """
-    Generate all HTML output files from the content in the jobs directory.
+    Generate HTML output files with incremental processing support.
     
+    Args:
+        force_full: If True, ignore cursor and regenerate everything
+        
     Returns:
         None
     """
     # Get template directory path as string instead of Path object
     template_dir_path: str = str(get_project_root() / "config/templates")
     
-    # Generate all HTML files (index and weekly pages)
-    generate_html_from_path(SITES, Path(template_dir_path))
+    # Generate HTML files (index and weekly pages) with cursor support
+    generate_html_from_path(SITES, Path(template_dir_path), force_full=force_full)
     
     logger.info("HTML files generated successfully")
 
 
-async def deploy_output() -> None:
+async def deploy_output(force_full: bool = False) -> None:
     """
-    Deploy generated HTML files to the remote server.
+    Deploy generated HTML files to the remote server with incremental processing support.
     
+    Args:
+        force_full: If True, ignore cursor and deploy all files
+        
     Returns:
         None
     """
@@ -221,28 +227,43 @@ async def deploy_output() -> None:
         logger.error("FTP_REMOTE_PATH environment variable not set, skipping deployment")
         return
     
-    logger.info(f"Deploying files to {remote_path}")
+    logger.info(f"Deploying files to {remote_path} (force_full={force_full})")
     
-    # Get staging directory and upload files from there
-    staging_dir = storage.get_staging_directory()
+    # Get cursor and determine what files need deployment
+    cursor = None if force_full else get_deploy_cursor()
+    files_to_deploy = get_files_to_deploy(cursor)
     
-    # Upload the main index page from staging
-    index_local_path = f"{staging_dir}/medialens.html"
-    if storage.file_exists(index_local_path):
-        logger.info(f"Uploading main index file: {index_local_path}")
-        upload_html_content_from_storage(index_local_path, remote_path)
-    else:
-        logger.warning(f"Main index file not found at {index_local_path}")
+    if not files_to_deploy and cursor is not None:
+        logger.info("No files need deployment since last deploy - skipping")
+        return
     
-    # Find and upload all weekly pages from staging directory
-    weekly_files = storage.get_files_by_pattern(staging_dir, "medialens-*.html")
-    logger.info(f"Found {len(weekly_files)} weekly HTML files in staging")
+    # Track deployment success and latest file timestamp
+    successful_uploads = []
+    latest_file_time = None
     
-    for weekly_file in weekly_files:
-        logger.info(f"Uploading weekly file: {weekly_file}")
-        upload_html_content_from_storage(weekly_file, remote_path)
+    # Deploy each file
+    for file_path in files_to_deploy:
+        logger.info(f"Uploading file: {file_path}")
+        success = upload_html_content_from_storage(file_path, remote_path)
+        
+        if success:
+            successful_uploads.append(file_path)
+            # Track the latest file modification time for cursor update
+            try:
+                file_mtime = storage.get_file_modified_time(file_path)
+                if file_mtime and (latest_file_time is None or file_mtime > latest_file_time):
+                    latest_file_time = file_mtime
+            except Exception as e:
+                logger.warning(f"Could not get modification time for {file_path}: {e}")
+        else:
+            logger.error(f"Failed to upload {file_path}")
     
-    logger.info("Deployment completed")
+    # Update cursor if we had successful uploads
+    if successful_uploads and latest_file_time:
+        update_deploy_cursor(latest_file_time)
+        logger.info(f"Updated deploy cursor to {latest_file_time.isoformat()}")
+    
+    logger.info(f"Deployment completed: {len(successful_uploads)}/{len(files_to_deploy)} files uploaded successfully")
 
 
 
@@ -490,13 +511,15 @@ async def run(steps: list[Steps], **kwargs) -> dict:
         if Steps.FORMAT in steps and not RunState.stop_requested():
             # Format output
             logger.info(f"[Run {run_id}] Starting format step")
-            await format_output()
+            force_full_format = kwargs.get('force_full_format', False)
+            await format_output(force_full=force_full_format)
             result["completed_steps"].append(Steps.FORMAT.value)
 
         if Steps.DEPLOY in steps and not RunState.stop_requested():
             # Deploy output
             logger.info(f"[Run {run_id}] Starting deployment step")
-            await deploy_output()
+            force_full_deploy = kwargs.get('force_full_deploy', False)
+            await deploy_output(force_full=force_full_deploy)
             result["completed_steps"].append(Steps.DEPLOY.value)
             
         if RunState.stop_requested():
@@ -555,6 +578,16 @@ def main():
         choices=['local', 'cloud'],
         help='Playwright browser configuration mode (default: cloud, or PLAYWRIGHT_MODE env var)'
     )
+    run_parser.add_argument(
+        '--force-full-format',
+        action='store_true',
+        help='Force full regeneration of HTML files, ignoring format cursor'
+    )
+    run_parser.add_argument(
+        '--force-full-deploy',
+        action='store_true',
+        help='Force deployment of all files, ignoring deploy cursor'
+    )
 
 
     # Summarize daily news command with option to force resummarization if no summary present
@@ -581,6 +614,24 @@ def main():
     
     # Stop command
     stop_parser = subparsers.add_parser('stop', help='Stop a currently running workflow')
+    
+    # Reset cursor command
+    reset_cursor_parser = subparsers.add_parser('reset-cursor', help='Reset format and/or deploy cursors')
+    reset_cursor_parser.add_argument(
+        '--format',
+        action='store_true',
+        help='Reset the format cursor (forces full HTML regeneration on next format)'
+    )
+    reset_cursor_parser.add_argument(
+        '--deploy',
+        action='store_true',
+        help='Reset the deploy cursor (forces full deployment on next deploy)'
+    )
+    reset_cursor_parser.add_argument(
+        '--all',
+        action='store_true',
+        help='Reset both format and deploy cursors'
+    )
     
     # Audit command
     audit_parser = subparsers.add_parser('audit', help='Audit directories for missing or incomplete files')
@@ -646,7 +697,9 @@ def main():
                 run_result = asyncio.run(run(
                     steps=steps, 
                     job_dir=job_dir,
-                    run_id=args.run_id if hasattr(args, 'run_id') and args.run_id else None
+                    run_id=args.run_id if hasattr(args, 'run_id') and args.run_id else None,
+                    force_full_format=getattr(args, 'force_full_format', False),
+                    force_full_deploy=getattr(args, 'force_full_deploy', False)
                 ))
                 if run_result["status"] != "success":
                     logger.warning(f"Job {job_dir} completed with status: {run_result['status']}")
@@ -654,7 +707,9 @@ def main():
             run_result = asyncio.run(run(
                 steps=steps, 
                 job_dir=args.job_dir,
-                run_id=args.run_id if hasattr(args, 'run_id') and args.run_id else None
+                run_id=args.run_id if hasattr(args, 'run_id') and args.run_id else None,
+                force_full_format=getattr(args, 'force_full_format', False),
+                force_full_deploy=getattr(args, 'force_full_deploy', False)
             ))
         if run_result["status"] != "success":
             logger.warning(f"Run completed with status: {run_result['status']}")
@@ -691,6 +746,20 @@ def main():
         # Request stop for the current run
         RunState.request_stop()
         logger.info("Stop requested for the current run")
+    elif args.command == 'reset-cursor':
+        # Reset cursors
+        if args.all or (not args.format and not args.deploy):
+            # Reset both if --all specified or no specific cursor mentioned
+            reset_format_cursor()
+            reset_deploy_cursor()
+            print("Both format and deploy cursors have been reset")
+        else:
+            if args.format:
+                reset_format_cursor()
+                print("Format cursor has been reset")
+            if args.deploy:
+                reset_deploy_cursor()
+                print("Deploy cursor has been reset")
     elif args.command == 'audit':
         # Audit directories for completeness
         start_date = None

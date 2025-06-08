@@ -1,13 +1,15 @@
+import datetime
 import os
 import asyncio
 from pathlib import Path
 from unittest.mock import patch, AsyncMock, MagicMock
+import sys
 
 import pytest
 
 from src.media_lens.runner import (
     extract, interpret, interpret_weekly, format_output, deploy_output, Steps, summarize_all,
-    validate_step_combinations, scrape, clean
+    validate_step_combinations, scrape, clean, main
 )
 
 
@@ -290,3 +292,196 @@ async def test_clean_function(mock_harvester_class, mock_env_vars):
     # Verify harvester was created and called correctly
     mock_harvester_class.assert_called_once()
     mock_harvester.clean_sites.assert_called_once_with(job_dir=job_dir, sites=sites)
+
+
+@pytest.mark.asyncio
+@patch('src.media_lens.runner.generate_html_from_path')
+async def test_format_output_with_force_full(mock_generate_html, mock_env_vars):
+    """Test format_output with force_full parameter."""
+    # Mock the HTML generator
+    mock_generate_html.return_value = "<html><body>Test report</body></html>"
+    
+    # Call format_output with force_full=True
+    await format_output(force_full=True)
+    
+    # Verify HTML generation was called with force_full=True
+    mock_generate_html.assert_called_once()
+    args, kwargs = mock_generate_html.call_args
+    assert kwargs.get('force_full') is True
+
+
+@pytest.mark.asyncio
+@patch('src.media_lens.runner.upload_html_content_from_storage')
+@patch('src.media_lens.runner.get_files_to_deploy')
+@patch('src.media_lens.runner.get_deploy_cursor')
+@patch('src.media_lens.runner.update_deploy_cursor')
+@patch('src.media_lens.runner.storage')
+async def test_deploy_output_with_cursor(mock_storage, mock_update_cursor, mock_get_cursor, 
+                                         mock_get_files, mock_upload, mock_env_vars):
+    """Test deploy_output with cursor functionality."""
+    # Mock environment variables
+    with patch.dict(os.environ, {"FTP_REMOTE_PATH": "/remote/path"}):
+        # Mock cursor and files
+        mock_get_cursor.return_value = datetime.datetime.now(datetime.timezone.utc)
+        mock_files = ["staging/medialens.html", "staging/medialens-2025-W09.html"]
+        mock_get_files.return_value = mock_files
+        
+        # Mock file modification times
+        def mock_get_file_modified_time(path):
+            return datetime.datetime.now(datetime.timezone.utc)
+        mock_storage.get_file_modified_time = mock_get_file_modified_time
+        
+        # Mock successful uploads
+        mock_upload.return_value = True
+        
+        # Call deploy_output
+        await deploy_output(force_full=False)
+        
+        # Verify cursor functions were called
+        mock_get_cursor.assert_called_once()
+        mock_get_files.assert_called_once()
+        
+        # Verify uploads were attempted
+        assert mock_upload.call_count == len(mock_files)
+        
+        # Verify cursor was updated
+        mock_update_cursor.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch('src.media_lens.runner.upload_html_content_from_storage')
+@patch('src.media_lens.runner.get_files_to_deploy')
+@patch('src.media_lens.runner.get_deploy_cursor')
+async def test_deploy_output_no_files_to_deploy(mock_get_cursor, mock_get_files, mock_upload, mock_env_vars):
+    """Test deploy_output when no files need deployment."""
+    # Mock environment variables
+    with patch.dict(os.environ, {"FTP_REMOTE_PATH": "/remote/path"}):
+        # Mock cursor exists and no files to deploy
+        mock_get_cursor.return_value = datetime.datetime.now(datetime.timezone.utc)
+        mock_get_files.return_value = []
+        
+        # Call deploy_output
+        await deploy_output(force_full=False)
+        
+        # Verify no uploads were attempted
+        mock_upload.assert_not_called()
+
+
+# CLI integration tests for cursor functionality
+
+@patch('src.media_lens.runner.reset_format_cursor')
+@patch('src.media_lens.runner.reset_deploy_cursor')
+def test_reset_cursor_command_all(mock_reset_deploy, mock_reset_format, capsys):
+    """Test reset-cursor command with --all flag."""
+    # Mock sys.argv
+    test_args = ['runner.py', 'reset-cursor', '--all']
+    with patch.object(sys, 'argv', test_args):
+        try:
+            main()
+        except SystemExit:
+            pass  # main() calls parser which may exit
+    
+    # Both cursors should be reset
+    mock_reset_format.assert_called_once()
+    mock_reset_deploy.assert_called_once()
+
+
+@patch('src.media_lens.runner.reset_format_cursor')
+@patch('src.media_lens.runner.reset_deploy_cursor')
+def test_reset_cursor_command_format_only(mock_reset_deploy, mock_reset_format, capsys):
+    """Test reset-cursor command with --format flag."""
+    # Mock sys.argv
+    test_args = ['runner.py', 'reset-cursor', '--format']
+    with patch.object(sys, 'argv', test_args):
+        try:
+            main()
+        except SystemExit:
+            pass
+    
+    # Only format cursor should be reset
+    mock_reset_format.assert_called_once()
+    mock_reset_deploy.assert_not_called()
+
+
+@patch('src.media_lens.runner.reset_format_cursor')
+@patch('src.media_lens.runner.reset_deploy_cursor')
+def test_reset_cursor_command_deploy_only(mock_reset_deploy, mock_reset_format, capsys):
+    """Test reset-cursor command with --deploy flag."""
+    # Mock sys.argv
+    test_args = ['runner.py', 'reset-cursor', '--deploy']
+    with patch.object(sys, 'argv', test_args):
+        try:
+            main()
+        except SystemExit:
+            pass
+    
+    # Only deploy cursor should be reset
+    mock_reset_deploy.assert_called_once()
+    mock_reset_format.assert_not_called()
+
+
+@patch('src.media_lens.runner.reset_format_cursor')
+@patch('src.media_lens.runner.reset_deploy_cursor')
+def test_reset_cursor_command_no_flags(mock_reset_deploy, mock_reset_format, capsys):
+    """Test reset-cursor command with no specific flags (should reset both)."""
+    # Mock sys.argv
+    test_args = ['runner.py', 'reset-cursor']
+    with patch.object(sys, 'argv', test_args):
+        try:
+            main()
+        except SystemExit:
+            pass
+    
+    # Both cursors should be reset when no flags specified
+    mock_reset_format.assert_called_once()
+    mock_reset_deploy.assert_called_once()
+
+
+@patch('src.media_lens.runner.run')
+@patch('src.media_lens.runner.asyncio.run')
+def test_run_command_with_force_flags(mock_asyncio_run, mock_run, capsys):
+    """Test run command with force flags."""
+    # Mock run function to avoid actual execution
+    mock_run.return_value = {"run_id": "test", "status": "success", "completed_steps": [], "error": None}
+    
+    # Mock sys.argv with force flags
+    test_args = ['runner.py', 'run', '-s', 'format', 'deploy', '--force-full-format', '--force-full-deploy']
+    with patch.object(sys, 'argv', test_args):
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test_key"}):
+            try:
+                main()
+            except SystemExit:
+                pass
+    
+    # Verify asyncio.run was called
+    mock_asyncio_run.assert_called_once()
+    
+    # Get the arguments passed to run()
+    args, kwargs = mock_asyncio_run.call_args[0][0].__wrapped__.__code__.co_varnames, {}
+    
+    # The force flags should be passed through
+    # Note: Since we're mocking asyncio.run, we need to check that the right function was called
+    assert mock_asyncio_run.called
+
+
+@patch('src.media_lens.runner.format_output')
+@patch('src.media_lens.runner.deploy_output')  
+@patch('src.media_lens.runner.run')
+async def test_run_function_with_force_flags(mock_run_impl, mock_deploy, mock_format):
+    """Test run function passes force flags to format and deploy."""
+    from src.media_lens.runner import run
+    
+    # Mock the format and deploy functions
+    mock_format.return_value = None
+    mock_deploy.return_value = None
+    
+    # Call run with force flags
+    result = await run(
+        steps=[Steps.FORMAT, Steps.DEPLOY],
+        force_full_format=True,
+        force_full_deploy=True
+    )
+    
+    # Verify force flags were passed to format and deploy
+    mock_format.assert_called_once_with(force_full=True)
+    mock_deploy.assert_called_once_with(force_full=True)

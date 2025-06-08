@@ -1,8 +1,10 @@
+import datetime
 import os
 import pytest
 import tempfile
 import shutil
 import json
+import time
 from pathlib import Path
 
 from src.media_lens.storage_adapter import StorageAdapter
@@ -264,3 +266,97 @@ class TestStorageAdapter:
             warning_messages = [record.message for record in caplog.records if record.levelno == logging.WARNING]
             reinit_warnings = [msg for msg in warning_messages if "already initialized singleton" in msg]
             assert len(reinit_warnings) == 1
+
+    def test_get_file_modified_time_existing_file(self, storage_adapter):
+        """Test getting modification time for an existing file"""
+        # Create a test file
+        file_path = "test_file.txt"
+        content = "test content"
+        
+        # Record time before writing
+        before_write = datetime.datetime.now(datetime.timezone.utc)
+        
+        # Write file
+        storage_adapter.write_text(file_path, content)
+        
+        # Record time after writing
+        after_write = datetime.datetime.now(datetime.timezone.utc)
+        
+        # Get modification time
+        mtime = storage_adapter.get_file_modified_time(file_path)
+        
+        # Verify modification time is reasonable
+        assert mtime is not None
+        assert isinstance(mtime, datetime.datetime)
+        assert mtime.tzinfo == datetime.timezone.utc
+        
+        # Time should be between before and after write times
+        assert before_write <= mtime <= after_write
+
+    def test_get_file_modified_time_nonexistent_file(self, storage_adapter):
+        """Test getting modification time for a non-existent file"""
+        # Try to get modification time for non-existent file
+        mtime = storage_adapter.get_file_modified_time("nonexistent.txt")
+        
+        # Should return None
+        assert mtime is None
+
+    def test_get_file_modified_time_file_ordering(self, storage_adapter):
+        """Test that modification times can be used to order files"""
+        # Create first file
+        file1_path = "file1.txt"
+        storage_adapter.write_text(file1_path, "content1")
+        mtime1 = storage_adapter.get_file_modified_time(file1_path)
+        
+        # Wait a small amount to ensure different modification times
+        time.sleep(0.01)
+        
+        # Create second file
+        file2_path = "file2.txt"
+        storage_adapter.write_text(file2_path, "content2")
+        mtime2 = storage_adapter.get_file_modified_time(file2_path)
+        
+        # Second file should have a later modification time
+        assert mtime1 is not None
+        assert mtime2 is not None
+        assert mtime2 > mtime1
+
+    def test_delete_file_success(self, storage_adapter):
+        """Test successful file deletion"""
+        file_path = "test_delete.txt"
+        
+        # Create file
+        storage_adapter.write_text(file_path, "content to delete")
+        assert storage_adapter.file_exists(file_path)
+        
+        # Delete file
+        result = storage_adapter.delete_file(file_path)
+        
+        # Verify deletion
+        assert result is True
+        assert not storage_adapter.file_exists(file_path)
+
+    def test_delete_file_nonexistent(self, storage_adapter):
+        """Test deleting a non-existent file"""
+        result = storage_adapter.delete_file("nonexistent.txt")
+        
+        # Should return False for non-existent file
+        assert result is False
+
+    def test_delete_directory_recursive(self, storage_adapter):
+        """Test recursive directory deletion"""
+        # Create nested directory structure with files
+        storage_adapter.write_text("test_dir/file1.txt", "content1")
+        storage_adapter.write_text("test_dir/subdir/file2.txt", "content2")
+        
+        # Verify files exist
+        assert storage_adapter.file_exists("test_dir/file1.txt")
+        assert storage_adapter.file_exists("test_dir/subdir/file2.txt")
+        
+        # Delete directory recursively
+        result = storage_adapter.delete_directory("test_dir", recursive=True)
+        
+        # Verify deletion
+        assert result is True
+        assert not storage_adapter.file_exists("test_dir/file1.txt")
+        assert not storage_adapter.file_exists("test_dir/subdir/file2.txt")

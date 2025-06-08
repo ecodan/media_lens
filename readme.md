@@ -6,6 +6,8 @@ A Python-based tool for comparative analysis of media worldviews through automat
 
 Media Lens systematically analyzes how different news sources present world events by comparing their headline choices and content framing. The system scrapes front pages of news websites, extracts top headlines, and uses Large Language Models (LLMs) to perform sentiment and framing analysis on the associated stories.
 
+A live version of this tool is available at [Media Lens](https://www.dancripe.com/reports/medialens.html).
+
 ## Key Features
 
 - Automated scraping of news site front pages

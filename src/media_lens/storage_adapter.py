@@ -1,3 +1,4 @@
+import datetime
 import os
 import json
 import logging
@@ -371,6 +372,38 @@ class StorageAdapter:
             # Local file system
             local_path = self.local_root / path_str
             return local_path.exists()
+    
+    def get_file_modified_time(self, path: Union[str, Path]) -> Optional[datetime.datetime]:
+        """
+        Get the modification time of a file.
+        
+        Args:
+            path: Path to the file (relative to storage root)
+            
+        Returns:
+            Modification time as datetime object or None if file doesn't exist
+        """
+        path_str = str(path)
+        
+        try:
+            if self.use_cloud:
+                blob = self.bucket.blob(path_str)
+                if blob.exists():
+                    blob.reload()  # Refresh metadata
+                    return blob.time_created  # Use creation time for cloud storage
+                else:
+                    return None
+            else:
+                # Local file system
+                local_path = self.local_root / path_str
+                if local_path.exists():
+                    mtime = os.path.getmtime(local_path)
+                    return datetime.datetime.fromtimestamp(mtime, tz=datetime.timezone.utc)
+                else:
+                    return None
+        except Exception as e:
+            logger.warning(f"Could not get modification time for {path_str}: {e}")
+            return None
     
     def delete_file(self, path: Union[str, Path]) -> bool:
         """

@@ -4,7 +4,7 @@ import logging
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any, Union, Optional
 from urllib.parse import urlparse
 
 import dotenv
@@ -17,6 +17,7 @@ from src.media_lens.common import (
     timestamp_as_long_date, timestamp_bw_compat_str_as_long_date, get_utc_datetime_from_timestamp, get_week_key, get_week_display
 )
 from src.media_lens.job_dir import JobDir
+from src.media_lens.storage_adapter import StorageAdapter
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -44,7 +45,7 @@ def generate_html_with_template(template_dir_path: Path, template_name: str, con
     """
     Generate HTML using a Jinja2 template.
     """
-    logger.debug(f"Generating HTML with template {template_name} in path {template_dir_path}")
+    # logger.debug(f"Generating HTML with template {template_name} in path {template_dir_path}")
     env = Environment(loader=FileSystemLoader(template_dir_path))
     template = env.get_template(template_name)
     html_output = template.render(**content)
@@ -125,10 +126,7 @@ def organize_runs_by_week(job_dirs: List[Union[Path, str, JobDir]], sites: List[
 
             # Load interpreted data
             interpreted_path = f"{job_dir.storage_path}/{site}-interpreted.json"
-            if not storage.file_exists(interpreted_path):
-                # this is expected if daily interpretation is not active
-                logger.debug(f"Interpreted file not found: {interpreted_path}")
-            else:
+            if storage.file_exists(interpreted_path):
                 interpreted = storage.read_json(interpreted_path)
                 run_data['interpreted'].append({
                     'site': site,
@@ -245,13 +243,13 @@ def generate_index_page(weeks_data: Dict, template_dir_path: Path) -> str:
     
     # Try to load the weekly summary for the latest week with fallback
     if weeks_data["weeks"]:
-        storage = shared_storage
+        storage: StorageAdapter = shared_storage
         
         # Iterate through weeks (newest first) until we find an available interpretation
         found_valid_weekly = False
         for week in weeks_data["weeks"]:
             week_key = week["week_key"]
-            weekly_file_path = f"weekly-{week_key}-interpreted.json"
+            weekly_file_path = f"{storage.get_intermediate_directory()}/weekly-{week_key}-interpreted.json"
             
             if storage.file_exists(weekly_file_path):
                 try:
@@ -298,39 +296,164 @@ def generate_index_page(weeks_data: Dict, template_dir_path: Path) -> str:
     )
 
 
-def generate_html_from_path(sites: list[str], template_dir_path: Path) -> str:
+def get_format_cursor() -> Optional[datetime.datetime]:
     """
-    Revised method to generate HTML from a path, now handling weekly organization.
+    Get the last format cursor timestamp from storage.
+    
+    Returns:
+        Last processed timestamp or None if no cursor exists
+    """
+    cursor_path = "format_cursor.txt"
+    storage = shared_storage
+    
+    if storage.file_exists(cursor_path):
+        try:
+            cursor_str = storage.read_text(cursor_path).strip()
+            return datetime.datetime.fromisoformat(cursor_str)
+        except (ValueError, OSError) as e:
+            logger.warning(f"Could not read format cursor: {e}")
+            return None
+    return None
+
+
+def update_format_cursor(timestamp: datetime.datetime) -> None:
+    """
+    Update the format cursor with the latest processed timestamp.
+    
+    Args:
+        timestamp: The timestamp to set as the new cursor
+    """
+    cursor_path = "format_cursor.txt"
+    storage = shared_storage
+    
+    try:
+        storage.write_text(cursor_path, timestamp.isoformat())
+        logger.debug(f"Updated format cursor to {timestamp.isoformat()}")
+    except Exception as e:
+        logger.error(f"Failed to update format cursor: {e}")
+
+
+def reset_format_cursor() -> None:
+    """
+    Reset the format cursor to force full regeneration on next run.
+    """
+    cursor_path = "format_cursor.txt"
+    storage = shared_storage
+    
+    try:
+        if storage.file_exists(cursor_path):
+            storage.delete_file(cursor_path)
+            logger.info("Format cursor reset - next format will process all content")
+    except Exception as e:
+        logger.error(f"Failed to reset format cursor: {e}")
+
+
+def get_jobs_since_cursor(sites: list[str], cursor: Optional[datetime.datetime] = None) -> tuple[List[JobDir], List[str]]:
+    """
+    Get job directories that need processing since the cursor timestamp.
+    
+    Args:
+        sites: List of media sites
+        cursor: Cursor timestamp (None means process all)
+        
+    Returns:
+        Tuple of (job_dirs_to_process, affected_week_keys)
+    """
+    storage = shared_storage
+    all_job_dirs = JobDir.list_all(storage)
+    
+    if cursor is None:
+        logger.info("No cursor found - processing all job directories")
+        job_dirs_to_process = all_job_dirs
+    else:
+        logger.info(f"Processing jobs since cursor: {cursor.isoformat()}")
+        job_dirs_to_process = [
+            job_dir for job_dir in all_job_dirs 
+            if job_dir.datetime > cursor
+        ]
+        logger.info(f"Found {len(job_dirs_to_process)} new jobs since cursor")
+    
+    # Determine which weeks are affected
+    affected_weeks = set()
+    for job_dir in job_dirs_to_process:
+        affected_weeks.add(job_dir.week_key)
+    
+    affected_week_keys = list(affected_weeks)
+    logger.info(f"Affected weeks: {affected_week_keys}")
+    
+    return job_dirs_to_process, affected_week_keys
+
+
+def generate_html_from_path(sites: list[str], template_dir_path: Path, force_full: bool = False) -> str:
+    """
+    Generate HTML from job directories with incremental processing support.
     
     :param sites: list of media sites that will be covered
     :param template_dir_path: full path to location of Jinja2 templates
+    :param force_full: if True, ignore cursor and regenerate everything
     :return: HTML content for the index page
     """
-    logger.info(f"Generating HTML for {len(sites)} sites")
+    logger.info(f"Generating HTML for {len(sites)} sites (force_full={force_full})")
     storage = shared_storage
 
-    # Get all job directories using JobDir class
-    job_dirs = JobDir.list_all(storage)
+    # Get cursor and determine what needs processing
+    cursor = None if force_full else get_format_cursor()
+    new_job_dirs, affected_week_keys = get_jobs_since_cursor(sites, cursor)
+    
+    if not new_job_dirs and cursor is not None:
+        logger.info("No new job directories since last format - skipping generation")
+        # Still need to return index HTML, so read from staging if available
+        staging_dir = storage.get_staging_directory()
+        index_file_path = f"{staging_dir}/medialens.html"
+        if storage.file_exists(index_file_path):
+            return storage.read_text(index_file_path)
+        else:
+            logger.warning("No existing index file found, falling back to full generation")
+            force_full = True
+            cursor = None
+            new_job_dirs, affected_week_keys = get_jobs_since_cursor(sites, cursor)
+    
+    # Get all job directories for organizing (needed for complete context)
+    all_job_dirs = JobDir.list_all(storage)
     
     # Organize runs by week
-    weeks_data = organize_runs_by_week(job_dirs, sites)
+    weeks_data = organize_runs_by_week(all_job_dirs, sites)
     
-    # Generate weekly HTML files
-    weekly_html = generate_weekly_reports(weeks_data, sites, template_dir_path)
+    # Generate weekly HTML files (only for affected weeks if incremental)
+    if force_full or cursor is None:
+        logger.info("Generating all weekly HTML files")
+        weekly_html = generate_weekly_reports(weeks_data, sites, template_dir_path)
+        weeks_to_write = weekly_html.keys()
+    else:
+        logger.info(f"Generating HTML only for affected weeks: {affected_week_keys}")
+        # Generate HTML only for affected weeks
+        affected_weeks_data = {
+            "report_timestamp": weeks_data["report_timestamp"],
+            "weeks": [w for w in weeks_data["weeks"] if w["week_key"] in affected_week_keys]
+        }
+        weekly_html = generate_weekly_reports(affected_weeks_data, sites, template_dir_path)
+        weeks_to_write = affected_week_keys
     
     # Write weekly HTML files to staging directory
     staging_dir = storage.get_staging_directory()
     storage.create_directory(staging_dir)
     
-    for week_key, html in weekly_html.items():
-        weekly_file_path = f"{staging_dir}/medialens-{week_key}.html"
-        logger.debug(f"Writing weekly HTML for week {week_key} to {weekly_file_path}")
-        storage.write_text(weekly_file_path, html)
+    for week_key in weeks_to_write:
+        if week_key in weekly_html:
+            weekly_file_path = f"{staging_dir}/medialens-{week_key}.html"
+            logger.debug(f"Writing weekly HTML for week {week_key} to {weekly_file_path}")
+            storage.write_text(weekly_file_path, weekly_html[week_key])
     
     # Generate and return index page to staging directory
     index_html = generate_index_page(weeks_data, template_dir_path)
     index_file_path = f"{staging_dir}/medialens.html"
     storage.write_text(index_file_path, index_html)
+    
+    # Update cursor with the latest job timestamp if we processed any new jobs
+    if new_job_dirs:
+        latest_timestamp = max(job_dir.datetime for job_dir in new_job_dirs)
+        update_format_cursor(latest_timestamp)
+        logger.info(f"Updated format cursor to {latest_timestamp.isoformat()}")
     
     return index_html
 
