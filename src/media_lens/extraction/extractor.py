@@ -11,6 +11,7 @@ from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL
 from src.media_lens.extraction.agent import ClaudeLLMAgent, Agent
 from src.media_lens.extraction.headliner import LLMHeadlineExtractor
 from src.media_lens.extraction.collector import ArticleCollector
+from src.media_lens.job_dir import JobDir
 from src.media_lens.storage import shared_storage
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -64,7 +65,19 @@ class ContextExtractor:
         logger.info(f"Starting extraction at {self.working_dir}")
         
         # Get the directory name (for cloud storage path)
-        dir_name = self.working_dir.name
+        # Handle JobDir objects, strings, and Path objects
+        if isinstance(self.working_dir, JobDir):
+            dir_name = self.working_dir.storage_path
+        elif isinstance(self.working_dir, str):
+            # Try to convert string to JobDir for validation, fallback to string
+            try:
+                job_dir = JobDir.from_path(self.working_dir)
+                dir_name = job_dir.storage_path
+            except ValueError:
+                dir_name = self.working_dir
+        else:
+            # Path object
+            dir_name = self.working_dir.name
         
         # Get clean HTML files using the storage adapter
         clean_html_files = self.storage.get_files_by_pattern(dir_name, "*-clean.html")

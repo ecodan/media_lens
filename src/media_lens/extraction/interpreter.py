@@ -14,6 +14,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL, UTC_REGEX_PATTERN_BW_COMPAT, get_utc_datetime_from_timestamp, get_week_key, SITES, create_logger
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
+from src.media_lens.job_dir import JobDir
 from src.media_lens.storage import shared_storage
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -388,16 +389,9 @@ class LLMWebsiteInterpreter:
         current_week = get_week_key(current_datetime)
         logger.info(f"Current week is {current_week}")
         
-        # Group job directories by week
-        weeks = {}
-        for job_dir in self.storage.list_directories():
-            if re.match(UTC_REGEX_PATTERN_BW_COMPAT, job_dir):
-                job_datetime = get_utc_datetime_from_timestamp(job_dir)
-                week_key = get_week_key(job_datetime)
-
-                if week_key not in weeks:
-                    weeks[week_key] = []
-                weeks[week_key].append(job_dir)
+        # Group job directories by week using JobDir class
+        job_dirs = JobDir.list_all(self.storage)
+        weeks = JobDir.group_by_week(job_dirs)
 
         # Determine which weeks to process
         weeks_to_process = {}
@@ -433,8 +427,9 @@ class LLMWebsiteInterpreter:
                 logger.warning(f"No content found for week {week_key}")
                 continue
 
-            # Check if weekly interpretation already exists to avoid redoing work
-            weekly_file_path = f"weekly-{week_key}-interpreted.json"
+            # Check if weekly interpretation already exists in intermediate directory
+            intermediate_dir = self.storage.get_intermediate_directory()
+            weekly_file_path = f"{intermediate_dir}/weekly-{week_key}-interpreted.json"
 
             if self.storage.file_exists(weekly_file_path) and not overwrite:
                 logger.info(f"Weekly interpretation for {week_key} already exists and overwrite=False")
@@ -503,23 +498,30 @@ class LLMWebsiteInterpreter:
 
             # Get all articles for this site from all job dirs in this week
             for job_dir in dirs:
-                job_dir_name = job_dir.name if hasattr(job_dir, 'name') else job_dir
+                # JobDir objects have a storage_path property for storage operations
+                if isinstance(job_dir, JobDir):
+                    job_dir_path = job_dir.storage_path
+                    job_datetime = job_dir.datetime
+                else:
+                    # Fallback for legacy string-based directory names
+                    job_dir_path = job_dir
+                    try:
+                        job_datetime = get_utc_datetime_from_timestamp(job_dir)
+                    except ValueError:
+                        job_datetime = None
                 
                 # Check if this job directory is within our date range if cutoff_date is set
-                if cutoff_date:
-                    from src.media_lens.common import get_utc_datetime_from_timestamp
-                    try:
-                        job_datetime = get_utc_datetime_from_timestamp(job_dir_name)
-                        if job_datetime < cutoff_date:
-                            logger.debug(f"Skipping {job_dir_name} as it's before the cutoff date of {cutoff_date}")
-                            continue
-                    except ValueError:
-                        # If we can't parse the date, include it anyway
-                        logger.warning(f"Could not parse date from job dir {job_dir_name}, including anyway")
+                if cutoff_date and job_datetime:
+                    if job_datetime < cutoff_date:
+                        logger.debug(f"Skipping {job_dir_path} as it's before the cutoff date of {cutoff_date}")
+                        continue
+                elif cutoff_date and not job_datetime:
+                    # If we can't parse the date, include it anyway
+                    logger.warning(f"Could not parse date from job dir {job_dir_path}, including anyway")
                 
                 # Use storage adapter to find article files
                 pattern = f"{site}-clean-article-*.json"
-                article_files = self.storage.get_files_by_pattern(job_dir_name, pattern)
+                article_files = self.storage.get_files_by_pattern(job_dir_path, pattern)
                 
                 job_content: List = []
                 for file_path in sorted(article_files):

@@ -9,6 +9,7 @@ from src.media_lens.presentation.html_formatter import (
     convert_relative_url, generate_html_with_template, organize_runs_by_week,
     generate_weekly_content, generate_index_page, generate_html_from_path
 )
+from src.media_lens.job_dir import JobDir
 
 
 def test_convert_relative_url():
@@ -77,8 +78,12 @@ def test_organize_runs_by_week(sample_job_directory, test_storage_adapter, monke
     # Patch the shared storage to use our test storage adapter
     monkeypatch.setattr("src.media_lens.presentation.html_formatter.shared_storage", test_storage_adapter)
     
-    # Get all directories from the sample job directory
-    job_dirs = [sample_job_directory]
+    # Create JobDir from the sample directory name
+    # sample_job_directory is a Path object with name like "2025-02-26_153000"
+    job_dir_str = sample_job_directory.name  # Get the timestamp string
+    job_dir = JobDir.from_path(job_dir_str)
+    
+    job_dirs = [job_dir]
     sites = ["www.test1.com", "www.test2.com"]
     
     # Call organize_runs_by_week
@@ -105,7 +110,9 @@ def test_organize_runs_by_week(sample_job_directory, test_storage_adapter, monke
 def test_generate_weekly_content(sample_job_directory, temp_dir, test_storage_adapter):
     """Test generating content for weekly reports."""
     # First organize runs by week
-    job_dirs = [sample_job_directory]
+    job_dir_str = sample_job_directory.name
+    job_dir = JobDir.from_path(job_dir_str)
+    job_dirs = [job_dir]
     sites = ["www.test1.com", "www.test2.com"]
     weeks_data = organize_runs_by_week(job_dirs, sites)
     
@@ -135,7 +142,9 @@ def test_generate_index_page(sample_job_directory, temp_dir, test_storage_adapte
     monkeypatch.setattr("src.media_lens.presentation.html_formatter.shared_storage", test_storage_adapter)
     
     # First organize runs by week
-    job_dirs = [sample_job_directory]
+    job_dir_str = sample_job_directory.name
+    job_dir = JobDir.from_path(job_dir_str)
+    job_dirs = [job_dir]
     sites = ["www.test1.com", "www.test2.com"]
     weeks_data = organize_runs_by_week(job_dirs, sites)
     
@@ -303,8 +312,9 @@ def test_generate_html_from_path(sample_job_directory, temp_dir, test_storage_ad
     # Check that HTML was generated
     assert html is not None
     
-    # Check if files were created using the storage adapter
-    assert storage.file_exists("medialens.html")
+    # Check if files were created in staging directory
+    staging_dir = storage.get_staging_directory()
+    assert storage.file_exists(f"{staging_dir}/medialens.html")
     
     # Verify HTML content
     assert "<title>Media Lens Report</title>" in html

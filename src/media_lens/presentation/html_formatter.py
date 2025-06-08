@@ -16,6 +16,7 @@ from src.media_lens.common import (
     UTC_REGEX_PATTERN_BW_COMPAT, LOGGER_NAME, SITES, get_project_root,
     timestamp_as_long_date, timestamp_bw_compat_str_as_long_date, get_utc_datetime_from_timestamp, get_week_key, get_week_display
 )
+from src.media_lens.job_dir import JobDir
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -50,11 +51,11 @@ def generate_html_with_template(template_dir_path: Path, template_name: str, con
     return html_output
 
 
-def organize_runs_by_week(job_dirs: List[Union[Path, str]], sites: List[str]) -> Dict[str, Any]:
+def organize_runs_by_week(job_dirs: List[Union[Path, str, JobDir]], sites: List[str]) -> Dict[str, Any]:
     """
     Organize job runs by calendar week.
     
-    :param job_dirs: List of job directories
+    :param job_dirs: List of job directories (strings, Paths, or JobDir objects)
     :param sites: List of media sites
     :return: Dictionary with weeks as keys and runs as values
     """
@@ -64,30 +65,30 @@ def organize_runs_by_week(job_dirs: List[Union[Path, str]], sites: List[str]) ->
     weeks_data = defaultdict(list)
     
     # Process each job directory
-    for job_dir in job_dirs:
-        logger.debug(f"Processing job_dir {job_dir}")
+    for job_dir_input in job_dirs:
+        logger.debug(f"Processing job_dir {job_dir_input}")
         
-        # Convert to string if it's a Path object
-        if isinstance(job_dir, Path):
-            job_dir_name = job_dir.name
+        # Convert to JobDir if needed
+        if isinstance(job_dir_input, JobDir):
+            job_dir = job_dir_input
         else:
-            job_dir_name = str(job_dir)
-        
-        # Skip directories that don't match the UTC pattern
-        if not re.match(UTC_REGEX_PATTERN_BW_COMPAT, job_dir_name):
-            continue
-        
-        # Get UTC datetime from job directory name
-        job_utc_datetime: datetime = get_utc_datetime_from_timestamp(job_dir_name)
+            # Handle string/Path inputs
+            if isinstance(job_dir_input, Path):
+                job_dir_str = job_dir_input.name
+            else:
+                job_dir_str = str(job_dir_input)
+            
+            try:
+                job_dir = JobDir.from_path(job_dir_str)
+            except ValueError:
+                logger.debug(f"Skipping invalid job directory: {job_dir_str}")
+                continue
 
-        # Get week key for this job (e.g., "2025-W08")
-        week_key: str = get_week_key(job_utc_datetime)
-        
         # Create run data dictionary
         run_data = {
-            "run_timestamp": timestamp_bw_compat_str_as_long_date(job_dir_name),
-            "run_datetime": job_utc_datetime,
-            "job_dir": job_dir_name,  # Store as string for storage adapter compatibility
+            "run_timestamp": timestamp_bw_compat_str_as_long_date(job_dir.timestamp_str),
+            "run_datetime": job_dir.datetime,
+            "job_dir": job_dir.storage_path,  # Store as string for storage adapter compatibility
             "sites": sites,
             "extracted": [],
             "interpreted": [],
@@ -99,7 +100,7 @@ def organize_runs_by_week(job_dirs: List[Union[Path, str]], sites: List[str]) ->
             storage = shared_storage
             
             # Load extracted data
-            extracted_path = f"{job_dir_name}/{site}-clean-extracted.json"
+            extracted_path = f"{job_dir.storage_path}/{site}-clean-extracted.json"
             if not storage.file_exists(extracted_path):
                 logger.warning(f"Extracted file not found: {extracted_path}")
                 continue
@@ -117,13 +118,13 @@ def organize_runs_by_week(job_dirs: List[Union[Path, str]], sites: List[str]) ->
             })
 
             # Load news summary
-            news_summary_path = f"{job_dir_name}/daily_news.txt"
+            news_summary_path = f"{job_dir.storage_path}/daily_news.txt"
             if storage.file_exists(news_summary_path):
                 news_summary = storage.read_text(news_summary_path)
                 run_data['news_summary'] = news_summary.replace("\n", "<br>")
 
             # Load interpreted data
-            interpreted_path = f"{job_dir_name}/{site}-interpreted.json"
+            interpreted_path = f"{job_dir.storage_path}/{site}-interpreted.json"
             if not storage.file_exists(interpreted_path):
                 # this is expected if daily interpretation is not active
                 logger.debug(f"Interpreted file not found: {interpreted_path}")
@@ -135,7 +136,7 @@ def organize_runs_by_week(job_dirs: List[Union[Path, str]], sites: List[str]) ->
                 })
 
         # Add this run to the appropriate week
-        weeks_data[week_key].append(run_data)
+        weeks_data[job_dir.week_key].append(run_data)
     
     # Sort runs within each week by datetime (newest first)
     for week_key in weeks_data:
@@ -308,33 +309,28 @@ def generate_html_from_path(sites: list[str], template_dir_path: Path) -> str:
     logger.info(f"Generating HTML for {len(sites)} sites")
     storage = shared_storage
 
-    # Get all job directories using the storage adapter
-    all_dirs = storage.list_directories()
-    dir_names = set()
-    
-    # Filter directory names that match UTC pattern
-    for dir_name in all_dirs:
-        if re.match(UTC_REGEX_PATTERN_BW_COMPAT, dir_name):
-            dir_names.add(dir_name)
-                
-    # Pass directory names directly (no need for Path objects)
-    dir_names_list = list(dir_names)
+    # Get all job directories using JobDir class
+    job_dirs = JobDir.list_all(storage)
     
     # Organize runs by week
-    weeks_data = organize_runs_by_week(dir_names_list, sites)
+    weeks_data = organize_runs_by_week(job_dirs, sites)
     
     # Generate weekly HTML files
     weekly_html = generate_weekly_reports(weeks_data, sites, template_dir_path)
     
-    # Write weekly HTML files
+    # Write weekly HTML files to staging directory
+    staging_dir = storage.get_staging_directory()
+    storage.create_directory(staging_dir)
+    
     for week_key, html in weekly_html.items():
-        weekly_file_path = f"medialens-{week_key}.html"
+        weekly_file_path = f"{staging_dir}/medialens-{week_key}.html"
         logger.debug(f"Writing weekly HTML for week {week_key} to {weekly_file_path}")
         storage.write_text(weekly_file_path, html)
     
-    # Generate and return index page
+    # Generate and return index page to staging directory
     index_html = generate_index_page(weeks_data, template_dir_path)
-    storage.write_text("medialens.html", index_html)
+    index_file_path = f"{staging_dir}/medialens.html"
+    storage.write_text(index_file_path, index_html)
     
     return index_html
 

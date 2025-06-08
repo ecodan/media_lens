@@ -37,23 +37,33 @@ class WebpageScraper:
         
         try:
             playwright = await async_playwright().start()
+
+            # Different browser args based on PLAYWRIGHT_MODE environment variable
+            # Defaults to 'cloud' for backwards compatibility and cloud deployment
+            playwright_mode = os.getenv('PLAYWRIGHT_MODE', 'cloud').lower()
             
-            # Different browser args for containerized vs local environments
-            base_args = [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--no-first-run',
-                '--disable-gpu'
-            ]
-            
-            # Add container-specific args if running in Docker/cloud environment
-            if os.getenv('USE_CLOUD_STORAGE') == 'true' or os.path.exists('/.dockerenv'):
-                base_args.extend(['--no-zygote', '--single-process'])
-                logger.debug("Using container-optimized browser args")
-            else:
+            if playwright_mode == 'local':
+                # Local development arguments (macOS-friendly)
+                base_args = [
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-background-timer-throttling',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-renderer-backgrounding'
+                ]
                 logger.debug("Using local development browser args")
+            else:
+                # Cloud/container-optimized arguments (default)
+                base_args = [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--disable-gpu',
+                    '--no-zygote',
+                    '--single-process'
+                ]
+                logger.debug("Using cloud/container-optimized browser args")
             
             # Launch browser in stealth mode with environment-optimized settings
             browser = await playwright.chromium.launch(
@@ -96,9 +106,9 @@ class WebpageScraper:
                 logger.debug("page loaded, waiting for additional content...")
 
                 # Wait for dynamic content to load (ads, lazy-loaded content, etc.)
-                await asyncio.sleep(15)
-                logger.debug("getting content...")
-                
+                # await asyncio.sleep(15)
+                # logger.debug("getting content...")
+
                 # Get the content if no exceptions occurred
                 content = await page.content()
                 logger.debug(f"Content retrieved successfully, length: {len(content)}")

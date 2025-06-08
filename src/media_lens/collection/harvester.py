@@ -5,7 +5,7 @@ from pathlib import Path
 
 import dotenv
 
-from src.media_lens.collection.cleaner import WebpageCleaner, cleaner_for_site
+from src.media_lens.collection.cleaning import WebpageCleaner, cleaner_for_site
 from src.media_lens.collection.scraper import WebpageScraper
 from src.media_lens.common import LOGGER_NAME, utc_timestamp, get_project_root, SITES, UTC_REGEX_PATTERN_BW_COMPAT, UTC_DATE_PATTERN_BW_COMPAT, utc_bw_compat_timestamp
 from src.media_lens.storage import shared_storage
@@ -42,23 +42,37 @@ class Harvester(object):
                 logger.error(f"Failed to re-harvest {site}: {e}")
                 traceback.print_exc()
 
-    async def harvest(self, sites: list[str], browser_type: WebpageScraper.BrowserType = WebpageScraper.BrowserType.MOBILE) -> Path:
+    async def harvest(self, sites: list[str], browser_type: WebpageScraper.BrowserType = WebpageScraper.BrowserType.MOBILE) -> str:
         """
         Harvest the sites and save the raw and cleaned content to the outdir.
+        Sequential workflow: scrape then clean.
         :param sites: media sites to harvest
         :param browser_type: DESKTOP or MOBILE
-        :return: the newly created artifacts dir
+        :return: the newly created job directory path (as string)
         """
-        logger.info(f"Harvesting {len(sites)} sites")
+        logger.info(f"Harvesting {len(sites)} sites (sequential: scrape → clean)")
+        
+        # Phase 1: Scrape all sites
+        job_dir = await self.scrape_sites(sites=sites, browser_type=browser_type)
+        
+        # Phase 2: Clean all scraped content
+        await self.clean_sites(job_dir=job_dir, sites=sites)
+        
+        return job_dir
+
+    async def scrape_sites(self, sites: list[str], browser_type: WebpageScraper.BrowserType = WebpageScraper.BrowserType.MOBILE) -> str:
+        """
+        Scrape sites and save raw content only.
+        :param sites: media sites to scrape
+        :param browser_type: DESKTOP or MOBILE
+        :return: the newly created job directory path (as string)
+        """
+        logger.info(f"Scraping {len(sites)} sites")
         scraper: WebpageScraper = WebpageScraper()
         
-        # Create a timestamped directory
-        timestamp = utc_bw_compat_timestamp()
-        directory_path = timestamp
+        # Create a timestamped job directory using new hierarchical structure
+        directory_path = self.storage.get_job_directory()
         self.storage.create_directory(directory_path)
-        
-        # Get path for backward compatibility with methods that expect Path objects
-        artifacts_dir: Path = Path(self.storage.get_absolute_path(timestamp))
         
         async def scrape_site(site):
             try:
@@ -80,26 +94,50 @@ class Harvester(object):
                 traceback.print_exc()
                 return None, site
         
-        # Phase 1: Scrape all sites concurrently
-        logger.info("Phase 1: Scraping all sites concurrently")
-        scrape_results = await asyncio.gather(*[scrape_site(site) for site in sites], return_exceptions=True)
+        # Scrape all sites sequentially
+        logger.info("Scraping all sites sequentially")
+        scrape_results = []
+        for site in sites:
+            result = await scrape_site(site)
+            scrape_results.append(result)
         
-        # Phase 2: Clean all successfully scraped content
-        logger.info("Phase 2: Cleaning scraped content")
+        # Log results
+        successful_sites = []
         for result in scrape_results:
             if isinstance(result, Exception):
                 logger.error(f"Scraping failed with exception: {result}")
                 continue
-                
             content, site = result
             if content is not None:
-                try:
-                    await self._clean_site(directory_path, content, site)
-                except Exception as e:
-                    logger.error(f"Failed to clean {site}: {e}")
-                    traceback.print_exc()
+                successful_sites.append(site)
         
-        return artifacts_dir
+        logger.info(f"Successfully scraped {len(successful_sites)} out of {len(sites)} sites")
+        return directory_path
+
+    async def clean_sites(self, job_dir: str, sites: list[str]) -> None:
+        """
+        Clean previously scraped content in the specified job directory.
+        :param job_dir: the job directory containing scraped content
+        :param sites: media sites to clean
+        """
+        logger.info(f"Cleaning {len(sites)} sites in {job_dir}")
+        
+        successful_cleanings = 0
+        for site in sites:
+            try:
+                # Use the storage adapter to read content
+                content_path = f"{job_dir}/{site}.html"
+                if self.storage.file_exists(content_path):
+                    content: str = self.storage.read_text(content_path)
+                    await self._clean_site(job_dir, content, site)
+                    successful_cleanings += 1
+                else:
+                    logger.warning(f"Scraped content file not found for {site} in {job_dir}")
+            except Exception as e:
+                logger.error(f"Failed to clean {site}: {e}")
+                traceback.print_exc()
+        
+        logger.info(f"Successfully cleaned {successful_cleanings} out of {len(sites)} sites")
 
     async def _clean_site(self, directory_path, content, site):
         """

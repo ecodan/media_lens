@@ -16,6 +16,7 @@ from dateparser.utils.strptime import strptime
 from src.media_lens.auditor import audit_days
 from src.media_lens.collection.harvester import Harvester
 from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL, get_working_dir, UTC_REGEX_PATTERN_BW_COMPAT, RunState, SITES_DEFAULT, is_last_day_of_week, get_week_key
+from src.media_lens.job_dir import JobDir
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
@@ -32,6 +33,8 @@ storage: StorageAdapter = shared_storage
 
 class Steps(Enum):
     HARVEST = "harvest"
+    HARVEST_SCRAPE = "harvest_scrape"
+    HARVEST_CLEAN = "harvest_clean"
     REHARVEST = "re-harvest"
     EXTRACT = "extract"
     INTERPRET = "interpret"
@@ -69,19 +72,37 @@ async def interpret(job_dir, sites):
             # Ensure we have the directory using storage adapter
             storage.create_directory(job_dir)
             
-            # Write the file using storage adapter
-            output_path = f"{job_dir}/{site}-interpreted.json"
+            # Write the interpreted file to intermediate directory organized by job
+            # Extract job timestamp from artifacts_dir for organization
+            if job_dir.startswith("jobs/"):
+                job_timestamp = storage.directory_manager.parse_job_timestamp(job_dir)
+            else:
+                # Legacy flat directory format
+                job_timestamp = job_dir
+                
+            intermediate_dir = storage.get_intermediate_directory(job_timestamp)
+            storage.create_directory(intermediate_dir)
+            output_path = f"{intermediate_dir}/{site}-interpreted.json"
             storage.write_json(output_path, interpretation)
             
             time.sleep(30)
         except Exception as e:
             logger.error(f"Error interpreting site {site}: {str(e)}")
-            # Create a fallback interpretation file
+            # Create a fallback interpretation file in intermediate directory
             fallback = [{
                 "question": f"Analysis for {site} encountered an error",
                 "answer": f"The analysis for {site} could not be completed due to a technical error."
             }]
-            output_path = f"{job_dir}/{site}-interpreted.json"
+            # Extract job timestamp from artifacts_dir for organization
+            if job_dir.startswith("jobs/"):
+                job_timestamp = storage.directory_manager.parse_job_timestamp(job_dir)
+            else:
+                # Legacy flat directory format
+                job_timestamp = job_dir
+                
+            intermediate_dir = storage.get_intermediate_directory(job_timestamp)
+            storage.create_directory(intermediate_dir)
+            output_path = f"{intermediate_dir}/{site}-interpreted.json"
             storage.write_json(output_path, fallback)
 
 
@@ -121,7 +142,8 @@ async def interpret_weekly(current_week_only=True, overwrite=False, specific_wee
     # Check if previous week was processed (in case we missed a Sunday)
     previous_week_date = today - datetime.timedelta(days=7)
     previous_week = get_week_key(previous_week_date)
-    previous_week_file_path = f"weekly-{previous_week}-interpreted.json"
+    intermediate_dir = storage.get_intermediate_directory()
+    previous_week_file_path = f"{intermediate_dir}/weekly-{previous_week}-interpreted.json"
     
     # Use storage adapter to check if file exists
     if not storage.file_exists(previous_week_file_path) and not specific_weeks:
@@ -201,36 +223,26 @@ async def deploy_output() -> None:
     
     logger.info(f"Deploying files to {remote_path}")
     
-    # Upload the main index page
-    index_local_path = "medialens.html"
+    # Get staging directory and upload files from there
+    staging_dir = storage.get_staging_directory()
+    
+    # Upload the main index page from staging
+    index_local_path = f"{staging_dir}/medialens.html"
     if storage.file_exists(index_local_path):
         logger.info(f"Uploading main index file: {index_local_path}")
         upload_html_content_from_storage(index_local_path, remote_path)
     else:
         logger.warning(f"Main index file not found at {index_local_path}")
     
-    # Find and upload all weekly pages using storage adapter pattern matching
-    weekly_files = storage.get_files_by_pattern("", "medialens-*.html")
-    logger.info(f"Found {len(weekly_files)} weekly HTML files")
+    # Find and upload all weekly pages from staging directory
+    weekly_files = storage.get_files_by_pattern(staging_dir, "medialens-*.html")
+    logger.info(f"Found {len(weekly_files)} weekly HTML files in staging")
     
     for weekly_file in weekly_files:
         logger.info(f"Uploading weekly file: {weekly_file}")
         upload_html_content_from_storage(weekly_file, remote_path)
     
-    # Get subdirectories using storage.list_directories
-    all_dirs = storage.list_directories("")
-    subdirs = set()
-    for subdir in all_dirs:
-        if subdir != "__pycache__":
-            subdirs.add(subdir)
-    
-    # Look for any additional medialens HTML files in subdirectories
-    for subdir in subdirs:
-        subdir_path = subdir
-        html_files = storage.get_files_by_pattern(subdir_path, "medialens*.html")
-        for html_file in html_files:
-            logger.info(f"Uploading additional HTML file from subdirectory: {html_file}")
-            upload_html_content_from_storage(html_file, remote_path)
+    logger.info("Deployment completed")
 
 
 
@@ -324,6 +336,61 @@ async def summarize_all(force: bool = False):
             # Pass job directory name directly to summarizer
             summarizer.generate_summary_from_job_dir(job_dir_name)
 
+
+def validate_step_combinations(steps: list[Steps]) -> None:
+    """
+    Validate that step combinations are logically consistent.
+    
+    Args:
+        steps: List of Steps to validate
+        
+    Raises:
+        ValueError: If step combinations are invalid
+    """
+    step_values = [step.value for step in steps]
+    
+    # Check for conflicting harvest steps
+    if Steps.HARVEST.value in step_values:
+        if Steps.HARVEST_SCRAPE.value in step_values:
+            raise ValueError("Cannot combine 'harvest' with 'harvest_scrape' - harvest includes scraping")
+        if Steps.HARVEST_CLEAN.value in step_values:
+            raise ValueError("Cannot combine 'harvest' with 'harvest_clean' - harvest includes cleaning")
+    
+    # Check for harvest_clean without preceding harvest_scrape (when not using harvest)
+    if (Steps.HARVEST_CLEAN.value in step_values and 
+        Steps.HARVEST.value not in step_values and 
+        Steps.HARVEST_SCRAPE.value not in step_values):
+        logger.warning("Running 'harvest_clean' without 'harvest_scrape' - ensure scraped content exists in the job directory")
+
+
+async def scrape(sites: list[str]) -> str:
+    """
+    Execute the scraping phase only.
+    
+    Args:
+        sites: List of sites to scrape
+        
+    Returns:
+        str: The job directory path created for the scraped content
+    """
+    logger.info(f"Starting scrape-only operation for {len(sites)} sites")
+    harvester: Harvester = Harvester()
+    job_dir = await harvester.scrape_sites(sites=sites)
+    return job_dir
+
+
+async def clean(job_dir: str, sites: list[str]) -> None:
+    """
+    Execute the cleaning phase only.
+    
+    Args:
+        job_dir: The job directory containing scraped content
+        sites: List of sites to clean
+    """
+    logger.info(f"Starting clean-only operation for {len(sites)} sites in {job_dir}")
+    harvester: Harvester = Harvester()
+    await harvester.clean_sites(job_dir=job_dir, sites=sites)
+
 async def run(steps: list[Steps], **kwargs) -> dict:
     """
     Execute the media lens pipeline with the specified steps.
@@ -335,6 +402,9 @@ async def run(steps: list[Steps], **kwargs) -> dict:
     Returns:
         dict: Status information about the run
     """
+    # Validate step combinations before starting
+    validate_step_combinations(steps)
+    
     # Generate a unique run ID and reset the stop flag
     run_id = kwargs.get('run_id', str(uuid.uuid4())[:8])
     RunState.reset(run_id=run_id)
@@ -350,34 +420,32 @@ async def run(steps: list[Steps], **kwargs) -> dict:
     # Storage adapter handles directory creation automatically
 
     if 'job_dir' not in kwargs or kwargs['job_dir'] == "latest":
-        # find the latest job dir using storage adapter
-        all_dirs = storage.list_directories("")
-        job_dirs = set()
-        
-        # Filter directory names that match UTC pattern
-        for dir_name in all_dirs:
-            if re.match(UTC_REGEX_PATTERN_BW_COMPAT, dir_name):
-                job_dirs.add(dir_name)
-                    
-        if job_dirs:
-            # Get the latest job dir by sorting and taking the most recent
-            artifacts_dir = sorted(job_dirs)[-1]  # UTC timestamps sort chronologically
-        else:
-            artifacts_dir = None
+        # Find the latest job directory using JobDir class
+        latest_job = JobDir.find_latest(storage)
+        artifacts_dir = latest_job.storage_path if latest_job else None
     else:
         job_dir_path = kwargs['job_dir']
-        if not storage.file_exists(job_dir_path):
-            raise FileNotFoundError(f"Job directory {job_dir_path} does not exist")
-        artifacts_dir = job_dir_path
+        try:
+            # Validate the specified job directory
+            job_dir = JobDir.from_path(job_dir_path)
+            artifacts_dir = job_dir.storage_path
+        except ValueError:
+            raise ValueError(f"Invalid job directory format: {job_dir_path}")
 
     try:
         if Steps.HARVEST in steps and not RunState.stop_requested():
-            # Harvest
+            # Harvest (complete workflow: scrape + clean)
             logger.info(f"[Run {run_id}] Starting harvest step")
             harvester: Harvester = Harvester()
-            # reassign artifacts_dir to new dir
+            # reassign artifacts_dir to new dir (harvest now returns string)
             artifacts_dir = await harvester.harvest(sites=SITES)
             result["completed_steps"].append(Steps.HARVEST.value)
+            
+        elif Steps.HARVEST_SCRAPE in steps and not RunState.stop_requested():
+            # Harvest Scrape (scraping only)
+            logger.info(f"[Run {run_id}] Starting harvest scrape step")
+            artifacts_dir = await scrape(sites=SITES)
+            result["completed_steps"].append(Steps.HARVEST_SCRAPE.value)
             
         elif Steps.REHARVEST in steps and not RunState.stop_requested():
             # Re-Harvest
@@ -385,6 +453,14 @@ async def run(steps: list[Steps], **kwargs) -> dict:
             harvester: Harvester = Harvester()
             await harvester.re_harvest(sites=SITES, job_dir=artifacts_dir)
             result["completed_steps"].append(Steps.REHARVEST.value)
+            
+        if Steps.HARVEST_CLEAN in steps and not RunState.stop_requested():
+            # Harvest Clean (cleaning only)
+            logger.info(f"[Run {run_id}] Starting harvest clean step")
+            if not artifacts_dir:
+                raise ValueError("No job directory available for cleaning. Run harvest_scrape first or specify job_dir.")
+            await clean(job_dir=artifacts_dir, sites=SITES)
+            result["completed_steps"].append(Steps.HARVEST_CLEAN.value)
 
         if Steps.EXTRACT in steps and not RunState.stop_requested():
             # Extract
@@ -460,10 +536,25 @@ def main():
         help='Optional run ID for tracking (auto-generated if not provided)'
     )
     run_parser.add_argument(
+        '--start-date',
+        type=str,
+        help='Start date for processing jobs in YYYY-MM-DD format (inclusive)'
+    )
+    run_parser.add_argument(
+        '--end-date',
+        type=str,
+        help='End date for processing jobs in YYYY-MM-DD format (inclusive)'
+    )
+    run_parser.add_argument(
         "--sites",
         nargs='+',
         help="List of sites to include"
     )  # Accepts multiple sites
+    run_parser.add_argument(
+        '--playwright-mode',
+        choices=['local', 'cloud'],
+        help='Playwright browser configuration mode (default: cloud, or PLAYWRIGHT_MODE env var)'
+    )
 
 
     # Summarize daily news command with option to force resummarization if no summary present
@@ -511,8 +602,10 @@ def main():
 
     global SITES
 
-    args = parser.parse_args()
+    # Load environment variables first
     dotenv.load_dotenv()
+    
+    args = parser.parse_args()
     # Use string path for logger
     log_path = str(get_working_dir() / "runner.log")
     create_logger(LOGGER_NAME, log_path)
@@ -521,13 +614,48 @@ def main():
         steps = [Steps(step) for step in args.steps]
         if args.sites:
             SITES = args.sites
+        
+        # Handle playwright mode: CLI arg overrides env var, default to 'cloud'
+        if hasattr(args, 'playwright_mode') and args.playwright_mode:
+            # CLI argument provided
+            playwright_mode = args.playwright_mode
+        else:
+            # Use environment variable or default to 'cloud'
+            playwright_mode = os.getenv('PLAYWRIGHT_MODE', 'cloud')
+        
+        os.environ['PLAYWRIGHT_MODE'] = playwright_mode
+        logger.info(f"Using Playwright mode: {playwright_mode}")
 
         logger.info(f"Using sites: {', '.join(SITES)}")
-        run_result = asyncio.run(run(
-            steps=steps, 
-            job_dir=args.job_dir,
-            run_id=args.run_id if hasattr(args, 'run_id') and args.run_id else None
-        ))
+        
+        # Handle date range processing
+        if args.start_date or args.end_date:
+            if not args.start_date or not args.end_date:
+                logger.error("Both --start-date and --end-date must be provided when using date range")
+                return
+            
+            # Get job directories in date range
+            job_dirs = storage.get_jobs_in_date_range(args.start_date, args.end_date)
+            if not job_dirs:
+                logger.warning(f"No job directories found in date range {args.start_date} to {args.end_date}")
+                return
+            
+            logger.info(f"Processing {len(job_dirs)} job directories in date range")
+            for job_dir in job_dirs:
+                logger.info(f"Processing job directory: {job_dir}")
+                run_result = asyncio.run(run(
+                    steps=steps, 
+                    job_dir=job_dir,
+                    run_id=args.run_id if hasattr(args, 'run_id') and args.run_id else None
+                ))
+                if run_result["status"] != "success":
+                    logger.warning(f"Job {job_dir} completed with status: {run_result['status']}")
+        else:
+            run_result = asyncio.run(run(
+                steps=steps, 
+                job_dir=args.job_dir,
+                run_id=args.run_id if hasattr(args, 'run_id') and args.run_id else None
+            ))
         if run_result["status"] != "success":
             logger.warning(f"Run completed with status: {run_result['status']}")
             if run_result["status"] == "error":

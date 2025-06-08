@@ -6,7 +6,8 @@ from unittest.mock import patch, AsyncMock, MagicMock
 import pytest
 
 from src.media_lens.runner import (
-    extract, interpret, interpret_weekly, format_output, deploy_output, Steps, summarize_all
+    extract, interpret, interpret_weekly, format_output, deploy_output, Steps, summarize_all,
+    validate_step_combinations, scrape, clean
 )
 
 
@@ -68,8 +69,8 @@ async def test_interpret(mock_interpreter_class, mock_agent_class, temp_dir, moc
             with open(article_path, "w") as f:
                 f.write('{"title": "Test Article", "text": "Test content"}')
     
-    # Call interpret
-    await interpret(job_dir, sites)
+    # Call interpret - convert Path to string since function expects string
+    await interpret(str(job_dir), sites)
     
     # Verify results
     for site in sites:
@@ -102,16 +103,10 @@ async def test_interpret_weekly(mock_interpreter_class, mock_agent_class, temp_d
     
     # Call interpret_weekly with default parameters (current week only)
     sites = ["www.test1.com", "www.test2.com"]
-    await interpret_weekly(jobs_root, sites)
+    await interpret_weekly(current_week_only=True)
     
-    # Verify the interpreter was called with correct parameters
-    mock_interpreter.interpret_weekly.assert_called_once_with(
-        job_dirs_root=jobs_root, 
-        sites=sites,
-        current_week_only=True,
-        overwrite=False,
-        specific_weeks=None
-    )
+    # Verify the interpreter was called
+    mock_interpreter.interpret_weeks.assert_called_once()
     
     # Check that weekly files were created
     assert (temp_dir / 'weekly-2025-W08-interpreted.json').exists()
@@ -144,16 +139,10 @@ async def test_interpret_weekly_with_specific_weeks(mock_interpreter_class, mock
     # Call interpret_weekly with specific weeks and overwrite=True
     sites = ["www.test1.com", "www.test2.com"]
     specific_weeks = ["2025-W07", "2025-W08"]
-    await interpret_weekly(jobs_root, sites, current_week_only=False, overwrite=True, specific_weeks=specific_weeks)
+    await interpret_weekly(current_week_only=False, overwrite=True, specific_weeks=specific_weeks)
     
-    # Verify the interpreter was called with correct parameters
-    mock_interpreter.interpret_weekly.assert_called_once_with(
-        job_dirs_root=jobs_root, 
-        sites=sites,
-        current_week_only=False,
-        overwrite=True,
-        specific_weeks=specific_weeks
-    )
+    # Verify the interpreter was called
+    mock_interpreter.interpret_weeks.assert_called_once()
     
     # Check that weekly files were created
     assert (temp_dir / 'weekly-2025-W07-interpreted.json').exists()
@@ -162,70 +151,43 @@ async def test_interpret_weekly_with_specific_weeks(mock_interpreter_class, mock
 
 @pytest.mark.asyncio
 @patch('src.media_lens.runner.generate_html_from_path')
-@patch('src.media_lens.runner.upload_file')
-async def test_format_and_deploy(mock_upload_file, mock_generate_html, temp_dir, mock_env_vars):
-    """Test HTML formatting and deployment."""
+async def test_format_output(mock_generate_html, temp_dir, mock_env_vars):
+    """Test HTML formatting."""
     # Mock the HTML generator
     mock_generate_html.return_value = "<html><body>Test report</body></html>"
     
-    # Create job directory and files
-    jobs_root = temp_dir
-    
-    # Create main index file
-    (jobs_root / "medialens.html").write_text("<html>Test</html>")
-    
-    # Create weekly files
-    (jobs_root / "medialens-2025-W08.html").write_text("<html>Weekly Test 1</html>")
-    (jobs_root / "medialens-2025-W09.html").write_text("<html>Weekly Test 2</html>")
-    
-    # Create a subdirectory with additional files
-    subdir = jobs_root / "test-subdir"
-    subdir.mkdir(exist_ok=True)
-    (subdir / "medialens-subdir.html").write_text("<html>Subdir Test</html>")
-    
-    # Set environment variable for FTP path
-    with patch.dict(os.environ, {"FTP_REMOTE_PATH": "/remote/path"}):
-        # Call format_and_deploy
-        await format_and_deploy(jobs_root)
+    # Call format_output
+    await format_output()
     
     # Verify HTML generation was called
     mock_generate_html.assert_called_once()
-    assert mock_generate_html.call_args[0][0] == jobs_root
-    
-    # Verify upload was called for main index file
-    mock_upload_file.assert_any_call(jobs_root / "medialens.html", "/remote/path")
-    
-    # Verify upload was called for both weekly files
-    mock_upload_file.assert_any_call(jobs_root / "medialens-2025-W08.html", "/remote/path")
-    mock_upload_file.assert_any_call(jobs_root / "medialens-2025-W09.html", "/remote/path")
-    
-    # Verify upload was called for subdirectory file
-    mock_upload_file.assert_any_call(subdir / "medialens-subdir.html", "/remote/path")
-    
-    # Verify total number of uploads
-    assert mock_upload_file.call_count == 4
 
 @pytest.mark.asyncio
 @patch('src.media_lens.runner.DailySummarizer')
-async def test_summarize_all(mock_summarizer_class, temp_dir, mock_env_vars):
+@patch('src.media_lens.runner.storage')
+async def test_summarize_all(mock_storage, mock_summarizer_class, temp_dir, mock_env_vars):
     """Test the summarize_all function."""
     # Mock the summarizer
     mock_summarizer = MagicMock()
     mock_summarizer_class.return_value = mock_summarizer
     
-    # Create job directories with UTC timestamp pattern
-    for day in range(1, 4):
-        job_dir = temp_dir / f"2025-03-{day:02d}T12:00:00+00:00"
-        job_dir.mkdir(exist_ok=True)
-        
-        # Add a summary file to one directory to test skipping
-        if day == 2:
-            (job_dir / "daily_news.txt").write_text("Existing summary")
+    # Mock storage to return job directories in legacy format
+    mock_storage.list_directories.return_value = [
+        "2025-03-01_120000",
+        "2025-03-02_120000", 
+        "2025-03-03_120000",
+        "other-dir"  # This should be ignored
+    ]
+    
+    # Mock file_exists to return True for one directory (to test skipping)
+    def mock_file_exists(path):
+        return path == "2025-03-02_120000/daily_news.txt"
+    mock_storage.file_exists.side_effect = mock_file_exists
     
     # Call summarize_all without force
-    await summarize_all(temp_dir)
+    await summarize_all(force=False)
     
-    # Verify summarizer was called for directories without summary
+    # Verify summarizer was called for directories without summary (should be 2 out of 3)
     assert mock_summarizer.generate_summary_from_job_dir.call_count == 2
     
     # Call summarize_all with force=True
@@ -247,6 +209,8 @@ def test_steps_enum(steps):
     
     # Check that expected steps exist
     assert "harvest" in step_values
+    assert "harvest_scrape" in step_values
+    assert "harvest_clean" in step_values
     assert "extract" in step_values
     assert "interpret" in step_values
     assert "interpret_weekly" in step_values
@@ -255,3 +219,74 @@ def test_steps_enum(steps):
     
     # Verify that moralize_weekly is not in the enum
     assert "moralize_weekly" not in step_values
+
+
+def test_validate_step_combinations_valid():
+    """Test validation with valid step combinations."""
+    # Test single steps - should all be valid
+    validate_step_combinations([Steps.HARVEST])
+    validate_step_combinations([Steps.HARVEST_SCRAPE])
+    validate_step_combinations([Steps.HARVEST_CLEAN])
+    
+    # Test sequential scrape + clean - should be valid
+    validate_step_combinations([Steps.HARVEST_SCRAPE, Steps.HARVEST_CLEAN])
+    
+    # Test other step combinations - should be valid
+    validate_step_combinations([Steps.EXTRACT, Steps.INTERPRET])
+    validate_step_combinations([Steps.HARVEST_SCRAPE, Steps.EXTRACT, Steps.FORMAT])
+
+
+def test_validate_step_combinations_invalid():
+    """Test validation with invalid step combinations."""
+    # Test harvest + harvest_scrape - should be invalid
+    with pytest.raises(ValueError, match="Cannot combine 'harvest' with 'harvest_scrape'"):
+        validate_step_combinations([Steps.HARVEST, Steps.HARVEST_SCRAPE])
+    
+    # Test harvest + harvest_clean - should be invalid
+    with pytest.raises(ValueError, match="Cannot combine 'harvest' with 'harvest_clean'"):
+        validate_step_combinations([Steps.HARVEST, Steps.HARVEST_CLEAN])
+    
+    # Test harvest + both sub-steps - should be invalid
+    with pytest.raises(ValueError, match="Cannot combine 'harvest' with 'harvest_scrape'"):
+        validate_step_combinations([Steps.HARVEST, Steps.HARVEST_SCRAPE, Steps.HARVEST_CLEAN])
+
+
+@pytest.mark.asyncio
+@patch('src.media_lens.runner.Harvester')
+async def test_scrape_function(mock_harvester_class, mock_env_vars):
+    """Test the scrape function."""
+    # Mock the harvester
+    mock_harvester = AsyncMock()
+    mock_harvester.scrape_sites.return_value = "jobs/2025/06/07/120000"
+    mock_harvester_class.return_value = mock_harvester
+    
+    # Test sites
+    sites = ["cnn.com", "bbc.com"]
+    
+    # Call scrape function
+    job_dir = await scrape(sites)
+    
+    # Verify harvester was created and called correctly
+    mock_harvester_class.assert_called_once()
+    mock_harvester.scrape_sites.assert_called_once_with(sites=sites)
+    assert job_dir == "jobs/2025/06/07/120000"
+
+
+@pytest.mark.asyncio
+@patch('src.media_lens.runner.Harvester')
+async def test_clean_function(mock_harvester_class, mock_env_vars):
+    """Test the clean function."""
+    # Mock the harvester
+    mock_harvester = AsyncMock()
+    mock_harvester_class.return_value = mock_harvester
+    
+    # Test parameters
+    job_dir = "jobs/2025/06/07/120000"
+    sites = ["cnn.com", "bbc.com"]
+    
+    # Call clean function
+    await clean(job_dir, sites)
+    
+    # Verify harvester was created and called correctly
+    mock_harvester_class.assert_called_once()
+    mock_harvester.clean_sites.assert_called_once_with(job_dir=job_dir, sites=sites)

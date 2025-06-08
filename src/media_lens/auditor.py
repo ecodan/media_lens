@@ -52,22 +52,37 @@ def audit_days(start_date: datetime = None, end_date: datetime = None, audit_rep
         "total_repairs": 0
     }
     
-    # Get all directories in storage that match timestamp pattern
-    all_files = storage.list_files("")
-    timestamp_dirs = set()
+    # Get all job directories using new hierarchical structure and legacy support
+    all_dirs = storage.list_directories("")
+    job_dirs = []
     
-    # Extract unique timestamp directories from file paths
-    timestamp_pattern = re.compile(r'(\d{4}-\d{2}-\d{2}_\d{6})')
-    for file_path in all_files:
-        match = timestamp_pattern.match(file_path)
-        if match:
-            timestamp_dirs.add(match.group(1))
+    # Look for both hierarchical job directories and legacy flat directories
+    for dir_name in all_dirs:
+        # Check for new hierarchical pattern jobs/YYYY/MM/DD/HHmmss
+        if dir_name.startswith("jobs/") and len(dir_name.split("/")) >= 5:
+            try:
+                timestamp = storage.directory_manager.parse_job_timestamp(dir_name)
+                job_dirs.append((dir_name, timestamp))
+            except ValueError:
+                continue
+        # Check for legacy flat directories
+        elif re.match(r'^\d{4}-\d{2}-\d{2}_\d{6}$', dir_name):
+            job_dirs.append((dir_name, dir_name))
+    
+    timestamp_dirs = set([job_dir[0] for job_dir in job_dirs])
     
     # Filter directories by date range if specified
     filtered_dirs = []
-    for timestamp_dir in sorted(timestamp_dirs):
+    for job_dir_path, timestamp in job_dirs:
         try:
-            dir_datetime = get_utc_datetime_from_timestamp(timestamp_dir)
+            # Parse timestamp for date filtering
+            if timestamp.startswith("jobs/"):
+                # New hierarchical format - extract from parsed timestamp
+                timestamp_str = storage.directory_manager.parse_job_timestamp(job_dir_path)
+                dir_datetime = get_utc_datetime_from_timestamp(timestamp_str)
+            else:
+                # Legacy flat format
+                dir_datetime = get_utc_datetime_from_timestamp(timestamp)
             
             # Check if within date range
             if start_date and dir_datetime.date() < start_date.date():
@@ -75,9 +90,9 @@ def audit_days(start_date: datetime = None, end_date: datetime = None, audit_rep
             if end_date and dir_datetime.date() > end_date.date():
                 continue
                 
-            filtered_dirs.append(timestamp_dir)
+            filtered_dirs.append(job_dir_path)
         except ValueError as e:
-            logger.warning(f"Could not parse timestamp from directory {timestamp_dir}: {e}")
+            logger.warning(f"Could not parse timestamp from directory {job_dir_path}: {e}")
             continue
     
     if not filtered_dirs:

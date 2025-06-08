@@ -46,6 +46,10 @@ class StorageAdapter:
         self.use_cloud = os.getenv('USE_CLOUD_STORAGE', 'false').lower() == 'true'
         local_path = os.getenv('LOCAL_STORAGE_PATH', './working')
         self.local_root = Path(local_path)
+        
+        # Initialize directory manager
+        from src.media_lens.directory_manager import DirectoryManager
+        self.directory_manager = DirectoryManager(base_path="")
 
         logger.info(f"Using cloud storage: {self.use_cloud}")
         if self.use_cloud:
@@ -368,6 +372,100 @@ class StorageAdapter:
             local_path = self.local_root / path_str
             return local_path.exists()
     
+    def delete_file(self, path: Union[str, Path]) -> bool:
+        """
+        Delete a file from storage.
+        
+        Args:
+            path: Path to the file (relative to storage root)
+            
+        Returns:
+            True if file was deleted successfully, False otherwise
+        """
+        path_str = str(path)
+        
+        try:
+            if self.use_cloud:
+                blob = self.bucket.blob(path_str)
+                if blob.exists():
+                    blob.delete()
+                    logger.debug(f"Deleted cloud file: {path_str}")
+                    return True
+                else:
+                    logger.warning(f"Cloud file does not exist: {path_str}")
+                    return False
+            else:
+                # Local file system
+                local_path = self.local_root / path_str
+                if local_path.exists() and local_path.is_file():
+                    local_path.unlink()
+                    logger.debug(f"Deleted local file: {local_path}")
+                    return True
+                else:
+                    logger.warning(f"Local file does not exist: {local_path}")
+                    return False
+        except Exception as e:
+            logger.error(f"Failed to delete file {path_str}: {e}")
+            return False
+    
+    def delete_directory(self, path: Union[str, Path], recursive: bool = False) -> bool:
+        """
+        Delete a directory from storage.
+        
+        Args:
+            path: Path to the directory (relative to storage root)
+            recursive: If True, delete directory and all contents
+            
+        Returns:
+            True if directory was deleted successfully, False otherwise
+        """
+        path_str = str(path)
+        
+        try:
+            if self.use_cloud:
+                # For cloud storage, delete all files with this prefix
+                if recursive:
+                    prefix = path_str.rstrip('/') + '/'
+                    blobs = list(self.bucket.list_blobs(prefix=prefix))
+                    if blobs:
+                        for blob in blobs:
+                            blob.delete()
+                        logger.debug(f"Deleted cloud directory: {path_str} ({len(blobs)} files)")
+                        return True
+                    else:
+                        logger.warning(f"Cloud directory is empty or does not exist: {path_str}")
+                        return False
+                else:
+                    # Non-recursive - just delete the placeholder if it exists
+                    placeholder = f"{path_str.rstrip('/')}/.placeholder"
+                    blob = self.bucket.blob(placeholder)
+                    if blob.exists():
+                        blob.delete()
+                        logger.debug(f"Deleted cloud directory placeholder: {path_str}")
+                        return True
+                    else:
+                        logger.warning(f"Cloud directory placeholder does not exist: {path_str}")
+                        return False
+            else:
+                # Local file system
+                local_path = self.local_root / path_str
+                if local_path.exists() and local_path.is_dir():
+                    if recursive:
+                        import shutil
+                        shutil.rmtree(local_path)
+                        logger.debug(f"Deleted local directory recursively: {local_path}")
+                    else:
+                        # Only delete if empty
+                        local_path.rmdir()
+                        logger.debug(f"Deleted empty local directory: {local_path}")
+                    return True
+                else:
+                    logger.warning(f"Local directory does not exist: {local_path}")
+                    return False
+        except Exception as e:
+            logger.error(f"Failed to delete directory {path_str}: {e}")
+            return False
+    
     def create_directory(self, path: Union[str, Path]) -> str:
         """
         Create a directory in storage.
@@ -446,9 +544,58 @@ class StorageAdapter:
         else:
             return str(self.local_root / path_str)
     
+    def get_job_directory(self, timestamp: Optional[str] = None) -> str:
+        """
+        Get a job directory path in YYYY/MM/DD/HHmmss format.
+        
+        Args:
+            timestamp: Optional timestamp string. If None, uses current time.
+            
+        Returns:
+            Job directory path
+        """
+        return self.directory_manager.get_job_dir(timestamp)
+    
+    def get_intermediate_directory(self, subdir: str = "") -> str:
+        """
+        Get intermediate data directory path.
+        
+        Args:
+            subdir: Optional subdirectory within intermediate
+            
+        Returns:
+            Intermediate directory path
+        """
+        return self.directory_manager.get_intermediate_dir(subdir)
+    
+    def get_staging_directory(self, subdir: str = "") -> str:
+        """
+        Get staging directory path for website-ready files.
+        
+        Args:
+            subdir: Optional subdirectory within staging
+            
+        Returns:
+            Staging directory path
+        """
+        return self.directory_manager.get_staging_dir(subdir)
+    
+    def get_jobs_in_date_range(self, start_date: str, end_date: str) -> List[str]:
+        """
+        Get all job directories within a date range.
+        
+        Args:
+            start_date: Start date in YYYY-MM-DD format
+            end_date: End date in YYYY-MM-DD format
+            
+        Returns:
+            List of job directory paths within the date range
+        """
+        return self.directory_manager.get_jobs_in_date_range(start_date, end_date, self)
+    
     def get_directory_path(self, timestamp: str) -> str:
         """
-        Get a timestamped directory path.
+        Get a timestamped directory path (deprecated - use get_job_directory).
         
         Args:
             timestamp: Timestamp string to use in the directory name
@@ -456,4 +603,5 @@ class StorageAdapter:
         Returns:
             Path to the directory
         """
-        return timestamp
+        logger.warning("get_directory_path is deprecated, use get_job_directory instead")
+        return self.get_job_directory(timestamp)
