@@ -1,8 +1,7 @@
 FROM python:3.12-slim
 
 # Install system dependencies for Playwright and git
-RUN apt-get update && apt-get install -y --allow-unauthenticated gnupg \
-    && apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 648ACFD622F3D138 0E98404D386FA1D9 \
+RUN echo 'deb http://deb.debian.org/debian bookworm main' > /etc/apt/sources.list \
     && apt-get update && apt-get install -y \
     fonts-liberation \
     libasound2 \
