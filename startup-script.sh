@@ -181,6 +181,15 @@ else
     echo "No FTP credentials file found at $FTP_ENV_FILE"
 fi
 
+# Clean up Docker resources before starting
+echo "Cleaning up old Docker resources..."
+docker system prune -f --volumes 2>/dev/null || true
+
+# Setup disk monitoring
+echo "Setting up disk space monitoring..."
+chmod +x /app/monitor-disk-space.sh
+/app/monitor-disk-space.sh setup
+
 # Run docker-compose with the cloud profile to start only necessary services
 echo "Starting services with docker-compose using cloud profile..."
 cd /app
@@ -191,5 +200,9 @@ docker-compose --profile cloud up -d app
 
 # Check if app container started
 container_name=$(docker-compose ps -q app 2>/dev/null)
+
+# Final disk space check
+echo "Final disk usage check:"
+/app/monitor-disk-space.sh status
 
 echo "Startup script completed at $(date)"
