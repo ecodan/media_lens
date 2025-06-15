@@ -50,6 +50,22 @@ def update_deploy_cursor(timestamp: datetime.datetime) -> None:
         print(f"Failed to update deploy cursor: {e}")
 
 
+def rewind_deploy_cursor(days: int) -> None:
+    """
+    Rewind the deploy cursor by a specified number of days.
+    
+    Args:
+        days: Number of days to rewind the cursor
+    """
+    current_cursor = get_deploy_cursor()
+    if current_cursor:
+        new_cursor = current_cursor - datetime.timedelta(days=days)
+        update_deploy_cursor(new_cursor)
+        print(f"Deploy cursor rewound by {days} days: {current_cursor.isoformat()} → {new_cursor.isoformat()}")
+    else:
+        print("No deploy cursor found - cannot rewind")
+
+
 def reset_deploy_cursor() -> None:
     """
     Reset the deploy cursor to force full deployment on next run.

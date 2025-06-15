@@ -8,6 +8,8 @@ from threading import Thread
 
 from src.media_lens.common import create_logger, LOGGER_NAME, RunState, SITES
 from src.media_lens.runner import run, Steps, process_weekly_content, summarize_all
+from src.media_lens.presentation.deployer import rewind_deploy_cursor
+from src.media_lens.presentation.html_formatter import rewind_format_cursor
 from src.media_lens.storage_adapter import StorageAdapter
 
 # Initialize Flask app
@@ -30,7 +32,7 @@ def index():
         "status": "online",
         "app": "Media Lens",
         "endpoints": [
-            {"path": "/run", "method": "POST", "description": "Run the daily media lens pipeline"},
+            {"path": "/run", "method": "POST", "description": "Run the daily media lens pipeline (supports rewind_days parameter)"},
             {"path": "/weekly", "method": "POST", "description": "Process weekly content analysis"},
             {"path": "/summarize", "method": "POST", "description": "Generate daily summaries"},
             {"path": "/stop/{run_id}", "method": "POST", "description": "Stop a running pipeline by ID"},
@@ -47,6 +49,13 @@ def health():
 def run_task_async(steps, run_id, data=None):
     """Run a task in a separate thread and track its status"""
     try:
+        # Handle cursor rewind if specified
+        if data and data.get('rewind_days'):
+            days = data.get('rewind_days')
+            logger.info(f"Rewinding cursors by {days} days for run {run_id}")
+            rewind_format_cursor(days)
+            rewind_deploy_cursor(days)
+        
         # Run the pipeline
         result = asyncio.run(run(
             steps=steps, 
@@ -81,6 +90,15 @@ def run_pipeline():
         if data.get('sites'):
             import src.media_lens.common
             src.media_lens.common.SITES = data.get('sites')
+        
+        # Validate rewind_days parameter
+        rewind_days = data.get('rewind_days')
+        if rewind_days is not None:
+            if not isinstance(rewind_days, int) or rewind_days < 0:
+                return jsonify({
+                    "status": "error",
+                    "message": "rewind_days must be a non-negative integer"
+                }), 400
 
         # Generate a unique run ID
         run_id = data.get('run_id', str(uuid.uuid4())[:8])

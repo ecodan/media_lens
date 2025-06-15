@@ -333,6 +333,24 @@ def update_format_cursor(timestamp: datetime.datetime) -> None:
         logger.error(f"Failed to update format cursor: {e}")
 
 
+def rewind_format_cursor(days: int) -> None:
+    """
+    Rewind the format cursor by a specified number of days.
+    
+    Args:
+        days: Number of days to rewind the cursor
+    """
+    current_cursor = get_format_cursor()
+    if current_cursor:
+        new_cursor = current_cursor - datetime.timedelta(days=days)
+        update_format_cursor(new_cursor)
+        logger.info(f"Format cursor rewound by {days} days: {current_cursor.isoformat()} → {new_cursor.isoformat()}")
+        print(f"Format cursor rewound by {days} days: {current_cursor.isoformat()} → {new_cursor.isoformat()}")
+    else:
+        logger.warning("No format cursor found - cannot rewind")
+        print("No format cursor found - cannot rewind")
+
+
 def reset_format_cursor() -> None:
     """
     Reset the format cursor to force full regeneration on next run.

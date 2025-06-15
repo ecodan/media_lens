@@ -20,10 +20,10 @@ from src.media_lens.job_dir import JobDir
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
-from src.media_lens.presentation.deployer import upload_html_content_from_storage, get_deploy_cursor, update_deploy_cursor, get_files_to_deploy, reset_deploy_cursor
+from src.media_lens.presentation.deployer import upload_html_content_from_storage, get_deploy_cursor, update_deploy_cursor, get_files_to_deploy, reset_deploy_cursor, rewind_deploy_cursor
 from src.media_lens.extraction.summarizer import DailySummarizer
 from src.media_lens.presentation.deployer import upload_file
-from src.media_lens.presentation.html_formatter import generate_html_from_path, reset_format_cursor
+from src.media_lens.presentation.html_formatter import generate_html_from_path, reset_format_cursor, rewind_format_cursor
 from src.media_lens.storage import shared_storage
 from src.media_lens.storage_adapter import StorageAdapter
 
@@ -588,6 +588,11 @@ def main():
         action='store_true',
         help='Force deployment of all files, ignoring deploy cursor'
     )
+    run_parser.add_argument(
+        '--rewind-days',
+        type=int,
+        help='Rewind format and deploy cursors by specified number of days before running'
+    )
 
 
     # Summarize daily news command with option to force resummarization if no summary present
@@ -678,6 +683,13 @@ def main():
         logger.info(f"Using Playwright mode: {playwright_mode}")
 
         logger.info(f"Using sites: {', '.join(SITES)}")
+        
+        # Handle cursor rewind if specified
+        if hasattr(args, 'rewind_days') and args.rewind_days:
+            days = args.rewind_days
+            logger.info(f"Rewinding cursors by {days} days")
+            rewind_format_cursor(days)
+            rewind_deploy_cursor(days)
         
         # Handle date range processing
         if args.start_date or args.end_date:
