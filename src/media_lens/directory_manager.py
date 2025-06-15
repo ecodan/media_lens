@@ -128,7 +128,7 @@ class DirectoryManager:
             List of job directory paths within the date range
         """
         start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc)
         
         job_dirs = []
         jobs_base = str(self.base_path / "jobs")

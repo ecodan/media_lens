@@ -8,6 +8,7 @@ import dotenv
 from src.media_lens.common import LOGGER_NAME, ANTHROPIC_MODEL, create_logger
 from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
 from src.media_lens.storage_adapter import StorageAdapter
+from src.media_lens.storage import shared_storage
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -64,6 +65,7 @@ class DailySummarizer:
 
     def __init__(self, agent: Agent):
         self.agent: Agent = agent
+        self.storage = shared_storage
 
     def generate_summary(self, articles: list[Path]) -> str:
         """
@@ -74,9 +76,8 @@ class DailySummarizer:
         # and remove any non-ASCII characters
         trimmed_articles_list: List[str] = []
         for article in articles:
-            with open(article, 'r', encoding='utf-8') as f:
-                content: str = f.read()
-                trimmed_articles_list.append(' '.join(content.split()[:500]))
+            content: str = self.storage.read_text(article)
+            trimmed_articles_list.append(' '.join(content.split()[:500]))
         trimmed_articles = 'ARTICLE:\n'.join(trimmed_articles_list)
         # Use the agent to summarize the articles
         summary = self.agent.invoke(system_prompt=SYSTEM_PROMPT, user_prompt=REASONING_PROMPT.format(content=trimmed_articles))
