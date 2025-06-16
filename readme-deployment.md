@@ -186,14 +186,17 @@ Due to the complexity of Playwright and its browser dependencies, Media Lens is 
      --http-method=POST \
      --oauth-service-account-email=458497915682-compute@developer.gserviceaccount.com \
      --location="us-central1"
+   ```
 
+   **NOTE: the following should be set via the startup script, but listed here in case you want to do it manually**
+   ```
    # Set up a cron job on the VM to trigger the application
    # SSH into the VM
    sudo crontab -e
    # Add the following line to run the application every day at 7 AM PT
    0 16 * * * /usr/local/bin/run-container-job.sh
    ```
-   Create run_container-job.sh in the VM with the following content:
+   Create /usr/local/bin/run-container-job.sh in the VM  (not Docker image) with the following content:
    ```bash
    #!/bin/bash
    curl -X POST \
@@ -202,7 +205,6 @@ Due to the complexity of Playwright and its browser dependencies, Media Lens is 
        "steps": [
          "harvest",
          "extract",
-         "summarize_daily",
          "interpret_weekly",
          "format",
          "deploy"

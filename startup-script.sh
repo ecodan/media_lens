@@ -142,13 +142,23 @@ else
     export GOOGLE_APPLICATION_CREDENTIALS=""
 fi
 
+# Export variables for docker-compose and create .env file
+export GIT_REPO_URL=${GIT_REPO_URL:-"https://github.com/ecodan/media_lens.git"}
+export GIT_BRANCH=${GIT_BRANCH:-"master"}
+export GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-medialens}
+export GCP_STORAGE_BUCKET=${GCP_STORAGE_BUCKET:-media-lens-storage}
+export USE_CLOUD_STORAGE=true
+export USE_WORKLOAD_IDENTITY=${USE_WORKLOAD_IDENTITY}
+export GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}
+export ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+
 # Create .env file for docker-compose with cloud-specific settings
 cat > /app/.env << EOF
-GIT_REPO_URL=${GIT_REPO_URL:-"https://github.com/ecodan/media_lens.git"}
-GIT_BRANCH=${GIT_BRANCH:-"master"}
-GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-medialens}
-GCP_STORAGE_BUCKET=${GCP_STORAGE_BUCKET:-media-lens-storage}
-USE_CLOUD_STORAGE=true
+GIT_REPO_URL=${GIT_REPO_URL}
+GIT_BRANCH=${GIT_BRANCH}
+GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
+GCP_STORAGE_BUCKET=${GCP_STORAGE_BUCKET}
+USE_CLOUD_STORAGE=${USE_CLOUD_STORAGE}
 USE_WORKLOAD_IDENTITY=${USE_WORKLOAD_IDENTITY}
 GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
@@ -170,6 +180,8 @@ if [ -f "$FTP_ENV_FILE" ]; then
             if ! grep -q "^${var_name}=" /app/.env; then
                 echo "Adding FTP variable: $var_name"
                 echo "$line" >> /app/.env
+                # Also export to current environment so docker-compose can use it
+                export "$line"
             else
                 echo "Variable $var_name already exists in .env, skipping"
             fi
@@ -200,6 +212,32 @@ docker-compose --profile cloud up -d app
 
 # Check if app container started
 container_name=$(docker-compose ps -q app 2>/dev/null)
+
+# Create the cron job script
+echo "Creating cron job script..."
+cat > /usr/local/bin/run-container-job.sh << 'EOF'
+#!/bin/bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "steps": [
+      "harvest",
+      "extract",
+      "interpret_weekly",
+      "format",
+      "deploy"
+    ]
+  }' \
+http://0.0.0.0:8080/run
+EOF
+
+chmod +x /usr/local/bin/run-container-job.sh
+echo "Cron job script created successfully"
+
+# Set up the cron job (runs daily at 7 AM PT / 4 PM UTC)
+echo "Setting up cron job..."
+(crontab -l 2>/dev/null | grep -v '/usr/local/bin/run-container-job.sh'; echo "0 16 * * * /usr/local/bin/run-container-job.sh") | crontab -
+echo "Cron job configured successfully"
 
 # Final disk space check
 echo "Final disk usage check:"
