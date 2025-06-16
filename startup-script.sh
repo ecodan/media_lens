@@ -93,20 +93,6 @@ LAST_BUILD_HASH_FILE="$PERSISTENT_DIR/.last_build_hash"
 # Ensure the persistent directory exists
 mkdir -p "$PERSISTENT_DIR"
 
-if [ -f "$LAST_BUILD_HASH_FILE" ]; then
-    LAST_BUILD_HASH=$(cat "$LAST_BUILD_HASH_FILE")
-else
-    LAST_BUILD_HASH=""
-fi
-
-if [ "$CURRENT_HASH" != "$LAST_BUILD_HASH" ]; then
-    echo "Code has changed (${LAST_BUILD_HASH} -> ${CURRENT_HASH}), rebuilding Docker image..."
-    docker-compose build --no-cache app
-    echo "$CURRENT_HASH" > "$LAST_BUILD_HASH_FILE"
-    echo "Docker image rebuilt successfully"
-else
-    echo "No code changes detected, using existing Docker image"
-fi
 
 # Retrieve ANTHROPIC_API_KEY from Secret Manager if not already set
 if [ -z "${ANTHROPIC_API_KEY}" ]; then
@@ -124,6 +110,7 @@ if [ -z "${ANTHROPIC_API_KEY}" ]; then
             echo "WARNING: Failed to retrieve ANTHROPIC_API_KEY from Secret Manager"
         else
             echo "Successfully retrieved ANTHROPIC_API_KEY from Secret Manager"
+            export ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY"
         fi
     else
         echo "WARNING: gcloud not installed, cannot retrieve ANTHROPIC_API_KEY from Secret Manager"
@@ -148,9 +135,6 @@ export GIT_BRANCH=${GIT_BRANCH:-"master"}
 export GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-medialens}
 export GCP_STORAGE_BUCKET=${GCP_STORAGE_BUCKET:-media-lens-storage}
 export USE_CLOUD_STORAGE=true
-export USE_WORKLOAD_IDENTITY=${USE_WORKLOAD_IDENTITY}
-export GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}
-export ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 
 # Create .env file for docker-compose with cloud-specific settings
 cat > /app/.env << EOF
@@ -191,6 +175,23 @@ if [ -f "$FTP_ENV_FILE" ]; then
     echo "FTP credentials merged successfully"
 else
     echo "No FTP credentials file found at $FTP_ENV_FILE"
+fi
+
+# Check if the current code has changed since the last build
+if [ -f "$LAST_BUILD_HASH_FILE" ]; then
+    LAST_BUILD_HASH=$(cat "$LAST_BUILD_HASH_FILE")
+else
+    LAST_BUILD_HASH=""
+fi
+
+# Rebuild the Docker image if the code has changed
+if [ "$CURRENT_HASH" != "$LAST_BUILD_HASH" ]; then
+    echo "Code has changed (${LAST_BUILD_HASH} -> ${CURRENT_HASH}), rebuilding Docker image..."
+    docker-compose build --no-cache app
+    echo "$CURRENT_HASH" > "$LAST_BUILD_HASH_FILE"
+    echo "Docker image rebuilt successfully"
+else
+    echo "No code changes detected, using existing Docker image"
 fi
 
 # Clean up Docker resources before starting
