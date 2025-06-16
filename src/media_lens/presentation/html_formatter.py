@@ -296,6 +296,195 @@ def generate_index_page(weeks_data: Dict, template_dir_path: Path) -> str:
     )
 
 
+def get_index_metadata() -> Dict[str, Any]:
+    """
+    Get cached index metadata or create empty structure.
+    
+    Returns:
+        Dict containing weeks metadata and last_updated timestamp
+    """
+    storage = shared_storage
+    metadata_path = f"{storage.get_staging_directory()}/index_metadata.json"
+    
+    if storage.file_exists(metadata_path):
+        try:
+            metadata = storage.read_json(metadata_path)
+            return metadata
+        except Exception as e:
+            logger.warning(f"Could not load index metadata: {e}")
+    
+    # Return empty metadata structure
+    return {
+        "weeks": [],
+        "last_updated": None
+    }
+
+
+def update_index_metadata(affected_weeks_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Update index metadata for affected weeks only.
+    
+    Args:
+        affected_weeks_data: Week data for weeks that changed
+        
+    Returns:
+        Complete updated metadata
+    """
+    storage = shared_storage
+    metadata = get_index_metadata()
+    
+    # Convert existing weeks to dict for easy lookup
+    existing_weeks = {week["week_key"]: week for week in metadata["weeks"]}
+    
+    # Update metadata for affected weeks
+    for week in affected_weeks_data["weeks"]:
+        week_key = week["week_key"]
+        
+        # Create lightweight metadata for this week
+        week_metadata = {
+            "week_key": week_key,
+            "week_display": week["week_display"],
+            "job_count": len(week["runs"]),
+            "latest_job": max(run["run_datetime"].isoformat() for run in week["runs"]) if week["runs"] else None,
+            "has_weekly_summary": _check_weekly_summary_exists(week_key)
+        }
+        
+        existing_weeks[week_key] = week_metadata
+    
+    # Convert back to sorted list (newest first)
+    updated_weeks = list(existing_weeks.values())
+    updated_weeks.sort(key=lambda x: x["week_key"], reverse=True)
+    
+    # Update metadata
+    metadata["weeks"] = updated_weeks
+    metadata["last_updated"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    
+    # Save updated metadata
+    metadata_path = f"{storage.get_staging_directory()}/index_metadata.json"
+    storage.create_directory(storage.get_staging_directory())
+    storage.write_json(metadata_path, metadata)
+    
+    logger.info(f"Updated index metadata for {len(affected_weeks_data['weeks'])} weeks")
+    return metadata
+
+
+def _check_weekly_summary_exists(week_key: str) -> bool:
+    """Check if weekly summary exists for given week."""
+    storage = shared_storage
+    weekly_file_path = f"{storage.get_intermediate_directory()}/weekly-{week_key}-interpreted.json"
+    return storage.file_exists(weekly_file_path)
+
+
+def get_lightweight_weeks_data() -> Dict[str, Any]:
+    """
+    Get lightweight weeks data for index page without processing job content.
+    Only extracts week keys, display names, and job counts.
+    
+    Returns:
+        Dict with weeks data optimized for index page
+    """
+    storage = shared_storage
+    all_job_dirs = JobDir.list_all(storage)
+    
+    # Group jobs by week and count them
+    weeks_dict = defaultdict(list)
+    for job_dir in all_job_dirs:
+        weeks_dict[job_dir.week_key].append(job_dir)
+    
+    # Create lightweight week entries
+    weeks_list = []
+    for week_key, job_dirs in weeks_dict.items():
+        # Get week display from week_key
+        week_display = get_week_display(week_key)
+        
+        weeks_list.append({
+            "week_key": week_key,
+            "week_display": week_display,
+            "runs": [{}] * len(job_dirs)  # Template expects runs|length, create empty objects
+        })
+    
+    # Sort by week key (newest first)
+    weeks_list.sort(key=lambda x: x["week_key"], reverse=True)
+    
+    return {
+        "report_timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "weeks": weeks_list
+    }
+
+
+def generate_index_page_from_metadata(metadata: Dict[str, Any], template_dir_path: Path) -> str:
+    """
+    Generate index page from lightweight metadata instead of full weeks data.
+    
+    Args:
+        metadata: Index metadata with week summaries
+        template_dir_path: Path to templates directory
+        
+    Returns:
+        HTML content for the index page
+    """
+    storage = shared_storage
+    
+    # Create base content dictionary
+    index_content = {
+        "report_timestamp": metadata.get("last_updated", datetime.datetime.now(datetime.timezone.utc).isoformat()),
+        "weeks": metadata["weeks"]
+    }
+    
+    # Try to load the weekly summary for the latest week with fallback
+    if metadata["weeks"]:
+        # Iterate through weeks (newest first) until we find an available interpretation
+        found_valid_weekly = False
+        for week in metadata["weeks"]:
+            if not week.get("has_weekly_summary", False):
+                continue
+                
+            week_key = week["week_key"]
+            weekly_file_path = f"{storage.get_intermediate_directory()}/weekly-{week_key}-interpreted.json"
+            
+            try:
+                weekly_data = storage.read_json(weekly_file_path)
+                if isinstance(weekly_data, list):
+                    # Process the weekly summary data for the template
+                    weekly_summary = []
+                    for data in weekly_data:
+                        question_str = data.get("question", "")
+                        site = data.get("site", "")
+                        answer = data.get("answer", "")
+                        
+                        # Find or create a question entry
+                        question_entry = next((q for q in weekly_summary if q["question"] == question_str), None)
+                        if question_entry is None:
+                            question_entry = {"question": question_str, "answers": {}}
+                            weekly_summary.append(question_entry)
+                        
+                        # Add answer for this site
+                        if site:
+                            question_entry["answers"][site] = answer
+                    
+                    # Add weekly summary to index content
+                    index_content["weekly_summary"] = weekly_summary
+                    index_content["weekly_summary_date"] = week["week_display"].replace("Week of ", "")
+                    index_content["sites"] = SITES
+                    
+                    logger.info(f"Added weekly summary to index page for week {week_key}")
+                    found_valid_weekly = True
+                    break  # Stop looking after finding first valid weekly summary
+                else:
+                    logger.warning(f"Weekly interpretation has wrong format: {weekly_file_path}")
+            except (json.JSONDecodeError) as e:
+                logger.warning(f"Could not load weekly interpretation from {weekly_file_path}: {str(e)}")
+        
+        if not found_valid_weekly:
+            logger.warning("No valid weekly interpretation found for any week")
+    
+    return generate_html_with_template(
+        template_dir_path,
+        "index_template.j2",
+        index_content
+    )
+
+
 def get_format_cursor() -> Optional[datetime.datetime]:
     """
     Get the last format cursor timestamp from storage.
@@ -431,11 +620,22 @@ def generate_html_from_path(sites: list[str], template_dir_path: Path, force_ful
             cursor = None
             new_job_dirs, affected_week_keys = get_jobs_since_cursor(sites, cursor)
     
-    # Get all job directories for organizing (needed for complete context)
-    all_job_dirs = JobDir.list_all(storage)
+    # Get job directories for organizing based on cursor mode
+    if force_full or cursor is None:
+        # Get all job directories for full regeneration
+        job_dirs_for_organizing = JobDir.list_all(storage)
+        logger.info(f"Full regeneration mode: organizing {len(job_dirs_for_organizing)} job directories")
+    else:
+        # For incremental mode, we need all jobs from affected weeks for complete week context
+        all_job_dirs = JobDir.list_all(storage)
+        job_dirs_for_organizing = [
+            job_dir for job_dir in all_job_dirs 
+            if job_dir.week_key in affected_week_keys
+        ]
+        logger.info(f"Incremental mode: organizing {len(job_dirs_for_organizing)} job directories from affected weeks {affected_week_keys}")
     
     # Organize runs by week
-    weeks_data = organize_runs_by_week(all_job_dirs, sites)
+    weeks_data = organize_runs_by_week(job_dirs_for_organizing, sites)
     
     # Generate weekly HTML files (only for affected weeks if incremental)
     if force_full or cursor is None:
@@ -463,7 +663,10 @@ def generate_html_from_path(sites: list[str], template_dir_path: Path, force_ful
             storage.write_text(weekly_file_path, weekly_html[week_key])
     
     # Generate and return index page to staging directory
-    index_html = generate_index_page(weeks_data, template_dir_path)
+    # Use lightweight weeks data for index page navigation (much faster)
+    lightweight_weeks_data = get_lightweight_weeks_data()
+    index_html = generate_index_page(lightweight_weeks_data, template_dir_path)
+    
     index_file_path = f"{staging_dir}/medialens.html"
     storage.write_text(index_file_path, index_html)
     

@@ -9,7 +9,8 @@ import pytest
 from src.media_lens.presentation.html_formatter import (
     convert_relative_url, generate_html_with_template, organize_runs_by_week,
     generate_weekly_content, generate_index_page, generate_html_from_path,
-    get_format_cursor, update_format_cursor, reset_format_cursor, get_jobs_since_cursor
+    get_format_cursor, update_format_cursor, reset_format_cursor, get_jobs_since_cursor,
+    get_lightweight_weeks_data, rewind_format_cursor
 )
 from src.media_lens.job_dir import JobDir
 
@@ -520,3 +521,277 @@ def test_generate_html_from_path_incremental(sample_job_directory, temp_dir, tes
     
     # Should return existing HTML since no new content
     assert html == existing_html
+
+
+# Cursor Optimization Tests
+
+def test_rewind_format_cursor(test_storage_adapter, monkeypatch):
+    """Test rewinding format cursor by specified number of days."""
+    # Patch the shared storage to use our test storage adapter
+    monkeypatch.setattr("src.media_lens.presentation.html_formatter.shared_storage", test_storage_adapter)
+    
+    # Set initial cursor
+    initial_timestamp = datetime.datetime(2025, 6, 15, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    update_format_cursor(initial_timestamp)
+    
+    # Rewind by 7 days
+    rewind_format_cursor(7)
+    
+    # Check that cursor was rewound correctly
+    rewound_cursor = get_format_cursor()
+    expected_cursor = initial_timestamp - datetime.timedelta(days=7)
+    
+    assert rewound_cursor is not None
+    assert rewound_cursor == expected_cursor
+
+
+def test_rewind_format_cursor_no_existing_cursor(test_storage_adapter, monkeypatch):
+    """Test rewinding format cursor when no cursor exists."""
+    # Patch the shared storage to use our test storage adapter
+    monkeypatch.setattr("src.media_lens.presentation.html_formatter.shared_storage", test_storage_adapter)
+    
+    # Ensure no cursor exists
+    reset_format_cursor()
+    
+    # Attempt to rewind - should not crash
+    rewind_format_cursor(7)
+    
+    # Should still be no cursor
+    assert get_format_cursor() is None
+
+
+def test_get_lightweight_weeks_data(test_storage_adapter, monkeypatch):
+    """Test getting lightweight weeks data for index page."""
+    # Patch the shared storage to use our test storage adapter
+    monkeypatch.setattr("src.media_lens.presentation.html_formatter.shared_storage", test_storage_adapter)
+    
+    # Create multiple JobDir objects with different timestamps
+    job_dirs = [
+        JobDir.from_path("2025-06-15_120000"),  # Week 2025-W24
+        JobDir.from_path("2025-06-14_120000"),  # Week 2025-W23
+        JobDir.from_path("2025-06-08_120000"),  # Week 2025-W23
+        JobDir.from_path("2025-06-01_120000"),  # Week 2025-W22
+    ]
+    
+    # Mock JobDir.list_all to return our test jobs
+    monkeypatch.setattr("src.media_lens.job_dir.JobDir.list_all", lambda storage: job_dirs)
+    
+    # Call get_lightweight_weeks_data
+    result = get_lightweight_weeks_data()
+    
+    # Check result structure
+    assert "report_timestamp" in result
+    assert "weeks" in result
+    
+    # Should have 3 weeks (W24, W23, W22)
+    weeks = result["weeks"]
+    assert len(weeks) == 3
+    
+    # Check that weeks are sorted newest first
+    week_keys = [week["week_key"] for week in weeks]
+    assert week_keys == ["2025-W24", "2025-W23", "2025-W22"]
+    
+    # Check week data structure
+    for week in weeks:
+        assert "week_key" in week
+        assert "week_display" in week
+        assert "runs" in week
+        assert isinstance(week["runs"], list)
+    
+    # Check specific week counts
+    w24_week = next(w for w in weeks if w["week_key"] == "2025-W24")
+    assert len(w24_week["runs"]) == 1  # 1 job in week 24
+    
+    w23_week = next(w for w in weeks if w["week_key"] == "2025-W23")
+    assert len(w23_week["runs"]) == 2  # 2 jobs in week 23
+    
+    w22_week = next(w for w in weeks if w["week_key"] == "2025-W22")
+    assert len(w22_week["runs"]) == 1  # 1 job in week 22
+
+
+def test_get_lightweight_weeks_data_empty(test_storage_adapter, monkeypatch):
+    """Test getting lightweight weeks data when no jobs exist."""
+    # Patch the shared storage to use our test storage adapter
+    monkeypatch.setattr("src.media_lens.presentation.html_formatter.shared_storage", test_storage_adapter)
+    
+    # Mock JobDir.list_all to return empty list
+    monkeypatch.setattr("src.media_lens.job_dir.JobDir.list_all", lambda storage: [])
+    
+    # Call get_lightweight_weeks_data
+    result = get_lightweight_weeks_data()
+    
+    # Check result structure
+    assert "report_timestamp" in result
+    assert "weeks" in result
+    assert len(result["weeks"]) == 0
+
+
+def test_incremental_vs_full_processing(test_storage_adapter, temp_dir, monkeypatch):
+    """Test that incremental processing correctly identifies affected weeks."""
+    # Patch the shared storage to use our test storage adapter
+    monkeypatch.setattr("src.media_lens.presentation.html_formatter.shared_storage", test_storage_adapter)
+    
+    # Create JobDir objects from different weeks
+    old_job = JobDir.from_path("2025-05-01_120000")  # Week 2025-W17 (old)
+    recent_job1 = JobDir.from_path("2025-06-14_120000")  # Week 2025-W23 (recent)
+    recent_job2 = JobDir.from_path("2025-06-15_120000")  # Week 2025-W24 (recent)
+    all_jobs = [old_job, recent_job1, recent_job2]
+    
+    # Mock JobDir.list_all to return our test jobs
+    monkeypatch.setattr("src.media_lens.job_dir.JobDir.list_all", lambda storage: all_jobs)
+    
+    sites = ["www.test1.com"]
+    
+    # Test incremental job filtering
+    cursor_time = datetime.datetime(2025, 6, 13, 0, 0, 0, tzinfo=datetime.timezone.utc)
+    
+    # Test get_jobs_since_cursor directly
+    job_dirs, affected_weeks = get_jobs_since_cursor(sites, cursor_time)
+    
+    # Should only return jobs after cursor (2 recent jobs)
+    assert len(job_dirs) == 2
+    assert recent_job1 in job_dirs
+    assert recent_job2 in job_dirs
+    assert old_job not in job_dirs
+    
+    # Should identify affected weeks
+    assert len(affected_weeks) == 2
+    assert "2025-W23" in affected_weeks
+    assert "2025-W24" in affected_weeks
+    assert "2025-W17" not in affected_weeks
+
+
+def test_get_jobs_since_cursor_performance_simulation(test_storage_adapter, monkeypatch):
+    """Test that get_jobs_since_cursor correctly filters jobs for performance."""
+    # Patch the shared storage to use our test storage adapter
+    monkeypatch.setattr("src.media_lens.presentation.html_formatter.shared_storage", test_storage_adapter)
+    
+    # Create many JobDir objects simulating a large dataset
+    all_jobs = []
+    
+    # Create 50 old jobs (should be filtered out)
+    for i in range(50):
+        timestamp = f"2025-01-{i+1:02d}_120000"
+        if i + 1 <= 31:  # Only go up to day 31
+            all_jobs.append(JobDir.from_path(timestamp))
+    
+    # Create 5 recent jobs (should be included)
+    recent_jobs = [
+        JobDir.from_path("2025-06-14_120000"),
+        JobDir.from_path("2025-06-15_120000"),
+        JobDir.from_path("2025-06-15_130000"),
+        JobDir.from_path("2025-06-16_120000"),
+        JobDir.from_path("2025-06-16_130000"),
+    ]
+    all_jobs.extend(recent_jobs)
+    
+    # Mock JobDir.list_all to return our large dataset
+    monkeypatch.setattr("src.media_lens.job_dir.JobDir.list_all", lambda storage: all_jobs)
+    
+    # Set cursor to only include recent jobs
+    cursor = datetime.datetime(2025, 6, 14, 0, 0, 0, tzinfo=datetime.timezone.utc)
+    
+    sites = ["www.test1.com"]
+    job_dirs, affected_weeks = get_jobs_since_cursor(sites, cursor)
+    
+    # Should only return the 5 recent jobs
+    assert len(job_dirs) == 5
+    
+    # All returned jobs should be after the cursor
+    for job_dir in job_dirs:
+        assert job_dir.datetime > cursor
+    
+    # Should identify affected weeks
+    assert len(affected_weeks) >= 1
+    assert "2025-W24" in affected_weeks  # June 14-16 2025 is in week 24
+
+
+def test_organize_runs_by_week_with_limited_jobs(test_storage_adapter, monkeypatch):
+    """Test that organize_runs_by_week works efficiently with limited job set."""
+    # Patch the shared storage to use our test storage adapter
+    monkeypatch.setattr("src.media_lens.presentation.html_formatter.shared_storage", test_storage_adapter)
+    
+    # Create a small set of jobs (simulating incremental processing)
+    # Use jobs from the same week
+    limited_jobs = [
+        JobDir.from_path("2025-06-15_120000"),  # Week 2025-W24
+        JobDir.from_path("2025-06-15_130000"),  # Week 2025-W24 (same day, different time)
+    ]
+    
+    sites = ["www.test1.com", "www.test2.com"]
+    
+    # Call organize_runs_by_week with limited set
+    result = organize_runs_by_week(limited_jobs, sites)
+    
+    # Should only process the limited jobs
+    assert "weeks" in result
+    assert len(result["weeks"]) == 1  # Only one week
+    
+    week = result["weeks"][0]
+    assert week["week_key"] == "2025-W24"
+    assert len(week["runs"]) == 2  # Both jobs in the same week
+
+
+def test_full_cursor_optimization_workflow(test_storage_adapter, temp_dir, monkeypatch):
+    """Test the complete cursor optimization workflow end-to-end."""
+    # Patch the shared storage to use our test storage adapter
+    monkeypatch.setattr("src.media_lens.presentation.html_formatter.shared_storage", test_storage_adapter)
+    
+    # Set up storage and templates
+    storage = test_storage_adapter
+    template_dir = temp_dir / "templates"
+    template_dir.mkdir(exist_ok=True)
+    
+    storage.write_text("templates/index_template.j2", 
+                      "<html><body>{% for week in weeks %}<div>{{ week.week_key }}: {{ week.runs|length }} jobs</div>{% endfor %}</body></html>")
+    storage.write_text("templates/weekly_template.j2", 
+                      "<html><body><h2>{{ week_display }}</h2></body></html>")
+    
+    # Create a realistic job dataset
+    all_jobs = [
+        JobDir.from_path("2025-01-15_120000"),  # Old job - Week 2025-W02
+        JobDir.from_path("2025-01-16_120000"),  # Old job - Week 2025-W02
+        JobDir.from_path("2025-06-14_120000"),  # Recent job - Week 2025-W23
+        JobDir.from_path("2025-06-15_120000"),  # Recent job - Week 2025-W24
+        JobDir.from_path("2025-06-16_120000"),  # Recent job - Week 2025-W24
+    ]
+    
+    # Mock JobDir.list_all to return our dataset
+    monkeypatch.setattr("src.media_lens.job_dir.JobDir.list_all", lambda storage: all_jobs)
+    
+    sites = ["www.test1.com"]
+    
+    # Step 1: Initial full run (no cursor)
+    reset_format_cursor()
+    html1 = generate_html_from_path(sites, template_dir, force_full=False)
+    
+    # Should process all jobs and set cursor
+    assert "2025-W02" in html1
+    assert "2025-W24" in html1 
+    assert "2025-W23" in html1
+    cursor1 = get_format_cursor()
+    assert cursor1 is not None
+    
+    # Step 2: Rewind cursor by 3 days
+    rewind_format_cursor(3)
+    cursor2 = get_format_cursor()
+    assert cursor2 == cursor1 - datetime.timedelta(days=3)
+    
+    # Step 3: Run incremental processing
+    html2 = generate_html_from_path(sites, template_dir, force_full=False)
+    
+    # Should still show all weeks in index (lightweight), but only process affected weeks
+    assert html2 is not None
+    
+    # Verify cursor was updated
+    cursor3 = get_format_cursor()
+    assert cursor3 > cursor2  # Should be updated to latest job timestamp
+    
+    # Step 4: Run again with no new jobs (should skip processing)
+    staging_dir = storage.get_staging_directory()
+    existing_html = storage.read_text(f"{staging_dir}/medialens.html")
+    
+    html3 = generate_html_from_path(sites, template_dir, force_full=False)
+    
+    # Should return existing HTML since no new jobs
+    assert html3 == existing_html

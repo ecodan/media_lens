@@ -456,12 +456,13 @@ def test_run_command_with_force_flags(mock_asyncio_run, mock_run, capsys):
     # Verify asyncio.run was called
     mock_asyncio_run.assert_called_once()
     
-    # Get the arguments passed to run()
-    args, kwargs = mock_asyncio_run.call_args[0][0].__wrapped__.__code__.co_varnames, {}
+    # Verify that run was called with the correct force flags
+    mock_run.assert_called_once()
+    args, kwargs = mock_run.call_args
     
-    # The force flags should be passed through
-    # Note: Since we're mocking asyncio.run, we need to check that the right function was called
-    assert mock_asyncio_run.called
+    # Check that force flags were passed through
+    assert kwargs.get('force_full_format', False) == True
+    assert kwargs.get('force_full_deploy', False) == True
 
 
 @patch('src.media_lens.runner.format_output')
