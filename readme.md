@@ -61,82 +61,206 @@ Currently implements a file system-based storage solution for simplicity and rap
 - SFTP information if you want to push the file to a web server
 
 ## Development Setup
-
-```bash
-# Create and activate virtual environment
-python -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-
-## Configuration
-
-Create a `.env` in the project root with the following keys:
-```bash
-ANTHROPIC_API_KEY=
-
-# set these if using the "deploy" step
-FTP_HOSTNAME=
-FTP_USERNAME=
-FTP_KEY_PATH=
-FTP_PORT=
-FTP_PASSPHRASE=
-FTP_REMOTE_PATH=
-
-# set to true to use Google Cloud Storage
-USE_CLOUD_STORAGE=false
-LOCAL_STORAGE_PATH=$(pwd)/working/out
-
-# set these if USE_CLOUD_STORAGE is true
-GOOGLE_API_KEY=
-GOOGLE_APPLICATION_CREDENTIALS=
-
-```
+See readme-deployment.md for deployment instructions.
 
 
 ## Usage
 
+### CLI Commands
+
+#### Run Pipeline
+Execute workflow steps individually or in combination:
+
 ```bash
-# Run main program
+# Run main program (basic)
 python src/media_lens/runner.py
 
-# Run with scheduler (automated daily runs)
-./run_media_lens_scheduled.sh
+# Run specific steps
+python src/media_lens/runner.py run -s harvest extract interpret format deploy
 
-# Run full pipeline from harvest to deploy
-./run_harvest_to_deploy.sh
+# Available steps:
+# - harvest: Complete scraping and cleaning workflow
+# - harvest_scrape: Scraping only (saves raw HTML files)  
+# - harvest_clean: Cleaning only (processes existing HTML files)
+# - extract: Extract structured data from cleaned content
+# - interpret: Generate AI interpretations for individual runs
+# - interpret_weekly: Generate weekly AI interpretations
+# - summarize_daily: Create daily summaries
+# - format: Generate HTML output files
+# - deploy: Deploy files to remote server
 
-# run individual steps
-python src/media_lens/runner.py run -s <step1> <step2> ... -o /path/to/output
+# Override default sites
+python src/media_lens/runner.py run -s harvest --sites www.bbc.com www.cnn.com
 
-# override default sites
-python src/media_lens/runner.py run -s <step1> <step2> -o /path/to/output --sites <site1> <site2>
+# Process specific job directory
+python src/media_lens/runner.py run -s extract interpret -j jobs/2025/06/07/120000
 
-# Run single module
-python -m src.media_lens.<module_path>
+# Process date range
+python src/media_lens/runner.py run -s format --start-date 2025-01-01 --end-date 2025-01-31
 
-# Start and Stop
-1. CLI:
-  # Start a run
-  python src/media_lens/runner.py run -s harvest extract deploy -o /path/to/output
+# Force full processing (ignore cursors)
+python src/media_lens/runner.py run -s format --force-full-format
+python src/media_lens/runner.py run -s deploy --force-full-deploy
 
-  # Stop a run (from another terminal)
-  python src/media_lens/runner.py stop
+# Rewind cursors before running
+python src/media_lens/runner.py run -s format deploy --rewind-days 7
 
-2. HTTP API:
-  # Start a run
-  curl -X POST http://localhost:8080/run -H "Content-Type: application/json" -d '{"steps": ["harvest", "extract", "deploy"]}'
+# Set browser mode for local development
+python src/media_lens/runner.py run -s harvest --playwright-mode local
+```
 
-  # Check status
-  curl http://localhost:8080/status
+#### Daily Summarization
+```bash
+# Summarize all days
+python src/media_lens/runner.py summarize
 
-  # Stop a run
-  curl -X POST http://localhost:8080/stop/your-run-id
+# Force re-summarization
+python src/media_lens/runner.py summarize --force
+```
 
+#### Weekly Reinterpretation
+```bash
+# Reinterpret weekly content from specific date
+python src/media_lens/runner.py reinterpret-weeks --date 2025-01-01
 
+# Don't overwrite existing interpretations
+python src/media_lens/runner.py reinterpret-weeks --date 2025-01-01 --no-overwrite
+```
+
+#### Cursor Management
+```bash
+# Reset both cursors (forces full regeneration/deployment)
+python src/media_lens/runner.py reset-cursor
+
+# Reset specific cursors
+python src/media_lens/runner.py reset-cursor --format
+python src/media_lens/runner.py reset-cursor --deploy
+python src/media_lens/runner.py reset-cursor --all
+```
+
+#### Audit Directories
+```bash
+# Audit all directories
+python src/media_lens/runner.py audit
+
+# Audit specific date range
+python src/media_lens/runner.py audit --start-date 2025-01-01 --end-date 2025-01-31
+
+# Skip generating audit report file
+python src/media_lens/runner.py audit --no-report
+```
+
+#### Stop Running Process
+```bash
+# Stop current run
+python src/media_lens/runner.py stop
+```
+
+### Web API Endpoints
+
+Start the web server:
+```bash
+python src/media_lens/cloud_entrypoint.py
+```
+
+#### Pipeline Execution
+```bash
+# Start pipeline run
+curl -X POST http://localhost:8080/run \
+  -H "Content-Type: application/json" \
+  -d '{"steps": ["harvest", "extract", "interpret", "format", "deploy"]}'
+
+# Start with custom sites
+curl -X POST http://localhost:8080/run \
+  -H "Content-Type: application/json" \
+  -d '{"steps": ["harvest"], "sites": ["www.bbc.com", "www.cnn.com"]}'
+
+# Start with cursor rewind
+curl -X POST http://localhost:8080/run \
+  -H "Content-Type: application/json" \
+  -d '{"steps": ["format", "deploy"], "rewind_days": 7}'
+
+# Start with custom run ID
+curl -X POST http://localhost:8080/run \
+  -H "Content-Type: application/json" \
+  -d '{"steps": ["harvest"], "run_id": "my-custom-run"}'
+```
+
+#### Weekly Processing
+```bash
+# Process current week only
+curl -X POST http://localhost:8080/weekly \
+  -H "Content-Type: application/json" \
+  -d '{"current_week_only": true}'
+
+# Process specific weeks
+curl -X POST http://localhost:8080/weekly \
+  -H "Content-Type: application/json" \
+  -d '{"specific_weeks": ["2025-W08", "2025-W09"], "overwrite": true}'
+```
+
+#### Summarization
+```bash
+# Run daily summarization
+curl -X POST http://localhost:8080/summarize \
+  -H "Content-Type: application/json" \
+  -d '{"force": false}'
+
+# Force re-summarization
+curl -X POST http://localhost:8080/summarize \
+  -H "Content-Type: application/json" \
+  -d '{"force": true}'
+```
+
+#### Status and Control
+```bash
+# Check overall status
+curl http://localhost:8080/status
+
+# Check specific run status
+curl http://localhost:8080/status?run_id=your-run-id
+
+# Stop a running process
+curl -X POST http://localhost:8080/stop/your-run-id
+
+# Health check
+curl http://localhost:8080/health
+
+# Application info
+curl http://localhost:8080/
+```
+
+### Environment Variables
+
+```bash
+# Browser configuration for local development
+export PLAYWRIGHT_MODE=local  # or 'cloud' for container environments
+
+# API keys and deployment settings
+export ANTHROPIC_API_KEY=your-api-key
+export FTP_REMOTE_PATH=/path/to/remote/directory
+```
+
+### Quick Start Examples
+
+```bash
+# Full daily workflow
+python src/media_lens/runner.py run -s harvest extract interpret_weekly summarize_daily format deploy
+
+# Local development with minimal browser restrictions
+python src/media_lens/runner.py run -s harvest extract --playwright-mode local
+
+# Scrape only (for later processing)
+python src/media_lens/runner.py run -s harvest_scrape --sites www.bbc.com
+
+# Process existing scraped content
+python src/media_lens/runner.py run -s harvest_clean extract interpret -j jobs/2025/06/07/120000
+
+# Incremental deployment (only new files)
+python src/media_lens/runner.py run -s format deploy
+
+# Force complete regeneration
+python src/media_lens/runner.py run -s format deploy --force-full-format --force-full-deploy
 ```
 
 ## License
