@@ -136,6 +136,15 @@ export GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-medialens}
 export GCP_STORAGE_BUCKET=${GCP_STORAGE_BUCKET:-media-lens-storage}
 export USE_CLOUD_STORAGE=true
 
+# Fetch FTP secrets from Google Secret Manager
+export FTP_HOSTNAME=$(gcloud secrets versions access latest --secret="ftp-hostname")
+export FTP_USERNAME=$(gcloud secrets versions access latest --secret="ftp-username")
+export FTP_SSH_KEY=$(gcloud secrets versions access latest --secret="ftp-ssh-key")
+export FTP_PASSPHRASE=$(gcloud secrets versions access latest --secret="ftp-passphrase")
+export FTP_PORT=$(gcloud secrets versions access latest --secret="ftp-port")
+export FTP_IP_FALLBACK=$(gcloud secrets versions access latest --secret="ftp-ip-fallback")
+export FTP_REMOTE_PATH=$(gcloud secrets versions access latest --secret="ftp-remote-path")
+
 # Create .env file for docker-compose with cloud-specific settings
 cat > /app/.env << EOF
 GIT_REPO_URL=${GIT_REPO_URL}
@@ -146,6 +155,13 @@ USE_CLOUD_STORAGE=${USE_CLOUD_STORAGE}
 USE_WORKLOAD_IDENTITY=${USE_WORKLOAD_IDENTITY}
 GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+FTP_HOSTNAME=${FTP_HOSTNAME}
+FTP_USERNAME=${FTP_USERNAME}
+FTP_SSH_KEY=${FTP_SSH_KEY}
+FTP_PASSPHRASE=${FTP_PASSPHRASE}
+FTP_PORT=${FTP_PORT}
+FTP_IP_FALLBACK=${FTP_IP_FALLBACK}
+FTP_REMOTE_PATH=${FTP_REMOTE_PATH}
 EOF
 
 # Merge FTP credentials from .env.ftp if it exists

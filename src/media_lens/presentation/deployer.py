@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional, List
 import paramiko
+import io
 
 import dotenv
 
@@ -165,7 +166,7 @@ def upload_file(local_file: Path, remote_path: str, target_filename: str = None)
     # Check for IP fallback if hostname is set
     ip_fallback = os.getenv("FTP_IP_FALLBACK")
     username = os.getenv("FTP_USERNAME")
-    key_path = os.getenv("FTP_KEY_PATH")
+    key_content = os.getenv("FTP_SSH_KEY")  # SSH key content instead of path
     port_str = os.getenv("FTP_PORT")
     port: int = int(port_str) if port_str else 22
 
@@ -177,14 +178,19 @@ def upload_file(local_file: Path, remote_path: str, target_filename: str = None)
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-        # Load Ed25519 key
+        # Load Ed25519 key from content
         try:
             print("Loading Ed25519 key...")
-            private_key = paramiko.Ed25519Key.from_private_key_file(key_path)
-        except paramiko.ssh_exception.PasswordRequiredException:
-            # passphrase = getpass("Enter private key passphrase: ")
+            if not key_content:
+                raise ValueError("FTP_SSH_KEY environment variable is not set")
+            
+            key_file = io.StringIO(key_content)
             passphrase = os.getenv("FTP_PASSPHRASE")
-            private_key = paramiko.Ed25519Key.from_private_key_file(key_path, password=passphrase)
+            
+            if passphrase:
+                private_key = paramiko.Ed25519Key.from_private_key(key_file, password=passphrase)
+            else:
+                private_key = paramiko.Ed25519Key.from_private_key(key_file)
         except Exception as e:
             print(f"Error loading key: {str(e)}")
             raise
