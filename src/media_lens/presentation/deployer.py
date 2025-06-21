@@ -1,3 +1,4 @@
+import base64
 import datetime
 import logging
 import os
@@ -184,7 +185,9 @@ def upload_file(local_file: Path, remote_path: str, target_filename: str = None)
             if not key_content:
                 raise ValueError("FTP_SSH_KEY environment variable is not set")
             
-            key_file = io.StringIO(key_content)
+            # Decode base64-encoded key
+            decoded_key = base64.b64decode(key_content).decode('utf-8')
+            key_file = io.StringIO(decoded_key)
             passphrase = os.getenv("FTP_PASSPHRASE")
             
             if passphrase:

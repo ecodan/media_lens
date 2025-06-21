@@ -139,7 +139,7 @@ export USE_CLOUD_STORAGE=true
 # Fetch FTP secrets from Google Secret Manager
 export FTP_HOSTNAME=$(gcloud secrets versions access latest --secret="ftp-hostname")
 export FTP_USERNAME=$(gcloud secrets versions access latest --secret="ftp-username")
-export FTP_SSH_KEY=$(gcloud secrets versions access latest --secret="ftp-ssh-key" | base64 -d)
+export FTP_SSH_KEY=$(gcloud secrets versions access latest --secret="ftp-ssh-key")
 export FTP_PASSPHRASE=$(gcloud secrets versions access latest --secret="ftp-passphrase")
 export FTP_PORT=$(gcloud secrets versions access latest --secret="ftp-port")
 export FTP_IP_FALLBACK=$(gcloud secrets versions access latest --secret="ftp-ip-fallback")
