@@ -139,7 +139,7 @@ export USE_CLOUD_STORAGE=true
 # Fetch FTP secrets from Google Secret Manager
 export FTP_HOSTNAME=$(gcloud secrets versions access latest --secret="ftp-hostname")
 export FTP_USERNAME=$(gcloud secrets versions access latest --secret="ftp-username")
-export FTP_SSH_KEY=$(gcloud secrets versions access latest --secret="ftp-ssh-key")
+export FTP_SSH_KEY_FILE="/app/keys/siteground"
 export FTP_PASSPHRASE=$(gcloud secrets versions access latest --secret="ftp-passphrase")
 export FTP_PORT=$(gcloud secrets versions access latest --secret="ftp-port")
 export FTP_IP_FALLBACK=$(gcloud secrets versions access latest --secret="ftp-ip-fallback")
@@ -157,7 +157,7 @@ GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 FTP_HOSTNAME=${FTP_HOSTNAME}
 FTP_USERNAME=${FTP_USERNAME}
-FTP_SSH_KEY=${FTP_SSH_KEY}
+FTP_SSH_KEY_FILE=${FTP_SSH_KEY_FILE}
 FTP_PASSPHRASE=${FTP_PASSPHRASE}
 FTP_PORT=${FTP_PORT}
 FTP_IP_FALLBACK=${FTP_IP_FALLBACK}
