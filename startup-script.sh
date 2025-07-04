@@ -146,17 +146,17 @@ get_secret() {
     local timeout=10
     
     for attempt in $(seq 1 $max_attempts); do
-        echo "Attempting to fetch $secret_name (attempt $attempt/$max_attempts)..."
+        echo "Attempting to fetch $secret_name (attempt $attempt/$max_attempts)..." >&2
         result=$(timeout $timeout gcloud secrets versions access latest --secret="$secret_name" 2>/dev/null)
         if [ $? -eq 0 ] && [ -n "$result" ]; then
             echo "$result"
             return 0
         fi
-        echo "Failed to fetch $secret_name, retrying in 2 seconds..."
+        echo "Failed to fetch $secret_name, retrying in 2 seconds..." >&2
         sleep 2
     done
     
-    echo "Failed to fetch $secret_name after $max_attempts attempts"
+    echo "Failed to fetch $secret_name after $max_attempts attempts" >&2
     echo ""
 }
 
@@ -169,23 +169,23 @@ export FTP_IP_FALLBACK=$(get_secret "ftp-ip-fallback")
 export FTP_REMOTE_PATH=$(get_secret "ftp-remote-path")
 
 # Create .env file for docker-compose with cloud-specific settings
-# Use printf to properly escape special characters
+# Use printf to properly escape special characters and quote values
 {
-    printf "GIT_REPO_URL=%s\n" "$GIT_REPO_URL"
-    printf "GIT_BRANCH=%s\n" "$GIT_BRANCH"
-    printf "GOOGLE_CLOUD_PROJECT=%s\n" "$GOOGLE_CLOUD_PROJECT"
-    printf "GCP_STORAGE_BUCKET=%s\n" "$GCP_STORAGE_BUCKET"
-    printf "USE_CLOUD_STORAGE=%s\n" "$USE_CLOUD_STORAGE"
-    printf "USE_WORKLOAD_IDENTITY=%s\n" "$USE_WORKLOAD_IDENTITY"
-    printf "GOOGLE_APPLICATION_CREDENTIALS=%s\n" "$GOOGLE_APPLICATION_CREDENTIALS"
-    printf "ANTHROPIC_API_KEY=%s\n" "$ANTHROPIC_API_KEY"
-    printf "FTP_HOSTNAME=%s\n" "$FTP_HOSTNAME"
-    printf "FTP_USERNAME=%s\n" "$FTP_USERNAME"
-    printf "FTP_SSH_KEY_FILE=%s\n" "$FTP_SSH_KEY_FILE"
-    printf "FTP_PASSPHRASE=%s\n" "$FTP_PASSPHRASE"
-    printf "FTP_PORT=%s\n" "$FTP_PORT"
-    printf "FTP_IP_FALLBACK=%s\n" "$FTP_IP_FALLBACK"
-    printf "FTP_REMOTE_PATH=%s\n" "$FTP_REMOTE_PATH"
+    printf "GIT_REPO_URL=\"%s\"\n" "$GIT_REPO_URL"
+    printf "GIT_BRANCH=\"%s\"\n" "$GIT_BRANCH"
+    printf "GOOGLE_CLOUD_PROJECT=\"%s\"\n" "$GOOGLE_CLOUD_PROJECT"
+    printf "GCP_STORAGE_BUCKET=\"%s\"\n" "$GCP_STORAGE_BUCKET"
+    printf "USE_CLOUD_STORAGE=\"%s\"\n" "$USE_CLOUD_STORAGE"
+    printf "USE_WORKLOAD_IDENTITY=\"%s\"\n" "$USE_WORKLOAD_IDENTITY"
+    printf "GOOGLE_APPLICATION_CREDENTIALS=\"%s\"\n" "$GOOGLE_APPLICATION_CREDENTIALS"
+    printf "ANTHROPIC_API_KEY=\"%s\"\n" "$ANTHROPIC_API_KEY"
+    printf "FTP_HOSTNAME=\"%s\"\n" "$FTP_HOSTNAME"
+    printf "FTP_USERNAME=\"%s\"\n" "$FTP_USERNAME"
+    printf "FTP_SSH_KEY_FILE=\"%s\"\n" "$FTP_SSH_KEY_FILE"
+    printf "FTP_PASSPHRASE=\"%s\"\n" "$FTP_PASSPHRASE"
+    printf "FTP_PORT=\"%s\"\n" "$FTP_PORT"
+    printf "FTP_IP_FALLBACK=\"%s\"\n" "$FTP_IP_FALLBACK"
+    printf "FTP_REMOTE_PATH=\"%s\"\n" "$FTP_REMOTE_PATH"
 } > /app/.env
 
 # Merge FTP credentials from .env.ftp if it exists
