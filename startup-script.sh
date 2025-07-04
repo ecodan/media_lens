@@ -136,14 +136,37 @@ export GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-medialens}
 export GCP_STORAGE_BUCKET=${GCP_STORAGE_BUCKET:-media-lens-storage}
 export USE_CLOUD_STORAGE=true
 
-# Fetch FTP secrets from Google Secret Manager
-export FTP_HOSTNAME=$(gcloud secrets versions access latest --secret="ftp-hostname")
-export FTP_USERNAME=$(gcloud secrets versions access latest --secret="ftp-username")
+# Fetch FTP secrets from Google Secret Manager with retry logic
+echo "Fetching FTP secrets from Google Secret Manager..."
+
+# Function to retry gcloud secret access with timeout
+get_secret() {
+    local secret_name=$1
+    local max_attempts=3
+    local timeout=10
+    
+    for attempt in $(seq 1 $max_attempts); do
+        echo "Attempting to fetch $secret_name (attempt $attempt/$max_attempts)..."
+        result=$(timeout $timeout gcloud secrets versions access latest --secret="$secret_name" 2>/dev/null)
+        if [ $? -eq 0 ] && [ -n "$result" ]; then
+            echo "$result"
+            return 0
+        fi
+        echo "Failed to fetch $secret_name, retrying in 2 seconds..."
+        sleep 2
+    done
+    
+    echo "Failed to fetch $secret_name after $max_attempts attempts"
+    echo ""
+}
+
+export FTP_HOSTNAME=$(get_secret "ftp-hostname")
+export FTP_USERNAME=$(get_secret "ftp-username")
 export FTP_SSH_KEY_FILE="/app/keys/siteground"
-export FTP_PASSPHRASE=$(gcloud secrets versions access latest --secret="ftp-passphrase")
-export FTP_PORT=$(gcloud secrets versions access latest --secret="ftp-port")
-export FTP_IP_FALLBACK=$(gcloud secrets versions access latest --secret="ftp-ip-fallback")
-export FTP_REMOTE_PATH=$(gcloud secrets versions access latest --secret="ftp-remote-path")
+export FTP_PASSPHRASE=$(get_secret "ftp-passphrase")
+export FTP_PORT=$(get_secret "ftp-port")
+export FTP_IP_FALLBACK=$(get_secret "ftp-ip-fallback")
+export FTP_REMOTE_PATH=$(get_secret "ftp-remote-path")
 
 # Create .env file for docker-compose with cloud-specific settings
 cat > /app/.env << EOF
