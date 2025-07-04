@@ -17,7 +17,7 @@ from src.media_lens.auditor import audit_days
 from src.media_lens.collection.harvester import Harvester
 from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL, get_working_dir, UTC_REGEX_PATTERN_BW_COMPAT, RunState, SITES_DEFAULT, is_last_day_of_week, get_week_key
 from src.media_lens.job_dir import JobDir
-from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
+from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent, create_agent_from_env
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
 from src.media_lens.presentation.deployer import upload_html_content_from_storage, get_deploy_cursor, update_deploy_cursor, get_files_to_deploy, reset_deploy_cursor, rewind_deploy_cursor
@@ -45,10 +45,7 @@ class Steps(Enum):
 
 
 async def interpret(job_dir, sites):
-    agent: Agent = ClaudeLLMAgent(
-        api_key=os.getenv("ANTHROPIC_API_KEY"),
-        model=ANTHROPIC_MODEL
-    )
+    agent: Agent = create_agent_from_env()
     interpreter: LLMWebsiteInterpreter = LLMWebsiteInterpreter(agent=agent)
     for site in sites:
         try:
@@ -117,10 +114,7 @@ async def interpret_weekly(current_week_only=True, overwrite=False, specific_wee
     :param specific_weeks: If provided, only interpret these specific weeks (e.g. ["2025-W08", "2025-W09"])
     """
     
-    agent: Agent = ClaudeLLMAgent(
-        api_key=os.getenv("ANTHROPIC_API_KEY"),
-        model=ANTHROPIC_MODEL
-    )
+    agent: Agent = create_agent_from_env()
     interpreter: LLMWebsiteInterpreter = LLMWebsiteInterpreter(agent=agent)
     
     # Check if today is Sunday (last day of the week) or if specific weeks were provided
@@ -184,10 +178,7 @@ async def interpret_weekly(current_week_only=True, overwrite=False, specific_wee
 
 
 async def extract(job_dir):
-    agent: Agent = ClaudeLLMAgent(
-        api_key=os.getenv("ANTHROPIC_API_KEY"),
-        model=ANTHROPIC_MODEL
-    )
+    agent: Agent = create_agent_from_env()
     extractor: ContextExtractor = ContextExtractor(agent=agent, working_dir=job_dir)
     await extractor.run(delay_between_sites_secs=60)
 
@@ -336,7 +327,7 @@ async def reinterpret_weeks_from_date(start_date: datetime, overwrite: bool = Tr
 
 async def summarize_all(force: bool = False):
     logger.info("Summarizing extracted content")
-    summarizer: DailySummarizer = DailySummarizer(agent=ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL))
+    summarizer: DailySummarizer = DailySummarizer(agent=create_agent_from_env())
 
     # Get all directories using storage adapter
     all_dirs = storage.list_directories("")
@@ -504,7 +495,7 @@ async def run(steps: list[Steps], **kwargs) -> dict:
         if Steps.SUMMARIZE_DAILY in steps and not RunState.stop_requested():
             # Summarize daily content
             logger.info(f"[Run {run_id}] Starting daily summarization step")
-            summarizer: DailySummarizer = DailySummarizer(agent=ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL))
+            summarizer: DailySummarizer = DailySummarizer(agent=create_agent_from_env())
             summarizer.generate_summary_from_job_dir(artifacts_dir)
             result["completed_steps"].append(Steps.SUMMARIZE_DAILY.value)
 

@@ -7,7 +7,7 @@ This document provides step-by-step instructions for deploying the Media Lens ap
 ### Prerequisites
 - Docker and Docker Compose installed on your machine
 - Python 3.9+ (for local development outside Docker)
-- API keys for required services (Anthropic)
+- API keys for required services (Anthropic Claude or Google Vertex AI)
 
 ### Steps for Local Deployment
 
@@ -19,44 +19,101 @@ This document provides step-by-step instructions for deploying the Media Lens ap
 
 2. **Create a local environment file**
    Create a `.env` file in the project root with the following variables:
-   ```
-   ANTHROPIC_API_KEY=your_anthropic_api_key
-   USE_CLOUD_STORAGE=false
-   # Add any other local-specific environment variables here
-   ```
-
-3. **Build and run the Docker container**
    ```bash
-   docker compose up --build
+   # AI Provider (required)
+   AI_PROVIDER=claude
+   ANTHROPIC_API_KEY=your_anthropic_api_key_here
+   
+   # Local storage (required for Docker)
+   USE_CLOUD_STORAGE=false
+   LOCAL_STORAGE_PATH=/app/working
+   PLAYWRIGHT_MODE=cloud
+   
+   # Optional: FTP deployment (leave empty if not deploying)
+   FTP_HOSTNAME=
+   FTP_USERNAME=
+   FTP_SSH_KEY_FILE=
+   FTP_PORT=
+   FTP_PASSPHRASE=
+   FTP_REMOTE_PATH=
+   
+   # Optional: Google Cloud settings (not needed for Claude)
+   GOOGLE_CLOUD_PROJECT=
+   GCP_STORAGE_BUCKET=
+   GOOGLE_APPLICATION_CREDENTIALS=
+   ```
 
-    # Alternatively, if you want to run in detached mode:
-   docker compose up -d --build
+3. **Build and run the Docker container with local profile**
+   ```bash
+   # Build and run with local development profile
+   docker compose --profile local up --build
+   
+   # Or run in detached mode
+   docker compose --profile local up -d --build
    ```
 
 4. **Test the application**
-   The application should now be running in Docker. You can trigger operations using the available scripts:
-   ```bash
-   # Example: Run the harvesting process
-   docker exec -it media_lens-app-1 python src/media_lens/runner.py run --steps harvest -o /working/out
+   The application runs a web server on port 8080. You can trigger operations using HTTP API calls:
    
-   # Example: run all steps for one site
-   docker exec -it media_lens-app-1 python src/media_lens/runner.py run --steps harvest extract summarize_daily interpret_weekly format deploy -o /working/out --sites www.bbc.com
+   ```bash
+   # Check if the application is running
+   curl http://localhost:8080/health
+   
+   # View available endpoints
+   curl http://localhost:8080/
+   
+   # Run a simple harvest for testing
+   curl -X POST http://localhost:8080/run \
+     -H "Content-Type: application/json" \
+     -d '{"steps": ["harvest"], "sites": ["www.bbc.com"]}'
+   
+   # Run a full pipeline
+   curl -X POST http://localhost:8080/run \
+     -H "Content-Type: application/json" \
+     -d '{"steps": ["harvest", "extract", "interpret", "format"]}'
+   
+   # Check run status
+   curl http://localhost:8080/status
    ```
 
 5. **View the results**
    Output files will be stored in the `working` directory which is mounted as a volume in the Docker container.
    ```bash
    # Check the output directory
-   docker exec -it media_lens-app-1 ls -la /app/working/out
+   docker exec -it media-lens ls -la /app/working
    
-   # Copy files from the container to your local machine
-   docker cp media_lens_app:/app/working/out /path/to/local/directory
+   # View container logs
+   docker logs media-lens
+   
+   # Access the container shell if needed
+   docker exec -it media-lens /bin/bash
    ```
 
 6. **Stop the container**
    ```bash
-   docker compose down
+   docker compose --profile local down
    ```
+
+### Alternative: Direct CLI Usage in Container
+
+If you prefer to run CLI commands directly instead of using the web API:
+
+```bash
+# Run CLI commands inside the container
+docker exec -it media-lens python -m src.media_lens.runner run -s harvest --sites www.bbc.com
+
+# Or access the container shell
+docker exec -it media-lens /bin/bash
+# Then run commands inside the container:
+python -m src.media_lens.runner run -s harvest extract
+```
+
+### Troubleshooting Local Docker
+
+- **Container fails to start**: Check `docker logs media-lens` for error messages
+- **API not responding**: Ensure the container is running and port 8080 is not blocked
+- **Storage issues**: Verify the `working` directory is properly mounted
+- **Browser/Playwright errors**: The container includes all necessary browser dependencies
 
 ## Google Cloud VM Deployment
 

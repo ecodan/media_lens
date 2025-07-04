@@ -120,8 +120,17 @@ SITES_DEFAULT: list[str] = [
 
 SITES: list[str] = SITES_DEFAULT
 
+# AI Provider Configuration
+AI_PROVIDER: str = "claude"  # Options: "claude", "vertex"
+
+# Anthropic Configuration
 # ANTHROPIC_MODEL: str = "claude-3-7-sonnet-latest"
 ANTHROPIC_MODEL: str = "claude-3-5-haiku-latest"
+
+# Google Vertex AI Configuration
+VERTEX_AI_PROJECT_ID: str = "medialens"
+VERTEX_AI_LOCATION: str = "us-central1"
+VERTEX_AI_MODEL: str = "gemini-2.5-flash"
 
 
 LOGGER_NAME: str = "MEDIA_LENS"

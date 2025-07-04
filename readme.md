@@ -57,7 +57,9 @@ Currently implements a file system-based storage solution for simplicity and rap
 
 - Python 3.8+ (tested with Python 3.12)
 - See requirements.txt for dependencies
-- Anthropic Claude developer API
+- AI Provider API access:
+  - **Anthropic Claude** (default) - requires API key
+  - **Google Vertex AI** (optional) - requires GCP service account and project setup
 - SFTP information if you want to push the file to a web server
 
 ## Development Setup
@@ -73,15 +75,16 @@ Execute workflow steps individually or in combination:
 
 ```bash
 # Run main program (basic)
-python src/media_lens/runner.py
+python -m src.media_lens.runner
 
 # Run specific steps
-python src/media_lens/runner.py run -s harvest extract interpret format deploy
+python -m src.media_lens.runner run -s harvest extract interpret_weekly summarize_daily format deploy
 
 # Available steps:
 # - harvest: Complete scraping and cleaning workflow
 # - harvest_scrape: Scraping only (saves raw HTML files)  
 # - harvest_clean: Cleaning only (processes existing HTML files)
+# - re-harvest: Re-harvest existing content
 # - extract: Extract structured data from cleaned content
 # - interpret: Generate AI interpretations for individual runs
 # - interpret_weekly: Generate weekly AI interpretations
@@ -90,77 +93,87 @@ python src/media_lens/runner.py run -s harvest extract interpret format deploy
 # - deploy: Deploy files to remote server
 
 # Override default sites
-python src/media_lens/runner.py run -s harvest --sites www.bbc.com www.cnn.com
+python -m src.media_lens.runner run -s harvest --sites www.bbc.com www.cnn.com
 
 # Process specific job directory
-python src/media_lens/runner.py run -s extract interpret -j jobs/2025/06/07/120000
+python -m src.media_lens.runner run -s extract interpret -j jobs/2025/06/07/120000
 
 # Process date range
-python src/media_lens/runner.py run -s format --start-date 2025-01-01 --end-date 2025-01-31
+python -m src.media_lens.runner run -s format --start-date 2025-01-01 --end-date 2025-01-31
 
 # Force full processing (ignore cursors)
-python src/media_lens/runner.py run -s format --force-full-format
-python src/media_lens/runner.py run -s deploy --force-full-deploy
+python -m src.media_lens.runner run -s format --force-full-format
+python -m src.media_lens.runner run -s deploy --force-full-deploy
 
 # Rewind cursors before running
-python src/media_lens/runner.py run -s format deploy --rewind-days 7
+python -m src.media_lens.runner run -s format deploy --rewind-days 7
 
 # Set browser mode for local development
-python src/media_lens/runner.py run -s harvest --playwright-mode local
+python -m src.media_lens.runner run -s harvest --playwright-mode local
+
+# Assign custom run ID for tracking
+python -m src.media_lens.runner run -s harvest --run-id my-custom-run
 ```
 
 #### Daily Summarization
 ```bash
 # Summarize all days
-python src/media_lens/runner.py summarize
+python -m src.media_lens.runner summarize
 
 # Force re-summarization
-python src/media_lens/runner.py summarize --force
+python -m src.media_lens.runner summarize --force
 ```
 
 #### Weekly Reinterpretation
 ```bash
 # Reinterpret weekly content from specific date
-python src/media_lens/runner.py reinterpret-weeks --date 2025-01-01
+python -m src.media_lens.runner reinterpret-weeks --date 2025-01-01
 
 # Don't overwrite existing interpretations
-python src/media_lens/runner.py reinterpret-weeks --date 2025-01-01 --no-overwrite
+python -m src.media_lens.runner reinterpret-weeks --date 2025-01-01 --no-overwrite
 ```
 
 #### Cursor Management
 ```bash
 # Reset both cursors (forces full regeneration/deployment)
-python src/media_lens/runner.py reset-cursor
+python -m src.media_lens.runner reset-cursor
 
 # Reset specific cursors
-python src/media_lens/runner.py reset-cursor --format
-python src/media_lens/runner.py reset-cursor --deploy
-python src/media_lens/runner.py reset-cursor --all
+python -m src.media_lens.runner reset-cursor --format
+python -m src.media_lens.runner reset-cursor --deploy
+python -m src.media_lens.runner reset-cursor --all
 ```
 
 #### Audit Directories
 ```bash
 # Audit all directories
-python src/media_lens/runner.py audit
+python -m src.media_lens.runner audit
 
 # Audit specific date range
-python src/media_lens/runner.py audit --start-date 2025-01-01 --end-date 2025-01-31
+python -m src.media_lens.runner audit --start-date 2025-01-01 --end-date 2025-01-31
 
 # Skip generating audit report file
-python src/media_lens/runner.py audit --no-report
+python -m src.media_lens.runner audit --no-report
 ```
 
 #### Stop Running Process
 ```bash
 # Stop current run
-python src/media_lens/runner.py stop
+python -m src.media_lens.runner stop
 ```
 
 ### Web API Endpoints
 
-Start the web server:
+The application includes a Flask web server that can be started locally or via Docker:
+
+**Local Development:**
 ```bash
-python src/media_lens/cloud_entrypoint.py
+python -m src.media_lens.cloud_entrypoint
+```
+
+**Docker (preferred for local testing):**
+```bash
+docker compose --profile local up --build
 ```
 
 #### Pipeline Execution
@@ -236,31 +249,50 @@ curl http://localhost:8080/
 # Browser configuration for local development
 export PLAYWRIGHT_MODE=local  # or 'cloud' for container environments
 
-# API keys and deployment settings
-export ANTHROPIC_API_KEY=your-api-key
+# AI Provider Configuration
+export AI_PROVIDER=claude  # Options: "claude", "vertex"
+
+# Anthropic Claude Configuration
+export ANTHROPIC_API_KEY=your-anthropic-api-key
+
+# Google Vertex AI Configuration (required when AI_PROVIDER=vertex)
+export GOOGLE_APPLICATION_CREDENTIALS=path/to/your/service-account-key.json
+export VERTEX_AI_PROJECT_ID=your-gcp-project-id
+export VERTEX_AI_LOCATION=us-central1
+export VERTEX_AI_MODEL=gemini-2.5-flash
+
+# Google Cloud Storage Configuration
+export GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+export GCP_STORAGE_BUCKET=your-storage-bucket-name
+export USE_CLOUD_STORAGE=false
+
+# FTP Deployment Settings
 export FTP_REMOTE_PATH=/path/to/remote/directory
+
+# Local Storage Configuration
+export LOCAL_STORAGE_PATH=/path/to/your/working/directory
 ```
 
 ### Quick Start Examples
 
 ```bash
 # Full daily workflow
-python src/media_lens/runner.py run -s harvest extract interpret_weekly summarize_daily format deploy
+python -m src.media_lens.runner run -s harvest extract interpret_weekly summarize_daily format deploy
 
 # Local development with minimal browser restrictions
-python src/media_lens/runner.py run -s harvest extract --playwright-mode local
+python -m src.media_lens.runner run -s harvest extract --playwright-mode local
 
 # Scrape only (for later processing)
-python src/media_lens/runner.py run -s harvest_scrape --sites www.bbc.com
+python -m src.media_lens.runner run -s harvest_scrape --sites www.bbc.com
 
 # Process existing scraped content
-python src/media_lens/runner.py run -s harvest_clean extract interpret -j jobs/2025/06/07/120000
+python -m src.media_lens.runner run -s harvest_clean extract interpret -j jobs/2025/06/07/120000
 
 # Incremental deployment (only new files)
-python src/media_lens/runner.py run -s format deploy
+python -m src.media_lens.runner run -s format deploy
 
 # Force complete regeneration
-python src/media_lens/runner.py run -s format deploy --force-full-format --force-full-deploy
+python -m src.media_lens.runner run -s format deploy --force-full-format --force-full-deploy
 ```
 
 ## License

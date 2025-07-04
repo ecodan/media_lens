@@ -136,6 +136,16 @@ export GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-medialens}
 export GCP_STORAGE_BUCKET=${GCP_STORAGE_BUCKET:-media-lens-storage}
 export USE_CLOUD_STORAGE=true
 
+# AI Provider Configuration
+export AI_PROVIDER=${AI_PROVIDER:-vertex}
+export VERTEX_AI_PROJECT_ID=${GOOGLE_CLOUD_PROJECT:-medialens}
+export VERTEX_AI_LOCATION=${VERTEX_AI_LOCATION:-us-central1}
+export VERTEX_AI_MODEL=${VERTEX_AI_MODEL:-gemini-2.5-flash}
+
+# Storage and Browser Configuration
+export LOCAL_STORAGE_PATH=${LOCAL_STORAGE_PATH:-/app/working/out}
+export PLAYWRIGHT_MODE=${PLAYWRIGHT_MODE:-cloud}
+
 # Fetch FTP secrets from Google Secret Manager with retry logic
 echo "Fetching FTP secrets from Google Secret Manager..."
 
@@ -168,6 +178,9 @@ export FTP_PORT=$(get_secret "ftp-port")
 export FTP_IP_FALLBACK=$(get_secret "ftp-ip-fallback")
 export FTP_REMOTE_PATH=$(get_secret "ftp-remote-path")
 
+# Fetch Google API key from Secret Manager
+export GOOGLE_API_KEY=$(get_secret "google-api-key")
+
 # Create .env file for docker-compose with cloud-specific settings
 # Use printf to properly escape special characters and quote values
 {
@@ -186,6 +199,13 @@ export FTP_REMOTE_PATH=$(get_secret "ftp-remote-path")
     printf "FTP_PORT=\"%s\"\n" "$FTP_PORT"
     printf "FTP_IP_FALLBACK=\"%s\"\n" "$FTP_IP_FALLBACK"
     printf "FTP_REMOTE_PATH=\"%s\"\n" "$FTP_REMOTE_PATH"
+    printf "AI_PROVIDER=\"%s\"\n" "$AI_PROVIDER"
+    printf "VERTEX_AI_PROJECT_ID=\"%s\"\n" "$GOOGLE_CLOUD_PROJECT"
+    printf "VERTEX_AI_LOCATION=\"%s\"\n" "$VERTEX_AI_LOCATION"
+    printf "VERTEX_AI_MODEL=\"%s\"\n" "$VERTEX_AI_MODEL"
+    printf "GOOGLE_API_KEY=\"%s\"\n" "$GOOGLE_API_KEY"
+    printf "LOCAL_STORAGE_PATH=\"%s\"\n" "$LOCAL_STORAGE_PATH"
+    printf "PLAYWRIGHT_MODE=\"%s\"\n" "$PLAYWRIGHT_MODE"
 } > /app/.env
 
 # Merge FTP credentials from .env.ftp if it exists

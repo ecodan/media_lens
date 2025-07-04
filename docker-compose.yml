@@ -27,6 +27,15 @@ services:
       - FTP_REMOTE_PATH=${FTP_REMOTE_PATH:-/var/www/html}
       # Path to service account credentials file, use VM environment variable with fallback
       - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-/app/keys/medialens-service-account.json}
+      # AI Provider Configuration
+      - AI_PROVIDER=${AI_PROVIDER:-vertex}
+      - VERTEX_AI_PROJECT_ID=${VERTEX_AI_PROJECT_ID:-medialens}
+      - VERTEX_AI_LOCATION=${VERTEX_AI_LOCATION:-us-central1}
+      - VERTEX_AI_MODEL=${VERTEX_AI_MODEL:-gemini-2.5-flash}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      # Storage and Browser Configuration
+      - LOCAL_STORAGE_PATH=${LOCAL_STORAGE_PATH:-/app/working/out}
+      - PLAYWRIGHT_MODE=${PLAYWRIGHT_MODE:-cloud}
     volumes:
       # Mount working directory for output files
       - ${WORKING_DIR:-./working}:/app/working
