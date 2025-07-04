@@ -36,6 +36,9 @@ services:
       # Storage and Browser Configuration
       - LOCAL_STORAGE_PATH=${LOCAL_STORAGE_PATH:-/app/working/out}
       - PLAYWRIGHT_MODE=${PLAYWRIGHT_MODE:-cloud}
+      # Secret Manager Configuration
+      - USE_SECRET_MANAGER=${USE_SECRET_MANAGER:-true}
+      - SECRET_MANAGER_PROJECT_ID=${SECRET_MANAGER_PROJECT_ID:-${GOOGLE_CLOUD_PROJECT}}
     volumes:
       # Mount working directory for output files
       - ${WORKING_DIR:-./working}:/app/working

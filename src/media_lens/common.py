@@ -189,3 +189,29 @@ def create_logger(name: str, logfile_path: Union[str, Path] = None) -> logging.L
             handler.setFormatter(formatter)
             logger.addHandler(handler)
     return logger
+
+
+def ensure_secrets_loaded():
+    """Ensure that secrets are loaded from Google Cloud Secret Manager if available.
+    
+    This function should be called at application startup to load secrets
+    before they are needed by other components.
+    """
+    try:
+        from .secret_manager import load_secrets_from_gcp
+        loaded_secrets = load_secrets_from_gcp()
+        
+        logger = logging.getLogger(LOGGER_NAME)
+        logger.info("Secrets initialization completed")
+        
+        # Log which secrets were loaded (without values)
+        for key, value in loaded_secrets.items():
+            status = "loaded" if value else "not_available"
+            logger.debug(f"Secret {key}: {status}")
+            
+        return loaded_secrets
+        
+    except Exception as e:
+        logger = logging.getLogger(LOGGER_NAME)
+        logger.error(f"Failed to load secrets: {e}")
+        return {}

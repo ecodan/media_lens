@@ -6,7 +6,7 @@ from flask import Flask, request, jsonify
 import asyncio
 from threading import Thread
 
-from src.media_lens.common import create_logger, LOGGER_NAME, RunState, SITES
+from src.media_lens.common import create_logger, LOGGER_NAME, RunState, SITES, ensure_secrets_loaded
 from src.media_lens.runner import run, Steps, process_weekly_content, summarize_all
 from src.media_lens.presentation.deployer import rewind_deploy_cursor
 from src.media_lens.presentation.html_formatter import rewind_format_cursor
@@ -18,6 +18,10 @@ app = Flask(__name__)
 # Setup logging
 create_logger(LOGGER_NAME)
 logger = logging.getLogger(LOGGER_NAME)
+
+# Initialize secrets at startup
+logger.info("Initializing secrets at application startup")
+ensure_secrets_loaded()
 
 # Use shared storage adapter
 storage: StorageAdapter = StorageAdapter.get_instance()

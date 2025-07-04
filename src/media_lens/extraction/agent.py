@@ -157,6 +157,10 @@ def create_agent_from_env() -> Agent:
     
     :return: Agent instance configured from environment
     """
+    # Ensure secrets are loaded before creating the agent
+    from src.media_lens.common import ensure_secrets_loaded
+    ensure_secrets_loaded()
+    
     provider = os.getenv("AI_PROVIDER", AI_PROVIDER).lower()
     
     if provider == "claude":

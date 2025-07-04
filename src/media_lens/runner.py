@@ -527,6 +527,10 @@ async def run(steps: list[Steps], **kwargs) -> dict:
 
 
 def main():
+    # Initialize secrets at startup
+    from src.media_lens.common import ensure_secrets_loaded
+    ensure_secrets_loaded()
+    
     parser = argparse.ArgumentParser(description='Media Lens CLI')
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
 

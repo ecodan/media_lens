@@ -94,28 +94,8 @@ LAST_BUILD_HASH_FILE="$PERSISTENT_DIR/.last_build_hash"
 mkdir -p "$PERSISTENT_DIR"
 
 
-# Retrieve ANTHROPIC_API_KEY from Secret Manager if not already set
-if [ -z "${ANTHROPIC_API_KEY}" ]; then
-    echo "ANTHROPIC_API_KEY not found in environment, retrieving from Secret Manager..."
-    # Get the Google Cloud project ID from metadata server if not already set
-    if [ -z "${GOOGLE_CLOUD_PROJECT}" ]; then
-        GOOGLE_CLOUD_PROJECT=$(curl -s "http://metadata.google.internal/computeMetadata/v1/project/project-id" -H "Metadata-Flavor: Google")
-    fi
-    
-    # Check if gcloud is installed
-    if command -v gcloud &> /dev/null; then
-        # Use the VM's service account to access the secret
-        ANTHROPIC_API_KEY=$(gcloud secrets versions access latest --secret="anthropic-api-key" --project="${GOOGLE_CLOUD_PROJECT:-medialens}")
-        if [ -z "${ANTHROPIC_API_KEY}" ]; then
-            echo "WARNING: Failed to retrieve ANTHROPIC_API_KEY from Secret Manager"
-        else
-            echo "Successfully retrieved ANTHROPIC_API_KEY from Secret Manager"
-            export ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY"
-        fi
-    else
-        echo "WARNING: gcloud not installed, cannot retrieve ANTHROPIC_API_KEY from Secret Manager"
-    fi
-fi
+# ANTHROPIC_API_KEY and other secrets are now loaded by the Python application at startup
+# This provides more reliable error handling and eliminates VM startup issues
 
 # Check for service account JSON files in the keys directory
 SERVICE_ACCOUNT_FILE=$(ls -1 /app/keys/*.json 2>/dev/null | head -1)
@@ -146,43 +126,12 @@ export VERTEX_AI_MODEL=${VERTEX_AI_MODEL:-gemini-2.5-flash}
 export LOCAL_STORAGE_PATH=${LOCAL_STORAGE_PATH:-/app/working/out}
 export PLAYWRIGHT_MODE=${PLAYWRIGHT_MODE:-cloud}
 
-# Fetch FTP secrets from Google Secret Manager with retry logic
-echo "Fetching FTP secrets from Google Secret Manager..."
-
-# Function to retry gcloud secret access with timeout
-get_secret() {
-    local secret_name=$1
-    local max_attempts=3
-    local timeout=10
-    
-    for attempt in $(seq 1 $max_attempts); do
-        echo "Attempting to fetch $secret_name (attempt $attempt/$max_attempts)..." >&2
-        result=$(timeout $timeout gcloud secrets versions access latest --secret="$secret_name" 2>/dev/null)
-        if [ $? -eq 0 ] && [ -n "$result" ]; then
-            echo "$result"
-            return 0
-        fi
-        echo "Failed to fetch $secret_name, retrying in 2 seconds..." >&2
-        sleep 2
-    done
-    
-    echo "Failed to fetch $secret_name after $max_attempts attempts" >&2
-    echo ""
-}
-
-export FTP_HOSTNAME=$(get_secret "ftp-hostname")
-export FTP_USERNAME=$(get_secret "ftp-username")
+# FTP secrets and other credentials are now loaded by the Python application at startup
+# Set default FTP SSH key file path (physical file still needs to be available)
 export FTP_SSH_KEY_FILE="/app/keys/siteground"
-export FTP_PASSPHRASE=$(get_secret "ftp-passphrase")
-export FTP_PORT=$(get_secret "ftp-port")
-export FTP_IP_FALLBACK=$(get_secret "ftp-ip-fallback")
-export FTP_REMOTE_PATH=$(get_secret "ftp-remote-path")
-
-# Fetch Google API key from Secret Manager
-export GOOGLE_API_KEY=$(get_secret "google-api-key")
 
 # Create .env file for docker-compose with cloud-specific settings
-# Use printf to properly escape special characters and quote values
+# Secrets are now loaded by the Python application, so we only set configuration values
 {
     printf "GIT_REPO_URL=\"%s\"\n" "$GIT_REPO_URL"
     printf "GIT_BRANCH=\"%s\"\n" "$GIT_BRANCH"
@@ -191,21 +140,14 @@ export GOOGLE_API_KEY=$(get_secret "google-api-key")
     printf "USE_CLOUD_STORAGE=\"%s\"\n" "$USE_CLOUD_STORAGE"
     printf "USE_WORKLOAD_IDENTITY=\"%s\"\n" "$USE_WORKLOAD_IDENTITY"
     printf "GOOGLE_APPLICATION_CREDENTIALS=\"%s\"\n" "$GOOGLE_APPLICATION_CREDENTIALS"
-    printf "ANTHROPIC_API_KEY=\"%s\"\n" "$ANTHROPIC_API_KEY"
-    printf "FTP_HOSTNAME=\"%s\"\n" "$FTP_HOSTNAME"
-    printf "FTP_USERNAME=\"%s\"\n" "$FTP_USERNAME"
     printf "FTP_SSH_KEY_FILE=\"%s\"\n" "$FTP_SSH_KEY_FILE"
-    printf "FTP_PASSPHRASE=\"%s\"\n" "$FTP_PASSPHRASE"
-    printf "FTP_PORT=\"%s\"\n" "$FTP_PORT"
-    printf "FTP_IP_FALLBACK=\"%s\"\n" "$FTP_IP_FALLBACK"
-    printf "FTP_REMOTE_PATH=\"%s\"\n" "$FTP_REMOTE_PATH"
     printf "AI_PROVIDER=\"%s\"\n" "$AI_PROVIDER"
     printf "VERTEX_AI_PROJECT_ID=\"%s\"\n" "$GOOGLE_CLOUD_PROJECT"
     printf "VERTEX_AI_LOCATION=\"%s\"\n" "$VERTEX_AI_LOCATION"
     printf "VERTEX_AI_MODEL=\"%s\"\n" "$VERTEX_AI_MODEL"
-    printf "GOOGLE_API_KEY=\"%s\"\n" "$GOOGLE_API_KEY"
     printf "LOCAL_STORAGE_PATH=\"%s\"\n" "$LOCAL_STORAGE_PATH"
     printf "PLAYWRIGHT_MODE=\"%s\"\n" "$PLAYWRIGHT_MODE"
+    printf "USE_SECRET_MANAGER=\"%s\"\n" "true"
 } > /app/.env
 
 # Merge FTP credentials from .env.ftp if it exists
