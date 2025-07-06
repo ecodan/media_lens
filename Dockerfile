@@ -2,8 +2,9 @@ FROM python:3.12-slim
 
 # Install system dependencies for Playwright and git
 # Temporarily bypass GPG validation due to current Debian repository issues
-RUN apt-get update && apt-get install -y \
-    --allow-unauthenticated \
+RUN echo 'APT::Get::AllowUnauthenticated "true";' > /etc/apt/apt.conf.d/99allow-unauthenticated \
+    && apt-get update --allow-insecure-repositories \
+    && apt-get install -y \
     fonts-liberation \
     libasound2 \
     libatk-bridge2.0-0 \
@@ -30,7 +31,8 @@ RUN apt-get update && apt-get install -y \
     libxss1 \
     git \
     --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -f /etc/apt/apt.conf.d/99allow-unauthenticated
 
 WORKDIR /app
 
