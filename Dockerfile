@@ -2,7 +2,6 @@ FROM python:3.12-slim
 
 # Install system dependencies for Playwright and git
 RUN rm -rf /etc/apt/sources.list.d/* \
-    && echo 'deb http://deb.debian.org/debian bookworm main' > /etc/apt/sources.list \
     && apt-get update && apt-get install -y \
     fonts-liberation \
     libasound2 \
