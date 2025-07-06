@@ -8,21 +8,20 @@ import time
 import uuid
 from enum import Enum
 from pathlib import Path
-from typing import List, Union, Optional
+from typing import List
 
 import dotenv
 from dateparser.utils.strptime import strptime
 
 from src.media_lens.auditor import audit_days
 from src.media_lens.collection.harvester import Harvester
-from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, SITES, ANTHROPIC_MODEL, get_working_dir, UTC_REGEX_PATTERN_BW_COMPAT, RunState, SITES_DEFAULT, is_last_day_of_week, get_week_key
-from src.media_lens.job_dir import JobDir
-from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent, create_agent_from_env
+from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, get_working_dir, UTC_REGEX_PATTERN_BW_COMPAT, RunState, is_last_day_of_week, get_week_key
+from src.media_lens.extraction.agent import Agent, create_agent_from_env
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
-from src.media_lens.presentation.deployer import upload_html_content_from_storage, get_deploy_cursor, update_deploy_cursor, get_files_to_deploy, reset_deploy_cursor, rewind_deploy_cursor
 from src.media_lens.extraction.summarizer import DailySummarizer
-from src.media_lens.presentation.deployer import upload_file
+from src.media_lens.job_dir import JobDir
+from src.media_lens.presentation.deployer import upload_html_content_from_storage, get_deploy_cursor, update_deploy_cursor, get_files_to_deploy, reset_deploy_cursor, rewind_deploy_cursor
 from src.media_lens.presentation.html_formatter import generate_html_from_path, reset_format_cursor, rewind_format_cursor
 from src.media_lens.storage import shared_storage
 from src.media_lens.storage_adapter import StorageAdapter
@@ -108,7 +107,6 @@ async def interpret_weekly(current_week_only=True, overwrite=False, specific_wee
     Perform weekly interpretation on content from specified weeks.
     This will run every Sunday to analyze the last seven days of data.
     
-    :param sites: List of media sites to interpret
     :param current_week_only: If True, only interpret the current week
     :param overwrite: If True, overwrite existing weekly interpretations
     :param specific_weeks: If provided, only interpret these specific weeks (e.g. ["2025-W08", "2025-W09"])
@@ -212,13 +210,7 @@ async def deploy_output(force_full: bool = False) -> None:
     Returns:
         None
     """
-    # Get remote path from environment
-    remote_path: str = os.getenv("FTP_REMOTE_PATH")
-    if not remote_path:
-        logger.error("FTP_REMOTE_PATH environment variable not set, skipping deployment")
-        return
-    
-    logger.info(f"Deploying files to {remote_path} (force_full={force_full})")
+    logger.info(f"Deploying files (force_full={force_full})")
     
     # Get cursor and determine what files need deployment
     cursor = None if force_full else get_deploy_cursor()
@@ -235,7 +227,7 @@ async def deploy_output(force_full: bool = False) -> None:
     # Deploy each file
     for file_path in files_to_deploy:
         logger.info(f"Uploading file: {file_path}")
-        success = upload_html_content_from_storage(file_path, remote_path)
+        success = upload_html_content_from_storage(storage_path=file_path)
         
         if success:
             successful_uploads.append(file_path)

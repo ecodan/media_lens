@@ -1,4 +1,3 @@
-import base64
 import datetime
 import logging
 import os
@@ -6,10 +5,9 @@ import socket
 import tempfile
 from pathlib import Path
 from typing import Optional, List
-import paramiko
-import io
 
 import dotenv
+import paramiko
 
 from src.media_lens.common import get_project_root, LOGGER_NAME
 from src.media_lens.storage import shared_storage
@@ -125,14 +123,13 @@ def get_files_to_deploy(cursor: Optional[datetime.datetime] = None) -> List[str]
     return files_to_deploy
 
 
-def upload_html_content_from_storage(storage_path: str, remote_path: str) -> bool:
+def upload_html_content_from_storage(storage_path: str) -> bool:
     """
     Helper function to read HTML content from storage, create temp file, and upload it.
     
     Args:
         storage_path: Path to the file in storage
-        remote_path: Remote path for deployment
-        
+
     Returns:
         bool: True if upload succeeded, False otherwise
     """
@@ -147,7 +144,7 @@ def upload_html_content_from_storage(storage_path: str, remote_path: str) -> boo
         f.write(content)
         local_temp_path = f.name
     
-    success = upload_file(Path(local_temp_path), remote_path, original_filename)
+    success = upload_file(local_file=Path(local_temp_path), target_filename=original_filename)
     
     # Clean up temp file
     os.unlink(local_temp_path)
@@ -155,7 +152,7 @@ def upload_html_content_from_storage(storage_path: str, remote_path: str) -> boo
     return success
 
 
-def upload_file(local_file: Path, remote_path: str, target_filename: str = None):
+def upload_file(local_file: Path, target_filename: str = None):
     """
     Uploads a file to a remote server using SFTP.
     :param local_file: full path to the local file
@@ -175,7 +172,8 @@ def upload_file(local_file: Path, remote_path: str, target_filename: str = None)
     port_str = os.getenv("FTP_PORT") or loaded_secrets.get("FTP_PORT")
     port: int = int(port_str) if port_str else 22
 
-    logger.info(f"FTP credentials loaded: hostname: {hostname}| ip_fallback: {ip_fallback} | username: {username} | port: {port} | key_file_path: {key_file_path}")
+    remote_path_from_secrets = os.getenv("FTP_REMOTE_PATH") or loaded_secrets.get("FTP_REMOTE_PATH")
+    logger.info(f"FTP credentials loaded: hostname: {hostname} | ip_fallback: {ip_fallback} | username: {username} | port: {port} | key_file_path: {key_file_path} | remote path {remote_path_from_secrets}")
 
     try:
         connect_hostname = hostname
@@ -247,16 +245,26 @@ def upload_file(local_file: Path, remote_path: str, target_filename: str = None)
 
         # Create remote directory if it doesn't exist
         try:
-            sftp.stat(remote_path)
+            sftp.stat(remote_path_from_secrets)
             logger.debug("Remote directory exists")
         except FileNotFoundError:
-            logger.info("Creating remote directory...")
-            sftp.mkdir(remote_path)
-            logger.info("Created remote directory")
+            logger.info(f"Creating remote directory: {remote_path_from_secrets}")
+            # Create parent directories if they don't exist
+            remote_path_parts = remote_path_from_secrets.strip('/').split('/')
+            current_path = ''
+            for part in remote_path_parts:
+                current_path += '/' + part
+                try:
+                    sftp.stat(current_path)
+                    logger.debug(f"Directory exists: {current_path}")
+                except FileNotFoundError:
+                    logger.info(f"Creating directory: {current_path}")
+                    sftp.mkdir(current_path)
+            logger.info("Created remote directory structure")
 
         # Construct remote file path
         filename = target_filename if target_filename else Path(local_file).name
-        remote_file = f'{remote_path}/{filename}'
+        remote_file = f'{remote_path_from_secrets}/{filename}'
 
         # Upload the file
         logger.info(f"Uploading {local_file} to {remote_file}...")
@@ -283,8 +291,7 @@ def upload_file(local_file: Path, remote_path: str, target_filename: str = None)
 # Test
 def main():
     local: Path = get_project_root() / "working/out/medialens.html"
-    remote: str = os.getenv("FTP_REMOTE_PATH")
-    upload_file(local, remote)
+    upload_file(local_file=local)
 
 if __name__ == '__main__':
     dotenv.load_dotenv()

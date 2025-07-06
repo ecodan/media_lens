@@ -138,7 +138,8 @@ def test_upload_html_content_from_storage(mock_upload_file, test_storage_adapter
     mock_upload_file.return_value = True
     
     # Call upload function
-    result = upload_html_content_from_storage(test_file_path, "/remote/path")
+    os.environ["FTP_REMOTE_PATH"] = "/remote/path"  # Set remote path for testing
+    result = upload_html_content_from_storage(test_file_path)
     
     # Verify upload_file was called
     assert mock_upload_file.called
@@ -168,7 +169,8 @@ def test_upload_html_content_from_storage_failure(mock_upload_file, test_storage
     mock_upload_file.return_value = False
     
     # Call upload function
-    result = upload_html_content_from_storage(test_file_path, "/remote/path")
+    os.environ["FTP_REMOTE_PATH"] = "/remote/path"  # Set remote path for testing
+    result = upload_html_content_from_storage(test_file_path)
     
     # Verify result
     assert result is False
