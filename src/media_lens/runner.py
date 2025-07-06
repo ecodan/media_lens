@@ -15,7 +15,7 @@ from dateparser.utils.strptime import strptime
 
 from src.media_lens.auditor import audit_days
 from src.media_lens.collection.harvester import Harvester
-from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, get_working_dir, UTC_REGEX_PATTERN_BW_COMPAT, RunState, is_last_day_of_week, get_week_key
+from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, get_working_dir, UTC_REGEX_PATTERN_BW_COMPAT, RunState, is_last_day_of_week, get_week_key, SITES
 from src.media_lens.extraction.agent import Agent, create_agent_from_env
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
