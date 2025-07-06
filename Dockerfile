@@ -1,15 +1,9 @@
 FROM python:3.12-slim
 
 # Install system dependencies for Playwright and git
+# Temporarily bypass GPG validation due to current Debian repository issues
 RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    gnupg \
-    lsb-release \
-    && rm -rf /etc/apt/sources.list.d/* \
-    && echo "deb http://deb.debian.org/debian $(lsb_release -cs) main" > /etc/apt/sources.list \
-    && echo "deb http://deb.debian.org/debian-security $(lsb_release -cs)-security main" >> /etc/apt/sources.list \
-    && echo "deb http://deb.debian.org/debian $(lsb_release -cs)-updates main" >> /etc/apt/sources.list \
-    && apt-get update && apt-get install -y \
+    --allow-unauthenticated \
     fonts-liberation \
     libasound2 \
     libatk-bridge2.0-0 \
