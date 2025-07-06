@@ -159,13 +159,18 @@ def create_agent_from_env() -> Agent:
     """
     # Ensure secrets are loaded before creating the agent
     from src.media_lens.common import ensure_secrets_loaded
-    ensure_secrets_loaded()
+    loaded_secrets = ensure_secrets_loaded()
     
     provider = os.getenv("AI_PROVIDER", AI_PROVIDER).lower()
     
     if provider == "claude":
-        api_key = os.getenv("ANTHROPIC_API_KEY")
+        # Try environment variable first, then fall back to loaded secrets
+        api_key = os.getenv("ANTHROPIC_API_KEY") or loaded_secrets.get("ANTHROPIC_API_KEY")
         if not api_key:
+            logger.error(f"ANTHROPIC_API_KEY not found in environment or loaded secrets")
+            logger.error(f"Environment keys: {list(k for k in os.environ.keys() if 'ANTHROPIC' in k)}")
+            logger.error(f"Loaded secrets: {list(loaded_secrets.keys())}")
+            logger.error(f"ANTHROPIC_API_KEY from secrets: {loaded_secrets.get('ANTHROPIC_API_KEY') is not None}")
             raise ValueError("ANTHROPIC_API_KEY environment variable is required for Claude provider")
         
         model = os.getenv("ANTHROPIC_MODEL", ANTHROPIC_MODEL)

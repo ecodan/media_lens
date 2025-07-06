@@ -111,15 +111,25 @@ class SecretManagerClient:
         return results
 
 
+# Global variable to track if secrets have been loaded
+_secrets_loaded = False
+_loaded_secrets_cache = {}
+
 def load_secrets_from_gcp() -> Dict[str, Optional[str]]:
     """Load secrets from Google Cloud Secret Manager and set environment variables.
     
     This function retrieves commonly used secrets and sets them as environment variables
-    if they're not already set.
+    if they're not already set. It's idempotent - subsequent calls will return cached results.
     
     Returns:
         Dictionary of loaded secrets
     """
+    global _secrets_loaded, _loaded_secrets_cache
+    
+    # Return cached results if already loaded
+    if _secrets_loaded:
+        return _loaded_secrets_cache.copy()
+    
     logger = logging.getLogger(__name__)
     
     # Define the secrets we need to load
@@ -162,6 +172,10 @@ def load_secrets_from_gcp() -> Dict[str, Optional[str]]:
         # Return current environment values
         for env_var in secrets_config.keys():
             loaded_secrets[env_var] = os.getenv(env_var)
+    
+    # Cache the results and mark as loaded
+    _loaded_secrets_cache = loaded_secrets.copy()
+    _secrets_loaded = True
     
     return loaded_secrets
 
