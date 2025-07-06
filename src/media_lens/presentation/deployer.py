@@ -185,7 +185,10 @@ def upload_file(local_file: Path, remote_path: str, target_filename: str = None)
             if not key_file_path:
                 raise ValueError("FTP_SSH_KEY_FILE environment variable is not set")
             
-            passphrase = os.getenv("FTP_PASSPHRASE")
+            # Try environment variable first, then loaded secrets
+            from src.media_lens.common import ensure_secrets_loaded
+            loaded_secrets = ensure_secrets_loaded()
+            passphrase = os.getenv("FTP_PASSPHRASE") or loaded_secrets.get("FTP_PASSPHRASE")
             
             if passphrase:
                 private_key = paramiko.Ed25519Key.from_private_key_file(key_file_path, password=passphrase)
