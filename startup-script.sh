@@ -117,7 +117,7 @@ export GCP_STORAGE_BUCKET=${GCP_STORAGE_BUCKET:-media-lens-storage}
 export USE_CLOUD_STORAGE=true
 
 # AI Provider Configuration
-export AI_PROVIDER=${AI_PROVIDER:-vertex}
+export AI_PROVIDER=${AI_PROVIDER:-claude}
 export VERTEX_AI_PROJECT_ID=${GOOGLE_CLOUD_PROJECT:-medialens}
 export VERTEX_AI_LOCATION=${VERTEX_AI_LOCATION:-us-central1}
 export VERTEX_AI_MODEL=${VERTEX_AI_MODEL:-gemini-2.5-flash}
@@ -150,34 +150,35 @@ export FTP_SSH_KEY_FILE="/app/keys/siteground"
     printf "USE_SECRET_MANAGER=\"%s\"\n" "true"
 } > /app/.env
 
-# Merge FTP credentials from .env.ftp if it exists
-FTP_ENV_FILE="/home/dan/media-lens/.env.ftp"
-if [ -f "$FTP_ENV_FILE" ]; then
-    echo "Found FTP credentials file, merging with main .env..."
-    
-    # Read each line from .env.ftp and append to main .env if variable doesn't already exist
-    while IFS= read -r line || [ -n "$line" ]; do
-        # Skip empty lines and comments
-        if [[ -n "$line" && ! "$line" =~ ^[[:space:]]*# ]]; then
-            # Extract variable name (everything before the first =)
-            var_name=$(echo "$line" | cut -d'=' -f1)
-            
-            # Check if this variable already exists in .env
-            if ! grep -q "^${var_name}=" /app/.env; then
-                echo "Adding FTP variable: $var_name"
-                echo "$line" >> /app/.env
-                # Also export to current environment so docker-compose can use it
-                export "$line"
-            else
-                echo "Variable $var_name already exists in .env, skipping"
-            fi
-        fi
-    done < "$FTP_ENV_FILE"
-    
-    echo "FTP credentials merged successfully"
-else
-    echo "No FTP credentials file found at $FTP_ENV_FILE"
-fi
+# REPLACED BY GCLOUD SECRET MANAGER
+## Merge FTP credentials from .env.ftp if it exists
+#FTP_ENV_FILE="/home/dan/media-lens/.env.ftp"
+#if [ -f "$FTP_ENV_FILE" ]; then
+#    echo "Found FTP credentials file, merging with main .env..."
+#
+#    # Read each line from .env.ftp and append to main .env if variable doesn't already exist
+#    while IFS= read -r line || [ -n "$line" ]; do
+#        # Skip empty lines and comments
+#        if [[ -n "$line" && ! "$line" =~ ^[[:space:]]*# ]]; then
+#            # Extract variable name (everything before the first =)
+#            var_name=$(echo "$line" | cut -d'=' -f1)
+#
+#            # Check if this variable already exists in .env
+#            if ! grep -q "^${var_name}=" /app/.env; then
+#                echo "Adding FTP variable: $var_name"
+#                echo "$line" >> /app/.env
+#                # Also export to current environment so docker-compose can use it
+#                export "$line"
+#            else
+#                echo "Variable $var_name already exists in .env, skipping"
+#            fi
+#        fi
+#    done < "$FTP_ENV_FILE"
+#
+#    echo "FTP credentials merged successfully"
+#else
+#    echo "No FTP credentials file found at $FTP_ENV_FILE"
+#fi
 
 # Check if the current code has changed since the last build
 if [ -f "$LAST_BUILD_HASH_FILE" ]; then
