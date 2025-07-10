@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-STARTUP_VERSION="1.5.2"
+STARTUP_VERSION="1.6.0"
 
 # Log all commands for debugging
 exec > >(tee -a /var/log/startup-script.log) 2>&1
@@ -108,6 +108,9 @@ else
     export USE_WORKLOAD_IDENTITY=true
     export GOOGLE_APPLICATION_CREDENTIALS=""
 fi
+
+# delete old .env file if it exists
+rm -f /app/.env
 
 # Export variables for docker-compose and create .env file
 export GIT_REPO_URL=${GIT_REPO_URL:-"https://github.com/ecodan/media_lens.git"}
