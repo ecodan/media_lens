@@ -179,8 +179,8 @@ def create_logger(name: str, logfile_path: Union[str, Path] = None) -> logging.L
             if isinstance(logfile_path, str):
                 logfile_path = Path(logfile_path)
                 
-            if not logfile_path.parent.exists():
-                raise ValueError(f"Logfile path does not exist: {logfile_path.parent}")
+            # Create log directory if it doesn't exist
+            logfile_path.parent.mkdir(parents=True, exist_ok=True)
             handler = RotatingFileHandler(
                 filename=str(logfile_path),
                 maxBytes=1000000,

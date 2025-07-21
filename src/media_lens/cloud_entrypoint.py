@@ -15,8 +15,8 @@ from src.media_lens.storage_adapter import StorageAdapter
 # Initialize Flask app
 app = Flask(__name__)
 
-# Setup logging
-create_logger(LOGGER_NAME)
+# Setup logging with persistent log file
+create_logger(LOGGER_NAME, logfile_path="/app/logs/media-lens.log")
 logger = logging.getLogger(LOGGER_NAME)
 
 # Initialize secrets at startup

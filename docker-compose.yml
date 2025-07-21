@@ -42,6 +42,8 @@ services:
     volumes:
       # Mount working directory for output files
       - ${WORKING_DIR:-./working}:/app/working
+      # Mount logs directory for persistent logging
+      - ${LOG_DIR:-./logs}:/app/logs
       # Mount the keys directory for credentials
       - ${KEYS_DIR:-./keys}:/app/keys:ro
       # Mount the VM's application default credentials for workload identity
