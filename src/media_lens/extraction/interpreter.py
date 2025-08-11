@@ -420,7 +420,11 @@ class LLMWebsiteInterpreter:
             logger.info(f"Performing weekly interpretation for {week_key}")
 
             # aggregate all of the content for the week
-            all_content: dict = self._gather_content(dirs, sites)
+            all_content: dict
+            included_days: list[str]
+            all_content, included_days = self._gather_content(dirs, sites)
+            
+            logger.info(f"Week {week_key} includes data from {len(included_days)} days: {', '.join(included_days)}")
 
             # Skip if no content found
             if sum([len(v) for v in all_content.values()]) == 0:
@@ -437,11 +441,28 @@ class LLMWebsiteInterpreter:
                 # Even though we're not overwriting, add the file to results for the return value
                 try:
                     existing_interpretation = self.storage.read_json(weekly_file_path)
-                    week_record = {
-                        "week": week_key,
-                        "file_path": weekly_file_path,
-                        "interpretation": existing_interpretation
-                    }
+                    
+                    # Check if existing file has metadata (new format) or is just interpretation data (old format)
+                    if isinstance(existing_interpretation, dict) and "included_days" in existing_interpretation:
+                        # New format with metadata
+                        week_record = {
+                            "week": week_key,
+                            "file_path": weekly_file_path,
+                            "included_days": existing_interpretation.get("included_days", []),
+                            "days_count": existing_interpretation.get("days_count", 0),
+                            "interpretation": existing_interpretation.get("interpretation", existing_interpretation)
+                        }
+                    else:
+                        # Old format - just interpretation data, add metadata from current analysis
+                        week_record = {
+                            "week": week_key,
+                            "file_path": weekly_file_path,
+                            "included_days": included_days,
+                            "days_count": len(included_days),
+                            "interpretation": existing_interpretation
+                        }
+                        logger.info(f"Loaded existing interpretation for {week_key} without metadata, using current analysis for days info")
+                    
                     ret.append(week_record)
                 except json.JSONDecodeError:
                     logger.error(f"Failed to decode JSON from existing file {weekly_file_path}")
@@ -459,32 +480,48 @@ class LLMWebsiteInterpreter:
                         if loop_ct < loop_total:
                             time.sleep(30)
 
-                    # Save weekly interpretation
+                    # Save weekly interpretation with metadata
                     week_record = {
                         "week": week_key,
                         "file_path": weekly_file_path,
+                        "included_days": included_days,
+                        "days_count": len(included_days),
                         "interpretation": weekly_interpretation
                     }
+                    
+                    # Also save the weekly interpretation to storage with metadata
+                    interpretation_with_metadata = {
+                        "week": week_key,
+                        "included_days": included_days,
+                        "days_count": len(included_days),
+                        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        "interpretation": weekly_interpretation
+                    }
+                    self.storage.write_json(weekly_file_path, interpretation_with_metadata)
+                    
                     ret.append(week_record)
 
                 except Exception as e:
                     logger.error(f"Failed to complete weekly interpretation for {week_key}: {str(e)}")
-                    # Create a fallback interpretation
+                    # Create a fallback interpretation with metadata
                     fallback = {
                         "week": week_key,
                         "file_path": weekly_file_path,
-                        "interpretation": {
+                        "included_days": included_days,
+                        "days_count": len(included_days),
+                        "interpretation": [{
                             "question": "Weekly analysis unavailable",
                             "answer": "The weekly analysis could not be generated due to technical limitations."
-                        }
+                        }]
                     }
 
                     ret.append(fallback)
         return ret
 
-    def _gather_content(self, dirs, sites) -> dict:
+    def _gather_content(self, dirs, sites) -> tuple[dict, list[str]]:
         # Gather all content from all sites for this week
         all_content: dict = {}
+        included_days: list[str] = []
         
         # If last_n_days is set, calculate the cutoff date
         cutoff_date = None
@@ -519,6 +556,12 @@ class LLMWebsiteInterpreter:
                     # If we can't parse the date, include it anyway
                     logger.warning(f"Could not parse date from job dir {job_dir_path}, including anyway")
                 
+                # Track which day we're including
+                if job_datetime:
+                    day_str = job_datetime.strftime('%Y-%m-%d')
+                    if day_str not in included_days:
+                        included_days.append(day_str)
+                
                 # Use storage adapter to find article files
                 pattern = f"{site}-clean-article-*.json"
                 article_files = self.storage.get_files_by_pattern(job_dir_path, pattern)
@@ -533,7 +576,9 @@ class LLMWebsiteInterpreter:
                 
                 site_content.append(job_content)
 
-        return all_content
+        # Sort included days chronologically
+        included_days.sort()
+        return all_content, included_days
 
 
 ##########################

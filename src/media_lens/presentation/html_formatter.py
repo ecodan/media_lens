@@ -254,10 +254,30 @@ def generate_index_page(weeks_data: Dict, template_dir_path: Path) -> str:
             if storage.file_exists(weekly_file_path):
                 try:
                     weekly_data = storage.read_json(weekly_file_path)
-                    if isinstance(weekly_data, list):
+                    
+                    # Handle new format with metadata or old format (just list)
+                    interpretation_data = None
+                    included_days = None
+                    days_count = None
+                    
+                    if isinstance(weekly_data, dict) and "interpretation" in weekly_data:
+                        # New format with metadata
+                        interpretation_data = weekly_data.get("interpretation", [])
+                        included_days = weekly_data.get("included_days", [])
+                        days_count = weekly_data.get("days_count", 0)
+                        logger.info(f"Found new format weekly interpretation for {week_key} with {days_count} days: {', '.join(included_days) if included_days else 'none'}")
+                    elif isinstance(weekly_data, list):
+                        # Old format (just interpretation data)
+                        interpretation_data = weekly_data
+                        logger.info(f"Found old format weekly interpretation for {week_key}")
+                    else:
+                        logger.warning(f"Weekly interpretation has unexpected format: {weekly_file_path}")
+                        continue
+                    
+                    if interpretation_data:
                         # Process the weekly summary data for the template
                         weekly_summary = []
-                        for data in weekly_data:
+                        for data in interpretation_data:
                             question_str = data.get("question", "")
                             site = data.get("site", "")
                             answer = data.get("answer", "")
@@ -272,16 +292,30 @@ def generate_index_page(weeks_data: Dict, template_dir_path: Path) -> str:
                             if site:
                                 question_entry["answers"][site] = answer
                         
-                        # Add weekly summary to index content
+                        # Add weekly summary to index content with enhanced metadata
                         index_content["weekly_summary"] = weekly_summary
-                        index_content["weekly_summary_date"] = week["week_display"].replace("Week of ", "")
+                        
+                        # Create enhanced date display with actual days if available
+                        if included_days and len(included_days) > 0:
+                            # Format the included days for display
+                            if len(included_days) == 1:
+                                date_display = f"Analysis for {included_days[0]}"
+                            elif len(included_days) <= 7:
+                                date_display = f"Analysis for {len(included_days)} days: {included_days[0]} to {included_days[-1]}"
+                            else:
+                                date_display = f"Analysis for {len(included_days)} days: {included_days[0]} to {included_days[-1]}"
+                        else:
+                            # Fallback to original format
+                            date_display = f"Analysis for the week of {week['week_display'].replace('Week of ', '')}"
+                        
+                        index_content["weekly_summary_date"] = date_display
+                        index_content["included_days"] = included_days
+                        index_content["days_count"] = days_count
                         index_content["sites"] = SITES
                         
                         logger.info(f"Added weekly summary to index page for week {week_key}")
                         found_valid_weekly = True
                         break  # Stop looking after finding first valid weekly summary
-                    else:
-                        logger.warning(f"Weekly interpretation has wrong format: {weekly_file_path}")
                 except (json.JSONDecodeError) as e:
                     logger.warning(f"Could not load weekly interpretation from {weekly_file_path}: {str(e)}")
             else:
@@ -444,10 +478,30 @@ def generate_index_page_from_metadata(metadata: Dict[str, Any], template_dir_pat
             
             try:
                 weekly_data = storage.read_json(weekly_file_path)
-                if isinstance(weekly_data, list):
+                
+                # Handle new format with metadata or old format (just list)
+                interpretation_data = None
+                included_days = None
+                days_count = None
+                
+                if isinstance(weekly_data, dict) and "interpretation" in weekly_data:
+                    # New format with metadata
+                    interpretation_data = weekly_data.get("interpretation", [])
+                    included_days = weekly_data.get("included_days", [])
+                    days_count = weekly_data.get("days_count", 0)
+                    logger.info(f"Found new format weekly interpretation for {week_key} with {days_count} days: {', '.join(included_days) if included_days else 'none'}")
+                elif isinstance(weekly_data, list):
+                    # Old format (just interpretation data)
+                    interpretation_data = weekly_data
+                    logger.info(f"Found old format weekly interpretation for {week_key}")
+                else:
+                    logger.warning(f"Weekly interpretation has unexpected format: {weekly_file_path}")
+                    continue
+                
+                if interpretation_data:
                     # Process the weekly summary data for the template
                     weekly_summary = []
-                    for data in weekly_data:
+                    for data in interpretation_data:
                         question_str = data.get("question", "")
                         site = data.get("site", "")
                         answer = data.get("answer", "")
@@ -462,16 +516,30 @@ def generate_index_page_from_metadata(metadata: Dict[str, Any], template_dir_pat
                         if site:
                             question_entry["answers"][site] = answer
                     
-                    # Add weekly summary to index content
+                    # Add weekly summary to index content with enhanced metadata
                     index_content["weekly_summary"] = weekly_summary
-                    index_content["weekly_summary_date"] = week["week_display"].replace("Week of ", "")
+                    
+                    # Create enhanced date display with actual days if available
+                    if included_days and len(included_days) > 0:
+                        # Format the included days for display
+                        if len(included_days) == 1:
+                            date_display = f"Analysis for {included_days[0]}"
+                        elif len(included_days) <= 7:
+                            date_display = f"Analysis for {len(included_days)} days: {included_days[0]} to {included_days[-1]}"
+                        else:
+                            date_display = f"Analysis for {len(included_days)} days: {included_days[0]} to {included_days[-1]}"
+                    else:
+                        # Fallback to original format
+                        date_display = f"Analysis for the week of {week['week_display'].replace('Week of ', '')}"
+                    
+                    index_content["weekly_summary_date"] = date_display
+                    index_content["included_days"] = included_days
+                    index_content["days_count"] = days_count
                     index_content["sites"] = SITES
                     
                     logger.info(f"Added weekly summary to index page for week {week_key}")
                     found_valid_weekly = True
                     break  # Stop looking after finding first valid weekly summary
-                else:
-                    logger.warning(f"Weekly interpretation has wrong format: {weekly_file_path}")
             except (json.JSONDecodeError) as e:
                 logger.warning(f"Could not load weekly interpretation from {weekly_file_path}: {str(e)}")
         

@@ -121,7 +121,16 @@
         <div class="row mb-4">
             <div class="col-12">
                 <h2>Media Worldview Analysis</h2>
-                <p class="text-muted mb-3">Analysis for the last seven days ending {{ weekly_summary_date }}</p>
+                <p class="text-muted mb-3">{{ weekly_summary_date }}</p>
+                {% if included_days and days_count %}
+                <p class="text-muted small mb-3">Data from {{ days_count }} day{% if days_count != 1 %}s{% endif %}: 
+                    {% if days_count <= 7 %}
+                        {% for day in included_days %}{{ day }}{% if not loop.last %}, {% endif %}{% endfor %}
+                    {% else %}
+                        {{ included_days[0] }} to {{ included_days[-1] }}
+                    {% endif %}
+                </p>
+                {% endif %}
 
                 <div class="interpretation-section" id="interpretationSection">
                     <div class="row g-0 header-row p-2">
