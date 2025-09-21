@@ -224,10 +224,184 @@ def generate_weekly_reports(weeks_data: Dict, sites: List[str], template_dir_pat
     return weekly_html
 
 
+def _load_weekly_interpretation_data(weekly_file_path: str) -> Optional[Dict[str, Any]]:
+    """
+    Load and parse weekly interpretation data from storage.
+
+    Args:
+        weekly_file_path: Path to the weekly interpretation file
+
+    Returns:
+        Parsed weekly data or None if not found/invalid
+    """
+    storage = shared_storage
+
+    if not storage.file_exists(weekly_file_path):
+        return None
+
+    try:
+        weekly_data = storage.read_json(weekly_file_path)
+
+        # Handle new format with metadata or old format (just list)
+        interpretation_data = None
+        included_days = None
+        days_count = None
+
+        if isinstance(weekly_data, dict) and "interpretation" in weekly_data:
+            # New format with metadata
+            interpretation_data = weekly_data.get("interpretation", [])
+            included_days = weekly_data.get("included_days", [])
+            days_count = weekly_data.get("days_count", 0)
+            logger.info(f"Found new format weekly interpretation with {days_count} days: {', '.join(included_days) if included_days else 'none'}")
+        elif isinstance(weekly_data, list):
+            # Old format (just interpretation data)
+            interpretation_data = weekly_data
+            logger.info("Found old format weekly interpretation")
+        else:
+            logger.warning(f"Weekly interpretation has unexpected format: {weekly_file_path}")
+            return None
+
+        if not interpretation_data:
+            return None
+
+        # Add the processed interpretation data back to weekly_data for consistency
+        weekly_data_copy = weekly_data.copy() if isinstance(weekly_data, dict) else {}
+        weekly_data_copy.update({
+            "interpretation": interpretation_data,
+            "included_days": included_days,
+            "days_count": days_count
+        })
+
+        return weekly_data_copy
+
+    except (json.JSONDecodeError) as e:
+        logger.warning(f"Could not load weekly interpretation from {weekly_file_path}: {str(e)}")
+        return None
+
+
+def _process_weekly_summary_for_template(interpretation_data: List[Dict]) -> List[Dict]:
+    """
+    Process weekly interpretation data into template-ready format.
+
+    Args:
+        interpretation_data: List of interpretation items
+
+    Returns:
+        Processed weekly summary for template
+    """
+    weekly_summary = []
+    for data in interpretation_data:
+        question_str = data.get("question", "")
+        site = data.get("site", "")
+        answer = data.get("answer", "")
+
+        # Find or create a question entry
+        question_entry = next((q for q in weekly_summary if q["question"] == question_str), None)
+        if question_entry is None:
+            question_entry = {"question": question_str, "answers": {}}
+            weekly_summary.append(question_entry)
+
+        # Add answer for this site
+        if site:
+            question_entry["answers"][site] = answer
+
+    return weekly_summary
+
+
+def _create_date_display(weekly_data: Dict, week_display: str) -> str:
+    """
+    Create enhanced date display string from weekly data.
+
+    Args:
+        weekly_data: Weekly interpretation data
+        week_display: Default week display string
+
+    Returns:
+        Formatted date display string
+    """
+    period_type = weekly_data.get("period_type", "iso_week")
+    start_date = weekly_data.get("start_date")
+    end_date = weekly_data.get("end_date")
+    included_days = weekly_data.get("included_days", [])
+
+    if start_date and end_date:
+        # Use the actual start and end dates from metadata
+        return f"Analysis of the news between {start_date} and {end_date}"
+    elif included_days and len(included_days) > 0:
+        # Fallback to included_days format
+        if period_type == "rolling_7_days":
+            # For rolling 7-day analysis, emphasize it's a rolling window
+            if len(included_days) == 1:
+                return f"Rolling 7-day analysis for {included_days[0]}"
+            else:
+                return f"Analysis of the news between {included_days[0]} and {included_days[-1]}"
+        else:
+            # For ISO week analysis, use new format for consistency
+            if len(included_days) == 1:
+                return f"Analysis of the news for {included_days[0]}"
+            else:
+                return f"Analysis of the news between {included_days[0]} and {included_days[-1]}"
+    else:
+        # Final fallback to original format
+        if period_type == "rolling_7_days":
+            return f"Rolling 7-day analysis for the week of {week_display.replace('Week of ', '')}"
+        else:
+            return f"Analysis for the week of {week_display.replace('Week of ', '')}"
+
+
+def _add_weekly_summary_to_content(weeks: List[Dict], index_content: Dict) -> bool:
+    """
+    Find and add weekly summary data to index content.
+
+    Args:
+        weeks: List of week dictionaries to search
+        index_content: Content dictionary to update
+
+    Returns:
+        True if weekly summary was found and added, False otherwise
+    """
+    storage = shared_storage
+
+    # Iterate through weeks (newest first) until we find an available interpretation
+    for week in weeks:
+        week_key = week["week_key"]
+
+        # For metadata format, check has_weekly_summary flag first
+        if "has_weekly_summary" in week and not week.get("has_weekly_summary", False):
+            continue
+
+        weekly_file_path = f"{storage.get_intermediate_directory()}/weekly-{week_key}-interpreted.json"
+
+        weekly_data = _load_weekly_interpretation_data(weekly_file_path)
+        if not weekly_data:
+            continue
+
+        interpretation_data = weekly_data.get("interpretation", [])
+        if not interpretation_data:
+            continue
+
+        # Process the weekly summary data for the template
+        weekly_summary = _process_weekly_summary_for_template(interpretation_data)
+
+        # Add weekly summary to index content with enhanced metadata
+        index_content["weekly_summary"] = weekly_summary
+        index_content["weekly_summary_date"] = _create_date_display(weekly_data, week.get("week_display", ""))
+        index_content["included_days"] = weekly_data.get("included_days")
+        index_content["days_count"] = weekly_data.get("days_count")
+        index_content["period_type"] = weekly_data.get("period_type")
+        index_content["sites"] = SITES
+
+        logger.info(f"Added weekly summary to index page for week {week_key}")
+        return True
+
+    logger.warning("No valid weekly interpretation found for any week")
+    return False
+
+
 def generate_index_page(weeks_data: Dict, template_dir_path: Path) -> str:
     """
     Generate an index page with links to all weekly reports and the latest weekly summary.
-    
+
     :param weeks_data: Dictionary containing data organized by week
     :param template_dir_path: Path to templates directory
     :return: HTML content for the index page
@@ -237,109 +411,11 @@ def generate_index_page(weeks_data: Dict, template_dir_path: Path) -> str:
         "report_timestamp": weeks_data["report_timestamp"],
         "weeks": weeks_data["weeks"]
     }
-    
-    # Get the current date and check if it's Sunday
-    today = datetime.datetime.now(datetime.timezone.utc)
-    
+
     # Try to load the weekly summary for the latest week with fallback
     if weeks_data["weeks"]:
-        storage: StorageAdapter = shared_storage
-        
-        # Iterate through weeks (newest first) until we find an available interpretation
-        found_valid_weekly = False
-        for week in weeks_data["weeks"]:
-            week_key = week["week_key"]
-            weekly_file_path = f"{storage.get_intermediate_directory()}/weekly-{week_key}-interpreted.json"
-            
-            if storage.file_exists(weekly_file_path):
-                try:
-                    weekly_data = storage.read_json(weekly_file_path)
-                    
-                    # Handle new format with metadata or old format (just list)
-                    interpretation_data = None
-                    included_days = None
-                    days_count = None
-                    
-                    if isinstance(weekly_data, dict) and "interpretation" in weekly_data:
-                        # New format with metadata
-                        interpretation_data = weekly_data.get("interpretation", [])
-                        included_days = weekly_data.get("included_days", [])
-                        days_count = weekly_data.get("days_count", 0)
-                        logger.info(f"Found new format weekly interpretation for {week_key} with {days_count} days: {', '.join(included_days) if included_days else 'none'}")
-                    elif isinstance(weekly_data, list):
-                        # Old format (just interpretation data)
-                        interpretation_data = weekly_data
-                        logger.info(f"Found old format weekly interpretation for {week_key}")
-                    else:
-                        logger.warning(f"Weekly interpretation has unexpected format: {weekly_file_path}")
-                        continue
-                    
-                    if interpretation_data:
-                        # Process the weekly summary data for the template
-                        weekly_summary = []
-                        for data in interpretation_data:
-                            question_str = data.get("question", "")
-                            site = data.get("site", "")
-                            answer = data.get("answer", "")
-                            
-                            # Find or create a question entry
-                            question_entry = next((q for q in weekly_summary if q["question"] == question_str), None)
-                            if question_entry is None:
-                                question_entry = {"question": question_str, "answers": {}}
-                                weekly_summary.append(question_entry)
-                            
-                            # Add answer for this site
-                            if site:
-                                question_entry["answers"][site] = answer
-                        
-                        # Add weekly summary to index content with enhanced metadata
-                        index_content["weekly_summary"] = weekly_summary
-                        
-                        # Create enhanced date display with start_date and end_date if available
-                        period_type = weekly_data.get("period_type", "iso_week")
-                        start_date = weekly_data.get("start_date")
-                        end_date = weekly_data.get("end_date")
+        _add_weekly_summary_to_content(weeks_data["weeks"], index_content)
 
-                        if start_date and end_date:
-                            # Use the actual start and end dates from metadata
-                            date_display = f"Analysis of the news between {start_date} and {end_date}"
-                        elif included_days and len(included_days) > 0:
-                            # Fallback to included_days format
-                            if period_type == "rolling_7_days":
-                                # For rolling 7-day analysis, emphasize it's a rolling window
-                                if len(included_days) == 1:
-                                    date_display = f"Rolling 7-day analysis for {included_days[0]}"
-                                else:
-                                    date_display = f"Analysis of the news between {included_days[0]} and {included_days[-1]}"
-                            else:
-                                # For ISO week analysis, use new format for consistency
-                                if len(included_days) == 1:
-                                    date_display = f"Analysis of the news for {included_days[0]}"
-                                else:
-                                    date_display = f"Analysis of the news between {included_days[0]} and {included_days[-1]}"
-                        else:
-                            # Final fallback to original format
-                            if period_type == "rolling_7_days":
-                                date_display = f"Rolling 7-day analysis for the week of {week['week_display'].replace('Week of ', '')}"
-                            else:
-                                date_display = f"Analysis for the week of {week['week_display'].replace('Week of ', '')}"
-                        
-                        index_content["weekly_summary_date"] = date_display
-                        index_content["included_days"] = included_days
-                        index_content["days_count"] = days_count
-                        index_content["period_type"] = period_type
-                        index_content["sites"] = SITES
-                        
-                        logger.info(f"Added weekly summary to index page for week {week_key}")
-                        found_valid_weekly = True
-                        break  # Stop looking after finding first valid weekly summary
-                except (json.JSONDecodeError) as e:
-                    logger.warning(f"Could not load weekly interpretation from {weekly_file_path}: {str(e)}")
-            else:
-                logger.debug(f"Weekly interpretation file not found: {weekly_file_path}")
-        if not found_valid_weekly:
-            logger.warning("No valid weekly interpretation found for any week")
-    
     return generate_html_with_template(
         template_dir_path,
         "index_template.j2",
@@ -466,120 +542,24 @@ def get_lightweight_weeks_data() -> Dict[str, Any]:
 def generate_index_page_from_metadata(metadata: Dict[str, Any], template_dir_path: Path) -> str:
     """
     Generate index page from lightweight metadata instead of full weeks data.
-    
+
     Args:
         metadata: Index metadata with week summaries
         template_dir_path: Path to templates directory
-        
+
     Returns:
         HTML content for the index page
     """
-    storage = shared_storage
-    
     # Create base content dictionary
     index_content = {
         "report_timestamp": metadata.get("last_updated", datetime.datetime.now(datetime.timezone.utc).isoformat()),
         "weeks": metadata["weeks"]
     }
-    
+
     # Try to load the weekly summary for the latest week with fallback
     if metadata["weeks"]:
-        # Iterate through weeks (newest first) until we find an available interpretation
-        found_valid_weekly = False
-        for week in metadata["weeks"]:
-            if not week.get("has_weekly_summary", False):
-                continue
-                
-            week_key = week["week_key"]
-            weekly_file_path = f"{storage.get_intermediate_directory()}/weekly-{week_key}-interpreted.json"
-            
-            try:
-                weekly_data = storage.read_json(weekly_file_path)
-                
-                # Handle new format with metadata or old format (just list)
-                interpretation_data = None
-                included_days = None
-                days_count = None
-                
-                if isinstance(weekly_data, dict) and "interpretation" in weekly_data:
-                    # New format with metadata
-                    interpretation_data = weekly_data.get("interpretation", [])
-                    included_days = weekly_data.get("included_days", [])
-                    days_count = weekly_data.get("days_count", 0)
-                    logger.info(f"Found new format weekly interpretation for {week_key} with {days_count} days: {', '.join(included_days) if included_days else 'none'}")
-                elif isinstance(weekly_data, list):
-                    # Old format (just interpretation data)
-                    interpretation_data = weekly_data
-                    logger.info(f"Found old format weekly interpretation for {week_key}")
-                else:
-                    logger.warning(f"Weekly interpretation has unexpected format: {weekly_file_path}")
-                    continue
-                
-                if interpretation_data:
-                    # Process the weekly summary data for the template
-                    weekly_summary = []
-                    for data in interpretation_data:
-                        question_str = data.get("question", "")
-                        site = data.get("site", "")
-                        answer = data.get("answer", "")
-                        
-                        # Find or create a question entry
-                        question_entry = next((q for q in weekly_summary if q["question"] == question_str), None)
-                        if question_entry is None:
-                            question_entry = {"question": question_str, "answers": {}}
-                            weekly_summary.append(question_entry)
-                        
-                        # Add answer for this site
-                        if site:
-                            question_entry["answers"][site] = answer
-                    
-                    # Add weekly summary to index content with enhanced metadata
-                    index_content["weekly_summary"] = weekly_summary
-                    
-                    # Create enhanced date display with start_date and end_date if available
-                    period_type = weekly_data.get("period_type", "iso_week")
-                    start_date = weekly_data.get("start_date")
-                    end_date = weekly_data.get("end_date")
+        _add_weekly_summary_to_content(metadata["weeks"], index_content)
 
-                    if start_date and end_date:
-                        # Use the actual start and end dates from metadata
-                        date_display = f"Analysis of the news between {start_date} and {end_date}"
-                    elif included_days and len(included_days) > 0:
-                        # Fallback to included_days format
-                        if period_type == "rolling_7_days":
-                            # For rolling 7-day analysis, emphasize it's a rolling window
-                            if len(included_days) == 1:
-                                date_display = f"Rolling 7-day analysis for {included_days[0]}"
-                            else:
-                                date_display = f"Analysis of the news between {included_days[0]} and {included_days[-1]}"
-                        else:
-                            # For ISO week analysis, use new format for consistency
-                            if len(included_days) == 1:
-                                date_display = f"Analysis of the news for {included_days[0]}"
-                            else:
-                                date_display = f"Analysis of the news between {included_days[0]} and {included_days[-1]}"
-                    else:
-                        # Final fallback to original format
-                        if period_type == "rolling_7_days":
-                            date_display = f"Rolling 7-day analysis for the week of {week['week_display'].replace('Week of ', '')}"
-                        else:
-                            date_display = f"Analysis for the week of {week['week_display'].replace('Week of ', '')}"
-                    
-                    index_content["weekly_summary_date"] = date_display
-                    index_content["included_days"] = included_days
-                    index_content["days_count"] = days_count
-                    index_content["period_type"] = period_type
-                    index_content["sites"] = SITES
-                    
-                    logger.info(f"Added weekly summary to index page for week {week_key}")
-                    found_valid_weekly = True
-                    break  # Stop looking after finding first valid weekly summary
-            except (json.JSONDecodeError) as e:
-                logger.warning(f"Could not load weekly interpretation from {weekly_file_path}: {str(e)}")
-        
-        if not found_valid_weekly:
-            logger.warning("No valid weekly interpretation found for any week")
-    
     return generate_html_with_template(
         template_dir_path,
         "index_template.j2",
