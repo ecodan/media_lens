@@ -295,27 +295,30 @@ def generate_index_page(weeks_data: Dict, template_dir_path: Path) -> str:
                         # Add weekly summary to index content with enhanced metadata
                         index_content["weekly_summary"] = weekly_summary
                         
-                        # Create enhanced date display with actual days if available
+                        # Create enhanced date display with start_date and end_date if available
                         period_type = weekly_data.get("period_type", "iso_week")
+                        start_date = weekly_data.get("start_date")
+                        end_date = weekly_data.get("end_date")
 
-                        if included_days and len(included_days) > 0:
-                            # Format the included days for display
+                        if start_date and end_date:
+                            # Use the actual start and end dates from metadata
+                            date_display = f"Analysis of the news between {start_date} and {end_date}"
+                        elif included_days and len(included_days) > 0:
+                            # Fallback to included_days format
                             if period_type == "rolling_7_days":
                                 # For rolling 7-day analysis, emphasize it's a rolling window
                                 if len(included_days) == 1:
                                     date_display = f"Rolling 7-day analysis for {included_days[0]}"
                                 else:
-                                    date_display = f"Rolling 7-day analysis: {included_days[0]} to {included_days[-1]} ({len(included_days)} days)"
+                                    date_display = f"Analysis of the news between {included_days[0]} and {included_days[-1]}"
                             else:
-                                # For ISO week analysis, use existing format
+                                # For ISO week analysis, use new format for consistency
                                 if len(included_days) == 1:
-                                    date_display = f"Analysis for {included_days[0]}"
-                                elif len(included_days) <= 7:
-                                    date_display = f"Analysis for {len(included_days)} days: {included_days[0]} to {included_days[-1]}"
+                                    date_display = f"Analysis of the news for {included_days[0]}"
                                 else:
-                                    date_display = f"Analysis for {len(included_days)} days: {included_days[0]} to {included_days[-1]}"
+                                    date_display = f"Analysis of the news between {included_days[0]} and {included_days[-1]}"
                         else:
-                            # Fallback to original format
+                            # Final fallback to original format
                             if period_type == "rolling_7_days":
                                 date_display = f"Rolling 7-day analysis for the week of {week['week_display'].replace('Week of ', '')}"
                             else:
@@ -533,27 +536,30 @@ def generate_index_page_from_metadata(metadata: Dict[str, Any], template_dir_pat
                     # Add weekly summary to index content with enhanced metadata
                     index_content["weekly_summary"] = weekly_summary
                     
-                    # Create enhanced date display with actual days if available
+                    # Create enhanced date display with start_date and end_date if available
                     period_type = weekly_data.get("period_type", "iso_week")
+                    start_date = weekly_data.get("start_date")
+                    end_date = weekly_data.get("end_date")
 
-                    if included_days and len(included_days) > 0:
-                        # Format the included days for display
+                    if start_date and end_date:
+                        # Use the actual start and end dates from metadata
+                        date_display = f"Analysis of the news between {start_date} and {end_date}"
+                    elif included_days and len(included_days) > 0:
+                        # Fallback to included_days format
                         if period_type == "rolling_7_days":
                             # For rolling 7-day analysis, emphasize it's a rolling window
                             if len(included_days) == 1:
                                 date_display = f"Rolling 7-day analysis for {included_days[0]}"
                             else:
-                                date_display = f"Rolling 7-day analysis: {included_days[0]} to {included_days[-1]} ({len(included_days)} days)"
+                                date_display = f"Analysis of the news between {included_days[0]} and {included_days[-1]}"
                         else:
-                            # For ISO week analysis, use existing format
+                            # For ISO week analysis, use new format for consistency
                             if len(included_days) == 1:
-                                date_display = f"Analysis for {included_days[0]}"
-                            elif len(included_days) <= 7:
-                                date_display = f"Analysis for {len(included_days)} days: {included_days[0]} to {included_days[-1]}"
+                                date_display = f"Analysis of the news for {included_days[0]}"
                             else:
-                                date_display = f"Analysis for {len(included_days)} days: {included_days[0]} to {included_days[-1]}"
+                                date_display = f"Analysis of the news between {included_days[0]} and {included_days[-1]}"
                     else:
-                        # Fallback to original format
+                        # Final fallback to original format
                         if period_type == "rolling_7_days":
                             date_display = f"Rolling 7-day analysis for the week of {week['week_display'].replace('Week of ', '')}"
                         else:
