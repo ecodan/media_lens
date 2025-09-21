@@ -120,6 +120,74 @@ class GoogleVertexAIAgent(Agent):
         return self._model
 
 
+class OllamaAgent(Agent):
+    """
+    Local Ollama LLM agent.
+    """
+
+    def __init__(self, model_version: str):
+        super().__init__()
+        self._model_version = model_version
+        self._base_url: str = "http://localhost:11434"
+        self._api_url = f"{self._base_url}/api/generate"
+
+    def invoke(self, system_prompt: str, user_prompt: str) -> str:
+        try:
+            """
+             Send the prompts to Ollama and return the response.
+
+             :param user_prompt: Specific user prompt
+             :param system_prompt: Optional system prompt override. If None, loads from config via prompt manager.
+             :param history: Optional conversation history for context
+             :return: Text of response
+             """
+            import requests
+            full_prompt = f"{system_prompt}\n\n{user_prompt}"
+            # Prepare the request payload
+            payload = {
+                "model": self._model_version,
+                "prompt": full_prompt,
+                "stream": False
+            }
+            response = requests.post(
+                self._api_url,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            response.raise_for_status()
+
+            # Parse the response
+            response_data = response.json()
+
+            logger.debug(f"Ollama raw response: {response_data}")
+
+            if "response" in response_data:
+                response_text = response_data["response"]
+                logger.debug(
+                    f".. response: {len(response_text)} bytes / {len(response_text.split())} words"
+                )
+
+                # Prepare response data for logging
+                response_log_data = {
+                    "content": response_text,
+                    "tokens_used": {
+                        "input": response_data.get("eval_count"),
+                        "output": response_data.get("prompt_eval_count"),
+                    },
+                }
+
+                return response_text
+            else:
+                error_response = "ERROR - NO DATA"
+                return error_response
+        except Exception as e:
+            logger.error(f"Ollama API error: {str(e)}")
+
+    @property
+    def model(self) -> str:
+        return self._model_version
+
+
 def create_agent(provider: str = "claude", **kwargs) -> Agent:
     """
     Factory function to create an agent instance based on provider.
@@ -146,7 +214,9 @@ def create_agent(provider: str = "claude", **kwargs) -> Agent:
             raise ValueError("project_id is required for Vertex AI provider")
         
         return GoogleVertexAIAgent(project_id=project_id, location=location, model=model)
-    
+    elif provider.lower() == "ollama":
+        model = kwargs.get("model")
+        return OllamaAgent(model_version=model)
     else:
         raise ValueError(f"Unsupported provider: {provider}. Supported providers: claude, vertex")
 
@@ -184,6 +254,8 @@ def create_agent_from_env() -> Agent:
         location = os.getenv("VERTEX_AI_LOCATION", VERTEX_AI_LOCATION)
         model = os.getenv("VERTEX_AI_MODEL", VERTEX_AI_MODEL)
         return create_agent(provider="vertex", project_id=project_id, location=location, model=model)
-    
+    elif provider == "ollama":
+        model = os.getenv("OLLAMA_MODEL_VERSION")
+        return create_agent(provider="ollama", model=model)
     else:
         return create_agent(provider=provider)  # Let create_agent handle the error

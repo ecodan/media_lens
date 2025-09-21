@@ -10,12 +10,37 @@ A live version of this tool is available at [Media Lens](https://www.dancripe.co
 
 ## Key Features
 
+- **Hybrid Analysis Approach**: Rolling 7-day analysis for current events, ISO week boundaries for historical tracking
 - Automated scraping of news site front pages
 - Extraction and analysis of top N(=5) headlines per source
 - LLM-powered content analysis and sentiment detection
 - Side-by-side comparison view of different media sources
+- Daily updated analysis with fresh 7-day rolling windows
 - Modular architecture with single-responsibility components
 - HTML report generation with comparative analysis
+
+## Analysis Approach
+
+Media Lens uses a **hybrid temporal analysis system** designed to provide both current relevance and historical consistency:
+
+### Rolling 7-Day Analysis (Current Events)
+- **Landing Page Display**: Always shows analysis of the most recent 7 days
+- **Daily Updates**: Every day, the analysis window shifts to include the latest day and drop the oldest
+- **Cross-Week Boundaries**: Looks back exactly 7 days regardless of calendar week boundaries
+- **Fresh Insights**: Provides the most current view of media trends and coverage
+
+### ISO Week Analysis (Historical Tracking)
+- **Historical Weeks**: Completed weeks use traditional Monday-Sunday ISO boundaries
+- **Consistent Comparison**: Enables reliable week-to-week historical comparisons
+- **Archive Stability**: Historical analyses remain constant and don't shift over time
+
+### Key Questions Analyzed
+The system answers five core questions about media coverage:
+1. What is the most important news right now?
+2. What are the biggest issues in the world right now?
+3. How is the U.S. President performing based on media portrayal?
+4. What three adjectives best describe the situation in the U.S.?
+5. What three adjectives best describe the U.S. President's performance and character?
 
 ## Architecture
 
@@ -82,12 +107,12 @@ python -m src.media_lens.runner run -s harvest extract interpret_weekly summariz
 
 # Available steps:
 # - harvest: Complete scraping and cleaning workflow
-# - harvest_scrape: Scraping only (saves raw HTML files)  
+# - harvest_scrape: Scraping only (saves raw HTML files)
 # - harvest_clean: Cleaning only (processes existing HTML files)
 # - re-harvest: Re-harvest existing content
 # - extract: Extract structured data from cleaned content
 # - interpret: Generate AI interpretations for individual runs
-# - interpret_weekly: Generate weekly AI interpretations
+# - interpret_weekly: Generate weekly AI interpretations (uses hybrid approach)
 # - summarize_daily: Create daily summaries
 # - format: Generate HTML output files
 # - deploy: Deploy files to remote server
@@ -126,11 +151,13 @@ python -m src.media_lens.runner summarize --force
 
 #### Weekly Reinterpretation
 ```bash
-# Reinterpret weekly content from specific date
+# Reinterpret weekly content from specific date (uses hybrid approach)
 python -m src.media_lens.runner reinterpret-weeks --date 2025-01-01
 
 # Don't overwrite existing interpretations
 python -m src.media_lens.runner reinterpret-weeks --date 2025-01-01 --no-overwrite
+
+# Note: Current week uses rolling 7-day analysis, historical weeks use ISO boundaries
 ```
 
 #### Cursor Management
@@ -201,15 +228,20 @@ curl -X POST http://localhost:8080/run \
 
 #### Weekly Processing
 ```bash
-# Process current week only
+# Process current week only (uses rolling 7-day analysis)
 curl -X POST http://localhost:8080/weekly \
   -H "Content-Type: application/json" \
   -d '{"current_week_only": true}'
 
-# Process specific weeks
+# Process specific historical weeks (uses ISO week boundaries)
 curl -X POST http://localhost:8080/weekly \
   -H "Content-Type: application/json" \
   -d '{"specific_weeks": ["2025-W08", "2025-W09"], "overwrite": true}'
+
+# Disable rolling analysis for current week (force ISO boundaries)
+curl -X POST http://localhost:8080/weekly \
+  -H "Content-Type: application/json" \
+  -d '{"current_week_only": true, "use_rolling_for_current": false}'
 ```
 
 #### Summarization
@@ -276,7 +308,7 @@ export LOCAL_STORAGE_PATH=/path/to/your/working/directory
 ### Quick Start Examples
 
 ```bash
-# Full daily workflow
+# Full daily workflow (interpret_weekly uses hybrid approach)
 python -m src.media_lens.runner run -s harvest extract interpret_weekly summarize_daily format deploy
 
 # Local development with minimal browser restrictions
@@ -293,6 +325,9 @@ python -m src.media_lens.runner run -s format deploy
 
 # Force complete regeneration
 python -m src.media_lens.runner run -s format deploy --force-full-format --force-full-deploy
+
+# Note: Current week analysis automatically uses rolling 7-day windows,
+# while historical weeks maintain ISO week boundaries for consistency
 ```
 
 ## License

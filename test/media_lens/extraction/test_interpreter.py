@@ -26,7 +26,7 @@ def test_interpret_from_files(temp_dir, mock_llm_agent, test_storage_adapter):
         file_paths.append(f"{temp_dir}/{file_path}")
     
     # Call interpret_from_files
-    result = interpreter.interpret_from_files([Path(p) for p in file_paths])
+    result = interpreter.interpret_files(file_paths)
     
     # Verify results
     assert isinstance(result, list)

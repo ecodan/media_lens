@@ -145,10 +145,11 @@ def test_upload_html_content_from_storage(mock_upload_file, test_storage_adapter
     assert mock_upload_file.called
     args, kwargs = mock_upload_file.call_args
     
-    # Check that temporary file path was used
-    assert isinstance(args[0], Path)
-    assert args[1] == "/remote/path"
-    assert args[2] == "medialens.html"  # Original filename
+    # Check that keyword arguments were used correctly
+    assert "local_file" in kwargs
+    assert "target_filename" in kwargs
+    assert isinstance(kwargs["local_file"], Path)
+    assert kwargs["target_filename"] == "medialens.html"  # Original filename
     
     # Verify result
     assert result is True

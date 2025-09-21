@@ -36,6 +36,7 @@ python-dotenv==1.0.1
 pytz==2025.1
 regex==2024.11.6
 requirements-parser==0.13.0
+requests==2.31.0
 rsa==4.9
 schedule==1.2.2
 setuptools==80.9.0

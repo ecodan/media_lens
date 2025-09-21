@@ -63,7 +63,7 @@ async def interpret(job_dir, sites):
                     "answer": f"No articles were found for {site} in this run."
                 }]
             else:
-                interpretation: list = interpreter.interpret_from_files(file_paths)
+                interpretation: list = interpreter.interpret_files(file_paths)
                 
             # Ensure we have the directory using storage adapter
             storage.create_directory(job_dir)
@@ -106,6 +106,7 @@ async def interpret_weekly(current_week_only=True, overwrite=False, specific_wee
     """
     Perform weekly interpretation on content from specified weeks.
     This will run every Sunday to analyze the last seven days of data.
+    Ensures that weekly interpretations always include a minimum of 7 days of data.
     
     :param current_week_only: If True, only interpret the current week
     :param overwrite: If True, overwrite existing weekly interpretations
@@ -127,7 +128,7 @@ async def interpret_weekly(current_week_only=True, overwrite=False, specific_wee
     
     # If it's Sunday, add current week to process list
     if is_last_day_of_week(dt=None, tz=None) and current_week_only:
-        logger.info(f"Today is Sunday. Processing weekly summary with last seven days of data.")
+        logger.info(f"Today is Sunday. Processing weekly summary with minimum seven days of data.")
         if current_week not in weeks_to_process:
             weeks_to_process.append(current_week)
     
@@ -147,15 +148,18 @@ async def interpret_weekly(current_week_only=True, overwrite=False, specific_wee
     if weeks_to_process:
         logger.info(f"Processing weeks: {', '.join(weeks_to_process)}")
         
-        # Get a timestamp for seven days ago to limit content to last week only
+        # Set minimum calendar days requirement - always ensure at least 7 calendar days are covered
+        interpreter.minimum_calendar_days_required = 7
+        
+        # Configure date range behavior based on run context
         if is_last_day_of_week(dt=None, tz=None) and not specific_weeks:
-            # When running on Sunday with no specific weeks, use last 7 days only
-            last_week_date = today - datetime.timedelta(days=7)
-            logger.info(f"Limiting content to the last 7 days (since {last_week_date.strftime('%Y-%m-%d')})")
-            interpreter.last_n_days = 7
+            # When running on Sunday with no specific weeks, prefer calendar week boundaries
+            # but allow extension to meet minimum days requirement
+            logger.info(f"Sunday run: Using calendar week boundaries with minimum 7-day requirement")
+            interpreter.use_calendar_week_boundaries = True
         else:
-            # For specific weeks or non-Sunday runs, use default behavior
-            interpreter.last_n_days = None
+            # For specific weeks or non-Sunday runs, use default behavior with minimum requirement
+            interpreter.use_calendar_week_boundaries = False
             
         weekly_results: list[dict] = interpreter.interpret_weeks(
             sites=SITES,
@@ -164,11 +168,28 @@ async def interpret_weekly(current_week_only=True, overwrite=False, specific_wee
             specific_weeks=weeks_to_process
         )
         
+        # Validate that all results meet minimum calendar days requirement
+        for result in weekly_results:
+            calendar_days_span = result.get('calendar_days_span', 0)
+            data_days_count = result.get('days_count', 0)
+            if calendar_days_span < 7:
+                logger.warning(f"Weekly interpretation for {result['week']} only covers {calendar_days_span} calendar days (minimum is 7)")
+            else:
+                logger.info(f"Weekly interpretation for {result['week']} covers {calendar_days_span} calendar days with data from {data_days_count} actual days")
+        
         # Write results to files using storage adapter
         for result in weekly_results:
             file_path = result['file_path']
+            interpretation_data = {
+                'interpretation': result['interpretation'],
+                'included_days': result.get('included_days', []),
+                'days_count': result.get('days_count', 0),
+                'calendar_days_span': result.get('calendar_days_span', 0),
+                'date_range': result.get('date_range', ''),
+                'week_key': result['week']
+            }
             logger.info(f"Writing weekly interpretation for {result['week']} to {file_path}")
-            storage.write_json(file_path, result['interpretation'])
+            storage.write_json(file_path, interpretation_data)
     else:
         logger.info("No weeks to process.")
 
