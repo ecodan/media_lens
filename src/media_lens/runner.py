@@ -102,15 +102,16 @@ async def interpret(job_dir, sites):
             storage.write_json(output_path, fallback)
 
 
-async def interpret_weekly(current_week_only=True, overwrite=False, specific_weeks=None):
+async def interpret_weekly(current_week_only=True, overwrite=False, specific_weeks=None, use_rolling_daily=True):
     """
     Perform weekly interpretation on content from specified weeks.
     This will run every Sunday to analyze the last seven days of data.
     Ensures that weekly interpretations always include a minimum of 7 days of data.
-    
+
     :param current_week_only: If True, only interpret the current week
     :param overwrite: If True, overwrite existing weekly interpretations
     :param specific_weeks: If provided, only interpret these specific weeks (e.g. ["2025-W08", "2025-W09"])
+    :param use_rolling_daily: If True, enable daily rolling 7-day analysis (not just Sunday)
     """
     
     agent: Agent = create_agent_from_env()
@@ -121,14 +122,20 @@ async def interpret_weekly(current_week_only=True, overwrite=False, specific_wee
     current_week = get_week_key(today)
     weeks_to_process = specific_weeks or []
     
-    # If not Sunday and no specific weeks provided, skip unless force overwrite
-    if not is_last_day_of_week(dt=None, tz=None) and not specific_weeks and not overwrite:
+    # If not Sunday and no specific weeks provided, skip unless force overwrite or daily rolling enabled
+    if not is_last_day_of_week(dt=None, tz=None) and not specific_weeks and not overwrite and not use_rolling_daily:
         logger.info("Today is not Sunday. Skipping weekly interpretation.")
         return
     
     # If it's Sunday, add current week to process list
     if is_last_day_of_week(dt=None, tz=None) and current_week_only:
         logger.info(f"Today is Sunday. Processing weekly summary with minimum seven days of data.")
+        if current_week not in weeks_to_process:
+            weeks_to_process.append(current_week)
+
+    # If it's not Sunday but rolling daily is enabled, add current week for rolling analysis
+    elif not is_last_day_of_week(dt=None, tz=None) and use_rolling_daily and current_week_only:
+        logger.info(f"Daily rolling analysis enabled. Processing current week {current_week} with rolling 7-day analysis.")
         if current_week not in weeks_to_process:
             weeks_to_process.append(current_week)
     
@@ -150,16 +157,17 @@ async def interpret_weekly(current_week_only=True, overwrite=False, specific_wee
         
         # Set minimum calendar days requirement - always ensure at least 7 calendar days are covered
         interpreter.minimum_calendar_days_required = 7
-        
-        # Configure date range behavior based on run context
-        if is_last_day_of_week(dt=None, tz=None) and not specific_weeks:
-            # When running on Sunday with no specific weeks, prefer calendar week boundaries
-            # but allow extension to meet minimum days requirement
-            logger.info(f"Sunday run: Using calendar week boundaries with minimum 7-day requirement")
-            interpreter.use_calendar_week_boundaries = True
-        else:
-            # For specific weeks or non-Sunday runs, use default behavior with minimum requirement
-            interpreter.use_calendar_week_boundaries = False
+
+        # TODO obsolete, remove
+        # # Configure date range behavior based on run context
+        # if is_last_day_of_week(dt=None, tz=None) and not specific_weeks:
+        #     # When running on Sunday with no specific weeks, prefer calendar week boundaries
+        #     # but allow extension to meet minimum days requirement
+        #     logger.info(f"Sunday run: Using calendar week boundaries with minimum 7-day requirement")
+        #     interpreter.use_calendar_week_boundaries = True
+        # else:
+        #     # For specific weeks or non-Sunday runs, use default behavior with minimum requirement
+        #     interpreter.use_calendar_week_boundaries = False
             
         weekly_results: list[dict] = interpreter.interpret_weeks(
             sites=SITES,

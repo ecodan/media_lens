@@ -598,7 +598,7 @@ class LLMWebsiteInterpreter:
                     logger.warning(f"Specified week {week} not found in available data")
         elif current_week_only:
             # Process only current week
-            if current_week in weeks:
+            if use_rolling_for_current or current_week in weeks:
                 weeks_to_process[current_week] = weeks[current_week]
             else:
                 logger.warning(f"Current week {current_week} not found in available data")
