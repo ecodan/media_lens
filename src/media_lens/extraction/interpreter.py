@@ -562,22 +562,21 @@ class LLMWebsiteInterpreter:
         return selected_articles
 
 
-    def interpret_weeks(self, sites: list[str], overwrite: bool = False,
-                        current_week_only: bool = True, specific_weeks: List[str] = None,
+    def interpret_weeks(self, sites: list[str],
+                        specific_weeks: List[str],
                         use_rolling_for_current: bool = True) -> list[dict]:
         """
         Perform weekly interpretation on content from specified weeks using hybrid approach.
 
-        For the current week (if it's incomplete), uses rolling 7-day analysis.
+        For the current week (if it's incomplete), uses rolling 7-day analysis or ISO week depending on use_rolling_for_current.
         For historical/completed weeks, uses traditional ISO week boundaries.
 
         :param sites: List of media sites to interpret
-        :param overwrite: If True, overwrite existing weekly interpretations
-        :param current_week_only: If True, only interpret the current week
-        :param specific_weeks: If provided, only interpret these specific weeks (e.g. ["2025-W08", "2025-W09"])
+        :param specific_weeks: Interpret these specific weeks (e.g. ["2025-W08", "2025-W09"])
         :param use_rolling_for_current: If True, use rolling 7-day for current week (hybrid mode)
         :return: List of weekly interpretation records
         """
+
         # Get current week
         current_datetime = datetime.datetime.now(datetime.timezone.utc)
         current_week = get_week_key(current_datetime)
@@ -589,23 +588,12 @@ class LLMWebsiteInterpreter:
 
         # Determine which weeks to process
         weeks_to_process = {}
-        if specific_weeks:
-            # Process only specified weeks
-            for week in specific_weeks:
-                if week in weeks:
-                    weeks_to_process[week] = weeks[week]
-                else:
-                    logger.warning(f"Specified week {week} not found in available data")
-        elif current_week_only:
-            # Process only current week
-            if use_rolling_for_current or current_week in weeks:
-                weeks_to_process[current_week] = weeks[current_week]
+        for week in specific_weeks:
+            if week in weeks:
+                weeks_to_process[week] = weeks[week]
             else:
-                logger.warning(f"Current week {current_week} not found in available data")
-        else:
-            # Process all weeks
-            weeks_to_process = weeks
-        
+                logger.warning(f"Specified week {week} not found in available data")
+
         logger.info(f"Will process {len(weeks_to_process)} weeks: {', '.join(weeks_to_process.keys())}")
 
         ret: list[dict] = []
@@ -617,96 +605,66 @@ class LLMWebsiteInterpreter:
             is_current_week = (week_key == current_week)
             use_rolling = is_current_week and use_rolling_for_current
 
+            intermediate_dir = self.storage.get_intermediate_directory()
+            weekly_file_path = f"{intermediate_dir}/weekly-{week_key}-interpreted.json"
+
             if use_rolling:
                 logger.info(f"Using rolling 7-day analysis for current week {week_key}")
 
                 # Use rolling 7-day interpretation
                 rolling_result = self.interpret_rolling_7_days(sites=sites, reference_date=current_datetime)
 
-                # Check if weekly interpretation already exists and should not be overwritten
-                intermediate_dir = self.storage.get_intermediate_directory()
-                weekly_file_path = f"{intermediate_dir}/weekly-{week_key}-interpreted.json"
+                # Save new rolling interpretation
+                try:
+                    rolling_interpretation = rolling_result.get("interpretation", [])
 
-                if self.storage.file_exists(weekly_file_path) and not overwrite:
-                    logger.info(f"Rolling 7-day interpretation for {week_key} already exists and overwrite=False")
+                    week_record = {
+                        "week": week_key,
+                        "file_path": weekly_file_path,
+                        "included_days": rolling_result.get("included_days", []),
+                        "days_count": rolling_result.get("days_count", 0),
+                        "calendar_days_span": rolling_result.get("calendar_days_span", 0),
+                        "date_range": rolling_result.get("date_range", ""),
+                        "period_type": "rolling_7_days",
+                        "interpretation": rolling_interpretation
+                    }
 
-                    try:
-                        existing_interpretation = self.storage.read_json(weekly_file_path)
+                    # Save to storage with metadata
+                    interpretation_with_metadata = {
+                        "week": week_key,
+                        "period_type": "rolling_7_days",
+                        "start_date": rolling_result.get("start_date"),
+                        "end_date": rolling_result.get("end_date"),
+                        "reference_date": rolling_result.get("reference_date"),
+                        "included_days": rolling_result.get("included_days", []),
+                        "days_count": rolling_result.get("days_count", 0),
+                        "calendar_days_span": rolling_result.get("calendar_days_span", 0),
+                        "date_range": rolling_result.get("date_range", ""),
+                        "generated_at": rolling_result.get("generated_at"),
+                        "interpretation": rolling_interpretation
+                    }
+                    self.storage.write_json(weekly_file_path, interpretation_with_metadata)
+                    ret.append(week_record)
 
-                        # Check format and extract interpretation
-                        if isinstance(existing_interpretation, dict) and "interpretation" in existing_interpretation:
-                            interpretation_data = existing_interpretation.get("interpretation", [])
-                            included_days = existing_interpretation.get("included_days", [])
-                            days_count = existing_interpretation.get("days_count", 0)
-                        else:
-                            interpretation_data = existing_interpretation
-                            included_days = rolling_result.get("included_days", [])
-                            days_count = rolling_result.get("days_count", 0)
-
-                        week_record = {
-                            "week": week_key,
-                            "file_path": weekly_file_path,
-                            "included_days": included_days,
-                            "days_count": days_count,
-                            "period_type": "rolling_7_days",
-                            "interpretation": interpretation_data
-                        }
-                        ret.append(week_record)
-
-                    except json.JSONDecodeError:
-                        logger.error(f"Failed to decode JSON from existing file {weekly_file_path}")
-                else:
-                    # Save new rolling interpretation
-                    try:
-                        rolling_interpretation = rolling_result.get("interpretation", [])
-
-                        week_record = {
-                            "week": week_key,
-                            "file_path": weekly_file_path,
-                            "included_days": rolling_result.get("included_days", []),
-                            "days_count": rolling_result.get("days_count", 0),
-                            "calendar_days_span": rolling_result.get("calendar_days_span", 0),
-                            "date_range": rolling_result.get("date_range", ""),
-                            "period_type": "rolling_7_days",
-                            "interpretation": rolling_interpretation
-                        }
-
-                        # Save to storage with metadata
-                        interpretation_with_metadata = {
-                            "week": week_key,
-                            "period_type": "rolling_7_days",
-                            "start_date": rolling_result.get("start_date"),
-                            "end_date": rolling_result.get("end_date"),
-                            "reference_date": rolling_result.get("reference_date"),
-                            "included_days": rolling_result.get("included_days", []),
-                            "days_count": rolling_result.get("days_count", 0),
-                            "calendar_days_span": rolling_result.get("calendar_days_span", 0),
-                            "date_range": rolling_result.get("date_range", ""),
-                            "generated_at": rolling_result.get("generated_at"),
-                            "interpretation": rolling_interpretation
-                        }
-                        self.storage.write_json(weekly_file_path, interpretation_with_metadata)
-                        ret.append(week_record)
-
-                    except Exception as e:
-                        logger.error(f"Failed to save rolling 7-day interpretation for {week_key}: {str(e)}")
-                        fallback = {
-                            "week": week_key,
-                            "file_path": weekly_file_path,
-                            "included_days": rolling_result.get("included_days", []),
-                            "days_count": rolling_result.get("days_count", 0),
-                            "period_type": "rolling_7_days",
-                            "interpretation": [{
-                                "question": "Rolling 7-day analysis unavailable",
-                                "answer": "The rolling 7-day analysis could not be generated due to technical limitations."
-                            }]
-                        }
-                        ret.append(fallback)
+                except Exception as e:
+                    logger.error(f"Failed to save rolling 7-day interpretation for {week_key}: {str(e)}")
+                    fallback = {
+                        "week": week_key,
+                        "file_path": weekly_file_path,
+                        "included_days": rolling_result.get("included_days", []),
+                        "days_count": rolling_result.get("days_count", 0),
+                        "period_type": "rolling_7_days",
+                        "interpretation": [{
+                            "question": "Rolling 7-day analysis unavailable",
+                            "answer": "The rolling 7-day analysis could not be generated due to technical limitations."
+                        }]
+                    }
+                    ret.append(fallback)
             else:
                 # Use traditional ISO week analysis for historical weeks
                 logger.info(f"Using traditional ISO week analysis for week {week_key}")
 
-                # aggregate all of the content for the week with minimum days validation
+                # aggregate all of the content for the week
                 all_content: dict
                 included_days: list[str]
                 extended_dirs = dirs.copy() if isinstance(dirs, list) else list(dirs)
@@ -729,100 +687,62 @@ class LLMWebsiteInterpreter:
                     logger.warning(f"No content found for week {week_key}")
                     continue
 
-                # Check if weekly interpretation already exists in intermediate directory
-                intermediate_dir = self.storage.get_intermediate_directory()
-                weekly_file_path = f"{intermediate_dir}/weekly-{week_key}-interpreted.json"
+                try:
+                    # Interpret weekly content
+                    weekly_interpretation: List[Dict] = []
+                    loop_ct: int = 0
+                    loop_total: int = len(all_content)
+                    for site, content in all_content.items():
+                        site_interpretation: List[Dict] = self.interpret_site_content(site, content)
+                        weekly_interpretation.extend(site_interpretation)
+                        # pause to avoid LLM throttling
+                        loop_ct += 1
+                        if loop_ct < loop_total:
+                            time.sleep(30)
 
-                if self.storage.file_exists(weekly_file_path) and not overwrite:
-                    logger.info(f"Weekly interpretation for {week_key} already exists and overwrite=False")
+                    # Save weekly interpretation with metadata
+                    week_record = {
+                        "week": week_key,
+                        "file_path": weekly_file_path,
+                        "included_days": included_days,
+                        "days_count": data_days_count,
+                        "calendar_days_span": calendar_days_span,
+                        "date_range": date_range,
+                        "period_type": "iso_week",
+                        "interpretation": weekly_interpretation
+                    }
 
-                    # Even though we're not overwriting, add the file to results for the return value
-                    try:
-                        existing_interpretation = self.storage.read_json(weekly_file_path)
+                    # Also save the weekly interpretation to storage with metadata
+                    interpretation_with_metadata = {
+                        "week": week_key,
+                        "period_type": "iso_week",
+                        "included_days": included_days,
+                        "days_count": data_days_count,
+                        "calendar_days_span": calendar_days_span,
+                        "date_range": date_range,
+                        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        "interpretation": weekly_interpretation
+                    }
+                    self.storage.write_json(weekly_file_path, interpretation_with_metadata)
 
-                        # Check if existing file has metadata (new format) or is just interpretation data (old format)
-                        if isinstance(existing_interpretation, dict) and "included_days" in existing_interpretation:
-                            # New format with metadata
-                            week_record = {
-                                "week": week_key,
-                                "file_path": weekly_file_path,
-                                "included_days": existing_interpretation.get("included_days", []),
-                                "days_count": existing_interpretation.get("days_count", 0),
-                                "period_type": existing_interpretation.get("period_type", "iso_week"),
-                                "interpretation": existing_interpretation.get("interpretation", existing_interpretation)
-                            }
-                        else:
-                            # Old format - just interpretation data, add metadata from current analysis
-                            week_record = {
-                                "week": week_key,
-                                "file_path": weekly_file_path,
-                                "included_days": included_days,
-                                "days_count": len(included_days),
-                                "period_type": "iso_week",
-                                "interpretation": existing_interpretation
-                            }
-                            logger.info(f"Loaded existing interpretation for {week_key} without metadata, using current analysis for days info")
+                    ret.append(week_record)
 
-                        ret.append(week_record)
-                    except json.JSONDecodeError:
-                        logger.error(f"Failed to decode JSON from existing file {weekly_file_path}")
-                else:
-                    try:
-                        # Interpret weekly content
-                        weekly_interpretation: List[Dict] = []
-                        loop_ct: int = 0
-                        loop_total: int = len(all_content)
-                        for site, content in all_content.items():
-                            site_interpretation: List[Dict] = self.interpret_site_content(site, content)
-                            weekly_interpretation.extend(site_interpretation)
-                            # pause to avoid LLM throttling
-                            loop_ct += 1
-                            if loop_ct < loop_total:
-                                time.sleep(30)
+                except Exception as e:
+                    logger.error(f"Failed to complete weekly interpretation for {week_key}: {str(e)}")
+                    # Create a fallback interpretation with metadata
+                    fallback = {
+                        "week": week_key,
+                        "file_path": weekly_file_path,
+                        "included_days": included_days,
+                        "days_count": len(included_days),
+                        "period_type": "iso_week",
+                        "interpretation": [{
+                            "question": "Weekly analysis unavailable",
+                            "answer": "The weekly analysis could not be generated due to technical limitations."
+                        }]
+                    }
 
-                        # Save weekly interpretation with metadata
-                        week_record = {
-                            "week": week_key,
-                            "file_path": weekly_file_path,
-                            "included_days": included_days,
-                            "days_count": data_days_count,
-                            "calendar_days_span": calendar_days_span,
-                            "date_range": date_range,
-                            "period_type": "iso_week",
-                            "interpretation": weekly_interpretation
-                        }
-
-                        # Also save the weekly interpretation to storage with metadata
-                        interpretation_with_metadata = {
-                            "week": week_key,
-                            "period_type": "iso_week",
-                            "included_days": included_days,
-                            "days_count": data_days_count,
-                            "calendar_days_span": calendar_days_span,
-                            "date_range": date_range,
-                            "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                            "interpretation": weekly_interpretation
-                        }
-                        self.storage.write_json(weekly_file_path, interpretation_with_metadata)
-
-                        ret.append(week_record)
-
-                    except Exception as e:
-                        logger.error(f"Failed to complete weekly interpretation for {week_key}: {str(e)}")
-                        # Create a fallback interpretation with metadata
-                        fallback = {
-                            "week": week_key,
-                            "file_path": weekly_file_path,
-                            "included_days": included_days,
-                            "days_count": len(included_days),
-                            "period_type": "iso_week",
-                            "interpretation": [{
-                                "question": "Weekly analysis unavailable",
-                                "answer": "The weekly analysis could not be generated due to technical limitations."
-                            }]
-                        }
-
-                        ret.append(fallback)
+                    ret.append(fallback)
         return ret
 
     def _gather_content(self, dirs, sites) -> tuple[dict, list[str]]:
@@ -1109,59 +1029,3 @@ class LLMWebsiteInterpreter:
 
         logger.info(f"Rolling 7-day interpretation completed with {len(rolling_interpretation)} Q&A pairs from {len(included_days)} days")
         return result
-
-
-##########################
-# TEST
-def interpret_single_job(job_dir_root: Path, working_dir_name: str, site: str):
-    agent: Agent = ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL)
-    interpreter = LLMWebsiteInterpreter(agent=agent, storage=shared_storage)
-
-    # process job
-    working_dir = job_dir_root / working_dir_name
-    files = [f for f in working_dir.glob(f"{site}-clean-article-*.json")]
-    print(json.dumps(interpreter.interpret_from_files(files), indent=2))
-
-def interpret_week(job_dirs_root: Path, sites: list[str], overwrite: bool = False, specific_weeks: List[str] = None, current_week_only: bool = True, use_rolling_for_current: bool = True):
-    agent: Agent = ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL)
-    interpreter = LLMWebsiteInterpreter(agent=agent, storage=shared_storage)
-
-    # process week using hybrid approach
-    content: list[dict] = interpreter.interpret_weeks(
-        sites=sites,
-        overwrite=overwrite,
-        specific_weeks=specific_weeks,
-        current_week_only=current_week_only,
-        use_rolling_for_current=use_rolling_for_current
-    )
-    for result in content:
-        period_type = result.get('period_type', 'iso_week')
-        print(f"=== {result['week']} ({period_type}) ===")
-        print(json.dumps(result['interpretation'], indent=2))
-        # Use storage adapter to write the file
-        file_name = os.path.basename(str(result['file_path']))
-        shared_storage.write_text(file_name, json.dumps(result['interpretation'], indent=2))
-
-
-def test_rolling_7_days(sites: list[str]):
-    """Test the rolling 7-day interpretation functionality."""
-    agent: Agent = ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL)
-    interpreter = LLMWebsiteInterpreter(agent=agent, storage=shared_storage)
-
-    # Test rolling 7-day analysis
-    result = interpreter.interpret_rolling_7_days(sites=sites)
-    print(f"=== Rolling 7-Day Analysis ===")
-    print(f"Period: {result['start_date']} to {result['end_date']}")
-    print(f"Reference Date: {result['reference_date']}")
-    print(f"Days with data: {result['days_count']} ({', '.join(result['included_days'])})")
-    print(f"Calendar days span: {result.get('calendar_days_span', 'N/A')}")
-    print("Interpretation:")
-    print(json.dumps(result['interpretation'], indent=2))
-
-
-if __name__ == '__main__':
-    dotenv.load_dotenv()
-    create_logger(LOGGER_NAME)
-    # interpret_single_job(get_project_root() / "working/out", "2025-03-04T04:35:47+00:00", "www.bbc.com")
-    interpret_week(get_project_root() / "working/out", SITES, overwrite=True, current_week_only=True, use_rolling_for_current=True)
-    # interpret_week(get_project_root() / "working/out", SITES, overwrite=True, specific_weeks=["2025-W08"])

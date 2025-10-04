@@ -85,70 +85,91 @@ async def test_interpret(mock_interpreter_class, mock_agent_class, temp_dir, moc
 
 
 @pytest.mark.asyncio
-@patch('src.media_lens.runner.ClaudeLLMAgent')
+@patch('src.media_lens.runner.create_agent_from_env')
 @patch('src.media_lens.runner.LLMWebsiteInterpreter')
-async def test_interpret_weekly(mock_interpreter_class, mock_agent_class, temp_dir, mock_env_vars):
-    """Test weekly interpretation function."""
+@patch('src.media_lens.runner.storage')
+async def test_interpret_weekly(mock_storage, mock_interpreter_class, mock_agent, temp_dir, mock_env_vars):
+    """Test weekly interpretation function with default parameters."""
     # Mock the interpreter
     mock_interpreter = MagicMock()
-    mock_interpreter.interpret_weekly.return_value = [
+    mock_interpreter.interpret_weeks.return_value = [
         {
             'week': '2025-W08',
-            'file_path': temp_dir / 'weekly-2025-W08-interpreted.json',
-            'interpretation': [{"question": "Weekly Question", "answer": "Weekly Answer", "site": "www.test1.com"}]
+            'file_path': 'intermediate/weekly-2025-W08-interpreted.json',
+            'interpretation': [{"question": "Weekly Question", "answer": "Weekly Answer", "site": "www.test1.com"}],
+            'included_days': ['2025-02-17', '2025-02-18'],
+            'days_count': 2,
+            'calendar_days_span': 2,
+            'date_range': '2025-02-17 to 2025-02-18'
         }
     ]
     mock_interpreter_class.return_value = mock_interpreter
-    
-    # Create job root directory
-    jobs_root = temp_dir
-    
-    # Call interpret_weekly with default parameters (current week only)
-    sites = ["www.test1.com", "www.test2.com"]
-    await interpret_weekly(current_week_only=True)
-    
-    # Verify the interpreter was called
+
+    # Mock storage operations
+    mock_storage.get_intermediate_directory.return_value = 'intermediate'
+    mock_storage.file_exists.return_value = True
+
+    # Call interpret_weekly with default parameters (uses current week)
+    await interpret_weekly(use_rolling_daily=True, specific_weeks=None)
+
+    # Verify the interpreter was called with correct parameters
     mock_interpreter.interpret_weeks.assert_called_once()
-    
-    # Check that weekly files were created
-    assert (temp_dir / 'weekly-2025-W08-interpreted.json').exists()
+    call_args = mock_interpreter.interpret_weeks.call_args
+
+    # Check that specific_weeks was provided (should default to current week)
+    assert 'specific_weeks' in call_args.kwargs
+    assert isinstance(call_args.kwargs['specific_weeks'], list)
+    assert len(call_args.kwargs['specific_weeks']) > 0  # Should have at least current week
 
 
 @pytest.mark.asyncio
-@patch('src.media_lens.runner.ClaudeLLMAgent')
+@patch('src.media_lens.runner.create_agent_from_env')
 @patch('src.media_lens.runner.LLMWebsiteInterpreter')
-async def test_interpret_weekly_with_specific_weeks(mock_interpreter_class, mock_agent_class, temp_dir, mock_env_vars):
+@patch('src.media_lens.runner.storage')
+async def test_interpret_weekly_with_specific_weeks(mock_storage, mock_interpreter_class, mock_agent, temp_dir, mock_env_vars):
     """Test weekly interpretation function with specific weeks."""
     # Mock the interpreter
     mock_interpreter = MagicMock()
-    mock_interpreter.interpret_weekly.return_value = [
+    mock_interpreter.interpret_weeks.return_value = [
         {
             'week': '2025-W07',
-            'file_path': temp_dir / 'weekly-2025-W07-interpreted.json',
-            'interpretation': [{"question": "Week 7 Question", "answer": "Week 7 Answer", "site": "www.test1.com"}]
+            'file_path': 'intermediate/weekly-2025-W07-interpreted.json',
+            'interpretation': [{"question": "Week 7 Question", "answer": "Week 7 Answer", "site": "www.test1.com"}],
+            'included_days': ['2025-02-10', '2025-02-11'],
+            'days_count': 2,
+            'calendar_days_span': 2,
+            'date_range': '2025-02-10 to 2025-02-11'
         },
         {
             'week': '2025-W08',
-            'file_path': temp_dir / 'weekly-2025-W08-interpreted.json',
-            'interpretation': [{"question": "Week 8 Question", "answer": "Week 8 Answer", "site": "www.test1.com"}]
+            'file_path': 'intermediate/weekly-2025-W08-interpreted.json',
+            'interpretation': [{"question": "Week 8 Question", "answer": "Week 8 Answer", "site": "www.test1.com"}],
+            'included_days': ['2025-02-17', '2025-02-18'],
+            'days_count': 2,
+            'calendar_days_span': 2,
+            'date_range': '2025-02-17 to 2025-02-18'
         }
     ]
     mock_interpreter_class.return_value = mock_interpreter
-    
-    # Create job root directory
-    jobs_root = temp_dir
-    
-    # Call interpret_weekly with specific weeks and overwrite=True
-    sites = ["www.test1.com", "www.test2.com"]
+
+    # Mock storage operations
+    mock_storage.get_intermediate_directory.return_value = 'intermediate'
+    mock_storage.file_exists.return_value = True
+    mock_storage.write_json = MagicMock()
+
+    # Call interpret_weekly with specific weeks
     specific_weeks = ["2025-W07", "2025-W08"]
-    await interpret_weekly(current_week_only=False, overwrite=True, specific_weeks=specific_weeks)
-    
-    # Verify the interpreter was called
+    await interpret_weekly(use_rolling_daily=True, specific_weeks=specific_weeks)
+
+    # Verify the interpreter was called with correct parameters
     mock_interpreter.interpret_weeks.assert_called_once()
-    
-    # Check that weekly files were created
-    assert (temp_dir / 'weekly-2025-W07-interpreted.json').exists()
-    assert (temp_dir / 'weekly-2025-W08-interpreted.json').exists()
+    call_args = mock_interpreter.interpret_weeks.call_args
+
+    # Check that specific_weeks was passed correctly
+    assert call_args.kwargs['specific_weeks'] == specific_weeks
+
+    # Verify write_json was called for both weeks
+    assert mock_storage.write_json.call_count == 2
 
 
 @pytest.mark.asyncio

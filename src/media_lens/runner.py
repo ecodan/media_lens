@@ -15,7 +15,7 @@ from dateparser.utils.strptime import strptime
 
 from src.media_lens.auditor import audit_days
 from src.media_lens.collection.harvester import Harvester
-from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, get_working_dir, UTC_REGEX_PATTERN_BW_COMPAT, RunState, is_last_day_of_week, get_week_key, SITES
+from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, get_working_dir, UTC_REGEX_PATTERN_BW_COMPAT, RunState, get_week_key
 from src.media_lens.extraction.agent import Agent, create_agent_from_env
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
@@ -48,6 +48,9 @@ async def interpret(job_dir, sites):
     interpreter: LLMWebsiteInterpreter = LLMWebsiteInterpreter(agent=agent)
     for site in sites:
         try:
+            # Ensure we have the directory using storage adapter
+            storage.create_directory(job_dir)
+
             # Use storage adapter to get files instead of Path.glob
             file_pattern = f"{site}-clean-article-*.json"
             files = storage.get_files_by_pattern(job_dir, file_pattern)
@@ -65,9 +68,6 @@ async def interpret(job_dir, sites):
             else:
                 interpretation: list = interpreter.interpret_files(file_paths)
                 
-            # Ensure we have the directory using storage adapter
-            storage.create_directory(job_dir)
-            
             # Write the interpreted file to intermediate directory organized by job
             # Extract job timestamp from artifacts_dir for organization
             if job_dir.startswith("jobs/"):
@@ -102,14 +102,12 @@ async def interpret(job_dir, sites):
             storage.write_json(output_path, fallback)
 
 
-async def interpret_weekly(current_week_only=True, overwrite=False, specific_weeks=None, use_rolling_daily=True):
+async def interpret_weekly(use_rolling_daily=True, specific_weeks=None):
     """
-    Perform weekly interpretation on content from specified weeks.
-    This will run every Sunday to analyze the last seven days of data.
-    Ensures that weekly interpretations always include a minimum of 7 days of data.
+    Perform weekly interpretation on content from specified weeks (or only current week if not specified).
+    This will run every day and analyze the last seven days of data.
+    On the last day of the week will start the new week.
 
-    :param current_week_only: If True, only interpret the current week
-    :param overwrite: If True, overwrite existing weekly interpretations
     :param specific_weeks: If provided, only interpret these specific weeks (e.g. ["2025-W08", "2025-W09"])
     :param use_rolling_daily: If True, enable daily rolling 7-day analysis (not just Sunday)
     """
@@ -119,33 +117,24 @@ async def interpret_weekly(current_week_only=True, overwrite=False, specific_wee
     
     # Check if today is Sunday (last day of the week) or if specific weeks were provided
     today = datetime.datetime.now(datetime.timezone.utc)
-    current_week = get_week_key(today)
-    weeks_to_process = specific_weeks or []
-    
-    # If not Sunday and no specific weeks provided, skip unless force overwrite or daily rolling enabled
-    if not is_last_day_of_week(dt=None, tz=None) and not specific_weeks and not overwrite and not use_rolling_daily:
-        logger.info("Today is not Sunday. Skipping weekly interpretation.")
-        return
-    
-    # If it's Sunday, add current week to process list
-    if is_last_day_of_week(dt=None, tz=None) and current_week_only:
-        logger.info(f"Today is Sunday. Processing weekly summary with minimum seven days of data.")
-        if current_week not in weeks_to_process:
-            weeks_to_process.append(current_week)
-
-    # If it's not Sunday but rolling daily is enabled, add current week for rolling analysis
-    elif not is_last_day_of_week(dt=None, tz=None) and use_rolling_daily and current_week_only:
-        logger.info(f"Daily rolling analysis enabled. Processing current week {current_week} with rolling 7-day analysis.")
-        if current_week not in weeks_to_process:
-            weeks_to_process.append(current_week)
-    
-    # Check if previous week was processed (in case we missed a Sunday)
+    current_week: str = get_week_key(today)
     previous_week_date = today - datetime.timedelta(days=7)
-    previous_week = get_week_key(previous_week_date)
+    previous_week: str = get_week_key(previous_week_date)
+    weeks_to_process: List[str] = specific_weeks or []
+
+    # In plain english:
+    #  specific_weeks - overrides current week. if the last week in specific weeks is current weeks, look to rolling
+    #  use_rolling_daily - only when processing current week, else use calendar week of days
+    #  so logic: 1/ get list of weeks (specific_weeks OR current_week); 2/ if one of the weeks is current_week, do rolling or calendar
+    # edge case: if Sunday and processing "current week", run the previous calendar week and overwrite
+
+
+    if not specific_weeks:
+        weeks_to_process.append(current_week)
+    
+    # Check if previous week was processed (in case we missed a week transition)
     intermediate_dir = storage.get_intermediate_directory()
     previous_week_file_path = f"{intermediate_dir}/weekly-{previous_week}-interpreted.json"
-    
-    # Use storage adapter to check if file exists
     if not storage.file_exists(previous_week_file_path) and not specific_weeks:
         logger.info(f"Previous week {previous_week} was not processed. Adding to processing list.")
         if previous_week not in weeks_to_process:
@@ -155,28 +144,15 @@ async def interpret_weekly(current_week_only=True, overwrite=False, specific_wee
     if weeks_to_process:
         logger.info(f"Processing weeks: {', '.join(weeks_to_process)}")
         
-        # Set minimum calendar days requirement - always ensure at least 7 calendar days are covered
-        interpreter.minimum_calendar_days_required = 7
-
-        # TODO obsolete, remove
-        # # Configure date range behavior based on run context
-        # if is_last_day_of_week(dt=None, tz=None) and not specific_weeks:
-        #     # When running on Sunday with no specific weeks, prefer calendar week boundaries
-        #     # but allow extension to meet minimum days requirement
-        #     logger.info(f"Sunday run: Using calendar week boundaries with minimum 7-day requirement")
-        #     interpreter.use_calendar_week_boundaries = True
-        # else:
-        #     # For specific weeks or non-Sunday runs, use default behavior with minimum requirement
-        #     interpreter.use_calendar_week_boundaries = False
+        # Set minimum calendar days requirement - in this case it's moot due to rolling, but if calendar week take one or more
+        interpreter.minimum_calendar_days_required = 1
             
         weekly_results: list[dict] = interpreter.interpret_weeks(
             sites=SITES,
-            current_week_only=False,  # We're handling this logic ourselves
-            overwrite=overwrite,
             specific_weeks=weeks_to_process
         )
         
-        # Validate that all results meet minimum calendar days requirement
+        # Log if results have fewer than 7 days
         for result in weekly_results:
             calendar_days_span = result.get('calendar_days_span', 0)
             data_days_count = result.get('days_count', 0)
@@ -290,10 +266,9 @@ async def process_weekly_content(current_week_only: bool = True,
     :param overwrite: If True, overwrite existing weekly interpretations
     :param specific_weeks: If provided, only process these specific weeks
     """
-    # Interpret weekly content - will only run on last day of week or for missed weeks
+    # Interpret weekly content
     await interpret_weekly(
-        current_week_only=current_week_only, 
-        overwrite=overwrite, 
+        use_rolling_daily=True,
         specific_weeks=specific_weeks
     )
 
@@ -510,7 +485,7 @@ async def run(steps: list[Steps], **kwargs) -> dict:
         if Steps.INTERPRET_WEEKLY in steps and not RunState.stop_requested():
             # Interpret weekly content
             logger.info(f"[Run {run_id}] Starting weekly interpretation step")
-            await interpret_weekly(current_week_only=True, overwrite=True)
+            await interpret_weekly(use_rolling_daily=True)
             result["completed_steps"].append(Steps.INTERPRET_WEEKLY.value)
 
         if Steps.SUMMARIZE_DAILY in steps and not RunState.stop_requested():

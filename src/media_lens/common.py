@@ -44,6 +44,34 @@ def is_last_day_of_week(dt: datetime = None, tz = None) -> bool:
     # True if Sunday (weekday 6)
     return weekday_num == 6
 
+
+def is_first_day_of_week(dt: datetime = None, tz=None) -> bool:
+    """
+    Check if the given datetime is the first day of the week (Monday).
+    If no datetime is provided, check the current day.
+
+    :param dt: Datetime to check, defaults to current datetime
+    :param tz: Timezone to use - if None, uses the timezone from the provided datetime object
+               or UTC for the current time
+    :return: True if the datetime is the first day of the week, False otherwise
+    """
+    if dt is None:
+        # No datetime provided, use current time
+        dt = datetime.now(timezone.utc)
+        if tz is not None:
+            dt = dt.astimezone(tz)
+    # We have a datetime, but don't change its timezone unless explicitly requested
+    elif tz is not None:
+        # Only convert timezone if explicitly requested
+        dt = dt.astimezone(tz)
+
+    # In Python's datetime weekday(), Monday is 0 and Sunday is 6
+    weekday_num = dt.weekday()
+
+    # True if Monday (weekday 0)
+    return weekday_num == 0
+
+
 def utc_timestamp() -> str:
     # get utc timestamp as short string
     return datetime.now(timezone.utc).isoformat(sep='T', timespec='seconds')
