@@ -15,7 +15,7 @@ from dateparser.utils.strptime import strptime
 
 from src.media_lens.auditor import audit_days
 from src.media_lens.collection.harvester import Harvester
-from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, get_working_dir, UTC_REGEX_PATTERN_BW_COMPAT, RunState, get_week_key
+from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, get_working_dir, UTC_REGEX_PATTERN_BW_COMPAT, RunState, get_week_key, SITES
 from src.media_lens.extraction.agent import Agent, create_agent_from_env
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
@@ -102,16 +102,21 @@ async def interpret(job_dir, sites):
             storage.write_json(output_path, fallback)
 
 
-async def interpret_weekly(use_rolling_daily=True, specific_weeks=None):
+async def interpret_weekly(use_rolling_daily=True, specific_weeks=None, sites: list[str] = None):
     """
     Perform weekly interpretation on content from specified weeks (or only current week if not specified).
     This will run every day and analyze the last seven days of data.
     On the last day of the week will start the new week.
 
-    :param specific_weeks: If provided, only interpret these specific weeks (e.g. ["2025-W08", "2025-W09"])
     :param use_rolling_daily: If True, enable daily rolling 7-day analysis (not just Sunday)
+    :param specific_weeks: If provided, only interpret these specific weeks (e.g. ["2025-W08", "2025-W09"])
+    :param sites: List of sites to process (defaults to SITES from common.py)
     """
-    
+
+    # Use provided sites or default to SITES from common.py
+    if sites is None:
+        sites = SITES
+
     agent: Agent = create_agent_from_env()
     interpreter: LLMWebsiteInterpreter = LLMWebsiteInterpreter(agent=agent)
     
@@ -146,9 +151,9 @@ async def interpret_weekly(use_rolling_daily=True, specific_weeks=None):
         
         # Set minimum calendar days requirement - in this case it's moot due to rolling, but if calendar week take one or more
         interpreter.minimum_calendar_days_required = 1
-            
+
         weekly_results: list[dict] = interpreter.interpret_weeks(
-            sites=SITES,
+            sites=sites,
             specific_weeks=weeks_to_process
         )
         
@@ -186,21 +191,26 @@ async def extract(job_dir):
     await extractor.run(delay_between_sites_secs=60)
 
 
-async def format_output(force_full: bool = False) -> None:
+async def format_output(force_full: bool = False, sites: list[str] = None) -> None:
     """
     Generate HTML output files with incremental processing support.
-    
+
     Args:
         force_full: If True, ignore cursor and regenerate everything
-        
+        sites: List of sites to process (defaults to SITES from common.py)
+
     Returns:
         None
     """
+    # Use provided sites or default to SITES from common.py
+    if sites is None:
+        sites = SITES
+
     # Get template directory path as string instead of Path object
     template_dir_path: str = str(get_project_root() / "config/templates")
-    
+
     # Generate HTML files (index and weekly pages) with cursor support
-    generate_html_from_path(SITES, Path(template_dir_path), force_full=force_full)
+    generate_html_from_path(sites, Path(template_dir_path), force_full=force_full)
     
     logger.info("HTML files generated successfully")
 
@@ -399,17 +409,22 @@ async def clean(job_dir: str, sites: list[str]) -> None:
     harvester: Harvester = Harvester()
     await harvester.clean_sites(job_dir=job_dir, sites=sites)
 
-async def run(steps: list[Steps], **kwargs) -> dict:
+async def run(steps: list[Steps], sites: list[str] = None, **kwargs) -> dict:
     """
     Execute the media lens pipeline with the specified steps.
-    
+
     Args:
         steps: List of Steps to execute
+        sites: List of sites to process (defaults to SITES from common.py)
         **kwargs: Additional arguments
-        
+
     Returns:
         dict: Status information about the run
     """
+    # Use provided sites or default to SITES from common.py
+    if sites is None:
+        sites = SITES
+
     # Validate step combinations before starting
     validate_step_combinations(steps)
     
@@ -446,28 +461,28 @@ async def run(steps: list[Steps], **kwargs) -> dict:
             logger.info(f"[Run {run_id}] Starting harvest step")
             harvester: Harvester = Harvester()
             # reassign artifacts_dir to new dir (harvest now returns string)
-            artifacts_dir = await harvester.harvest(sites=SITES)
+            artifacts_dir = await harvester.harvest(sites=sites)
             result["completed_steps"].append(Steps.HARVEST.value)
-            
+
         elif Steps.HARVEST_SCRAPE in steps and not RunState.stop_requested():
             # Harvest Scrape (scraping only)
             logger.info(f"[Run {run_id}] Starting harvest scrape step")
-            artifacts_dir = await scrape(sites=SITES)
+            artifacts_dir = await scrape(sites=sites)
             result["completed_steps"].append(Steps.HARVEST_SCRAPE.value)
-            
+
         elif Steps.REHARVEST in steps and not RunState.stop_requested():
             # Re-Harvest
             logger.info(f"[Run {run_id}] Starting re-harvest step")
             harvester: Harvester = Harvester()
-            await harvester.re_harvest(sites=SITES, job_dir=artifacts_dir)
+            await harvester.re_harvest(sites=sites, job_dir=artifacts_dir)
             result["completed_steps"].append(Steps.REHARVEST.value)
-            
+
         if Steps.HARVEST_CLEAN in steps and not RunState.stop_requested():
             # Harvest Clean (cleaning only)
             logger.info(f"[Run {run_id}] Starting harvest clean step")
             if not artifacts_dir:
                 raise ValueError("No job directory available for cleaning. Run harvest_scrape first or specify job_dir.")
-            await clean(job_dir=artifacts_dir, sites=SITES)
+            await clean(job_dir=artifacts_dir, sites=sites)
             result["completed_steps"].append(Steps.HARVEST_CLEAN.value)
 
         if Steps.EXTRACT in steps and not RunState.stop_requested():
@@ -479,7 +494,7 @@ async def run(steps: list[Steps], **kwargs) -> dict:
         if Steps.INTERPRET in steps and not RunState.stop_requested():
             # Interpret individual run
             logger.info(f"[Run {run_id}] Starting interpret step")
-            await interpret(artifacts_dir, SITES)
+            await interpret(artifacts_dir, sites)
             result["completed_steps"].append(Steps.INTERPRET.value)
 
         if Steps.INTERPRET_WEEKLY in steps and not RunState.stop_requested():
@@ -499,7 +514,7 @@ async def run(steps: list[Steps], **kwargs) -> dict:
             # Format output
             logger.info(f"[Run {run_id}] Starting format step")
             force_full_format = kwargs.get('force_full_format', False)
-            await format_output(force_full=force_full_format)
+            await format_output(force_full=force_full_format, sites=sites)
             result["completed_steps"].append(Steps.FORMAT.value)
 
         if Steps.DEPLOY in steps and not RunState.stop_requested():
@@ -647,8 +662,6 @@ def main():
         help='Skip generating the audit report file (audit.txt)'
     )
 
-    global SITES
-
     # Load environment variables first
     dotenv.load_dotenv()
     
@@ -659,9 +672,9 @@ def main():
 
     if args.command == 'run':
         steps = [Steps(step) for step in args.steps]
-        if args.sites:
-            SITES = args.sites
-        
+        # Use sites from args or default to SITES from common.py
+        sites_to_use = args.sites if args.sites else SITES
+
         # Handle playwright mode: CLI arg overrides env var, default to 'cloud'
         if hasattr(args, 'playwright_mode') and args.playwright_mode:
             # CLI argument provided
@@ -669,11 +682,11 @@ def main():
         else:
             # Use environment variable or default to 'cloud'
             playwright_mode = os.getenv('PLAYWRIGHT_MODE', 'cloud')
-        
+
         os.environ['PLAYWRIGHT_MODE'] = playwright_mode
         logger.info(f"Using Playwright mode: {playwright_mode}")
 
-        logger.info(f"Using sites: {', '.join(SITES)}")
+        logger.info(f"Using sites: {', '.join(sites_to_use)}")
         
         # Handle cursor rewind if specified
         if hasattr(args, 'rewind_days') and args.rewind_days:
@@ -698,7 +711,8 @@ def main():
             for job_dir in job_dirs:
                 logger.info(f"Processing job directory: {job_dir}")
                 run_result = asyncio.run(run(
-                    steps=steps, 
+                    steps=steps,
+                    sites=sites_to_use,
                     job_dir=job_dir,
                     run_id=args.run_id if hasattr(args, 'run_id') and args.run_id else None,
                     force_full_format=getattr(args, 'force_full_format', False),
@@ -708,7 +722,8 @@ def main():
                     logger.warning(f"Job {job_dir} completed with status: {run_result['status']}")
         else:
             run_result = asyncio.run(run(
-                steps=steps, 
+                steps=steps,
+                sites=sites_to_use,
                 job_dir=args.job_dir,
                 run_id=args.run_id if hasattr(args, 'run_id') and args.run_id else None,
                 force_full_format=getattr(args, 'force_full_format', False),

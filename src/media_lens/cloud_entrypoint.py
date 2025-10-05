@@ -60,10 +60,14 @@ def run_task_async(steps, run_id, data=None):
             logger.info(f"Rewinding cursors by {days} days for run {run_id}")
             rewind_format_cursor(days)
             rewind_deploy_cursor(days)
-        
+
+        # Get sites from data or use default
+        sites = data.get('sites') if data else None
+
         # Run the pipeline
         result = asyncio.run(run(
-            steps=steps, 
+            steps=steps,
+            sites=sites,
             run_id=run_id
         ))
         
@@ -90,12 +94,7 @@ def run_pipeline():
         
         # Convert string steps to enum
         steps = [Steps(step) for step in requested_steps]
-        
-        # Update sites if provided
-        if data.get('sites'):
-            import src.media_lens.common
-            src.media_lens.common.SITES = data.get('sites')
-        
+
         # Validate rewind_days parameter
         rewind_days = data.get('rewind_days')
         if rewind_days is not None:
