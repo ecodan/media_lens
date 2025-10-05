@@ -153,15 +153,33 @@ class LLMWebsiteInterpreter:
     def _parse_llm_response(self, response: str) -> List[Dict]:
         """Parse LLM response handling both JSON and CoT formats."""
         try:
+            # Strip markdown code fences if present
+            response = response.strip()
+            if response.startswith("```json"):
+                response = response[7:]  # Remove ```json
+            if response.startswith("```"):
+                response = response[3:]  # Remove ```
+            if response.endswith("```"):
+                response = response[:-3]  # Remove trailing ```
+            response = response.strip()
+
             sanitized_response = None
-            if response.strip().startswith("["):
+            if response.startswith("["):
                 # JSON format
                 sanitized_response = ''.join(char for char in response if ord(char) >= 32 or char in '\n\r\t')
             elif "</thinking>" in response:
                 # Chain of thought format
                 trimmed_response = re.search(r"</thinking>(.*)", response, re.DOTALL)
                 if trimmed_response:
-                    sanitized_response = ''.join(char for char in trimmed_response.group(1) if ord(char) >= 32 or char in '\n\r\t')
+                    # Also strip code fences from extracted content
+                    extracted = trimmed_response.group(1).strip()
+                    if extracted.startswith("```json"):
+                        extracted = extracted[7:]
+                    if extracted.startswith("```"):
+                        extracted = extracted[3:]
+                    if extracted.endswith("```"):
+                        extracted = extracted[:-3]
+                    sanitized_response = ''.join(char for char in extracted.strip() if ord(char) >= 32 or char in '\n\r\t')
             else:
                 # Unexpected format
                 logger.warning(f"Unexpected response format: {response[:100]}...")
@@ -169,13 +187,13 @@ class LLMWebsiteInterpreter:
                     "question": "Analysis could not be processed",
                     "answer": "Due to technical limitations, the analysis could not be processed."
                 }]
-            
+
             if sanitized_response:
                 content = json.loads(sanitized_response)
                 return content
             else:
                 return []
-                
+
         except json.JSONDecodeError as json_err:
             logger.error(f"JSON parse error: {str(json_err)}")
             return []

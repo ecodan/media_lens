@@ -97,7 +97,7 @@ class GoogleVertexAIAgent(Agent):
         try:
             # Combine system and user prompts for Vertex AI
             full_prompt = f"{system_prompt}\n\n{user_prompt}"
-            
+
             response = self.client.generate_content(
                 full_prompt,
                 generation_config={
@@ -105,12 +105,29 @@ class GoogleVertexAIAgent(Agent):
                     "max_output_tokens": 20000,  # Increased from 4096, still well under 64K limit
                 }
             )
-            
-            logger.debug(f"Vertex AI raw response: {response.text}")
-            logger.debug(f".. response: {len(response.text)} bytes / {len(response.text.split())} words")
-            
-            return response.text
-            
+
+            # Handle multi-part responses (e.g., when model uses <thinking> tags)
+            # Vertex AI may split response into multiple parts
+            try:
+                # Try to get text directly first
+                response_text = response.text
+            except ValueError:
+                # If that fails, concatenate all text parts manually
+                if hasattr(response, 'candidates') and response.candidates:
+                    candidate = response.candidates[0]
+                    if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                        text_parts = [part.text for part in candidate.content.parts if hasattr(part, 'text')]
+                        response_text = ''.join(text_parts)
+                    else:
+                        raise ValueError("Unable to extract text from Vertex AI response")
+                else:
+                    raise ValueError("Unable to extract text from Vertex AI response")
+
+            logger.debug(f"Vertex AI raw response: {response_text}")
+            logger.debug(f".. response: {len(response_text)} bytes / {len(response_text.split())} words")
+
+            return response_text
+
         except Exception as e:
             logger.error(f"Vertex AI API error: {str(e)}")
             raise
