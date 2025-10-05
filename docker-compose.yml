@@ -28,10 +28,10 @@ services:
       # Path to service account credentials file, use VM environment variable with fallback
       - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-/app/keys/medialens-service-account.json}
       # AI Provider Configuration
-      - AI_PROVIDER=${AI_PROVIDER:-claude}
+      - AI_PROVIDER=${AI_PROVIDER:-vertex}
       - VERTEX_AI_PROJECT_ID=${VERTEX_AI_PROJECT_ID:-medialens}
       - VERTEX_AI_LOCATION=${VERTEX_AI_LOCATION:-us-central1}
-      - VERTEX_AI_MODEL=${VERTEX_AI_MODEL:-gemini-flash-latest}
+      - VERTEX_AI_MODEL=${VERTEX_AI_MODEL:-gemini-2.5.-flash}
 #      - GOOGLE_API_KEY=${GOOGLE_API_KEY} # moved to google cloud secret manager
       # Storage and Browser Configuration
       - LOCAL_STORAGE_PATH=${LOCAL_STORAGE_PATH:-/app/working/out}

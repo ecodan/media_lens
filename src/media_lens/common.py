@@ -149,10 +149,10 @@ SITES_DEFAULT: list[str] = [
 SITES: list[str] = SITES_DEFAULT
 
 # AI Provider Configuration
-AI_PROVIDER: str = "claude"  # Options: "claude", "vertex"
+AI_PROVIDER: str = "vertex"  # Options: "claude", "vertex"
 
 # Anthropic Configuration
-ANTHROPIC_MODEL: str = "claude-4-5-sonnet-latest"
+ANTHROPIC_MODEL: str = "claude-sonnet-4-5"
 # ANTHROPIC_MODEL: str = "claude-3-5-haiku-latest"
 
 # Google Vertex AI Configuration
