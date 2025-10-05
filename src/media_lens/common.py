@@ -152,8 +152,8 @@ SITES: list[str] = SITES_DEFAULT
 AI_PROVIDER: str = "claude"  # Options: "claude", "vertex"
 
 # Anthropic Configuration
-# ANTHROPIC_MODEL: str = "claude-3-7-sonnet-latest"
-ANTHROPIC_MODEL: str = "claude-3-5-haiku-latest"
+ANTHROPIC_MODEL: str = "claude-4-5-sonnet-latest"
+# ANTHROPIC_MODEL: str = "claude-3-5-haiku-latest"
 
 # Google Vertex AI Configuration
 VERTEX_AI_PROJECT_ID: str = "medialens"
