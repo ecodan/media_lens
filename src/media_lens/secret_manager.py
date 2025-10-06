@@ -135,7 +135,6 @@ def load_secrets_from_gcp() -> Dict[str, Optional[str]]:
     # Define the secrets we need to load
     secrets_config = {
         "ANTHROPIC_API_KEY": "anthropic-api-key",
-        "GOOGLE_API_KEY": "google-api-key",
         "FTP_HOSTNAME": "ftp-hostname",
         "FTP_USERNAME": "ftp-username",
         "FTP_PASSPHRASE": "ftp-passphrase",

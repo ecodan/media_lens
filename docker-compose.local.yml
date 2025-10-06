@@ -1,0 +1,51 @@
+# Local development override for Mac ARM64
+# Use: docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+      platforms:
+        - linux/arm64
+    image: python/media-lens:local-arm64
+    container_name: media-lens-local
+    environment:
+      # Override for local development
+      - USE_CLOUD_STORAGE=false
+      - USE_SECRET_MANAGER=false
+      - PLAYWRIGHT_MODE=local
+      - AI_PROVIDER=vertex
+      - VERTEX_AI_PROJECT_ID=medialens
+      - VERTEX_AI_LOCATION=us-central1
+      - VERTEX_AI_MODEL=gemini-2.5-flash
+      - LOCAL_STORAGE_PATH=/app/working/out
+      # Load from local .env for secrets
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - FTP_HOSTNAME=${FTP_HOSTNAME}
+      - FTP_USERNAME=${FTP_USERNAME}
+      - FTP_KEY_PATH=${FTP_KEY_PATH}
+      - FTP_PORT=${FTP_PORT}
+      - FTP_PASSPHRASE=${FTP_PASSPHRASE}
+      - FTP_REMOTE_PATH=${FTP_REMOTE_PATH}
+      - FTP_IP_FALLBACK=${FTP_IP_FALLBACK}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/keys/medialens-d479cf10632d.json
+      - GOOGLE_CLOUD_PROJECT=medialens
+      - GCP_STORAGE_BUCKET=media-lens-storage
+    volumes:
+      # Override volumes for local development
+      - ./working:/app/working
+      - ./logs:/app/logs
+      - ./keys:/app/keys:ro
+      # Remove VM-specific credential mounts
+    depends_on:
+      storage:
+        condition: service_started
+        required: false
+    profiles:
+      - local
+
+  storage:
+    # Storage emulator for local development
+    profiles:
+      - local

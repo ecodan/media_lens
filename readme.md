@@ -88,7 +88,35 @@ Currently implements a file system-based storage solution for simplicity and rap
 - SFTP information if you want to push the file to a web server
 
 ## Development Setup
-See readme-deployment.md for deployment instructions.
+
+### Local Development (Mac)
+
+For local development on Mac (Apple Silicon), use the containerized environment:
+
+```bash
+# Build and run local Docker container (Mac ARM64)
+docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local up --build
+
+# Run in background
+docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local up -d
+
+# View logs
+docker logs -f media-lens-local
+
+# Stop
+docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local down
+```
+
+The local Docker configuration:
+- Uses `Dockerfile.local` optimized for ARM64 architecture
+- Loads secrets from your `.env` file
+- Uses local filesystem for storage (`./working`, `./logs`)
+- Configured for Vertex AI (Gemini) as the default AI provider
+
+See `DOCKER_README.md` for detailed Docker configuration documentation.
+
+### Cloud Deployment
+See `readme-deployment.md` for Google Cloud deployment instructions.
 
 
 ## Usage
@@ -200,7 +228,11 @@ python -m src.media_lens.cloud_entrypoint
 
 **Docker (preferred for local testing):**
 ```bash
-docker compose --profile local up --build
+# Mac ARM64
+docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local up --build
+
+# Or for cloud simulation (x86_64)
+docker compose --profile cloud up --build
 ```
 
 #### Pipeline Execution

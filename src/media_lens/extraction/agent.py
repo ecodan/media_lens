@@ -1,6 +1,8 @@
 import logging
 import os
+import re
 from abc import ABCMeta, abstractmethod
+from enum import Enum
 from typing import Optional
 
 from anthropic import Anthropic, APIStatusError, APIConnectionError
@@ -18,19 +20,72 @@ from src.media_lens.common import LOGGER_NAME, AI_PROVIDER, ANTHROPIC_MODEL, VER
 
 logger = logging.getLogger(LOGGER_NAME)
 
+
+class ResponseFormat(Enum):
+    """Response format types for agent invocation."""
+    TEXT = "text"
+    JSON = "json"
+
+
 class Agent(metaclass=ABCMeta):
     """
     Base class for all agents.
     """
+
     @abstractmethod
-    def invoke(self, system_prompt: str, user_prompt: str) -> str:
+    def _invoke_impl(self, system_prompt: str, user_prompt: str) -> str:
         """
-        Send the prompts to the LLM and return the response.
+        Implementation-specific invoke method.
         :param system_prompt: generated system prompt
         :param user_prompt: specific user prompt
         :return: text of response
         """
         pass
+
+    def invoke(self, system_prompt: str, user_prompt: str, response_format: ResponseFormat = ResponseFormat.TEXT) -> str:
+        """
+        Send the prompts to the LLM and return the response.
+        :param system_prompt: generated system prompt
+        :param user_prompt: specific user prompt
+        :param response_format: expected response format (TEXT or JSON)
+        :return: text of response, cleaned according to response_format
+        """
+        response = self._invoke_impl(system_prompt, user_prompt)
+
+        if response_format == ResponseFormat.JSON:
+            return self._clean_json_response(response)
+
+        return response
+
+    def _clean_json_response(self, response: str) -> str:
+        """
+        Clean JSON response by removing markdown fences and extraction tags.
+        :param response: raw response text
+        :return: cleaned JSON string
+        """
+        response = response.strip()
+
+        # Extract from thinking/analysis tags if present
+        if "</thinking>" in response:
+            match = re.search(r"</thinking>(.*)", response, re.DOTALL)
+            if match:
+                response = match.group(1).strip()
+
+        if "</analysis>" in response:
+            match = re.search(r"</analysis>(.*)", response, re.DOTALL)
+            if match:
+                response = match.group(1).strip()
+
+        # Strip markdown code fences
+        if response.startswith("```json"):
+            response = response[7:]
+        elif response.startswith("```"):
+            response = response[3:]
+
+        if response.endswith("```"):
+            response = response[:-3]
+
+        return response.strip()
 
     @property
     @abstractmethod
@@ -51,7 +106,7 @@ class ClaudeLLMAgent(Agent):
         self.client = Anthropic(api_key=api_key)
         self._model = model
 
-    def invoke(self, system_prompt: str, user_prompt: str) -> str:
+    def _invoke_impl(self, system_prompt: str, user_prompt: str) -> str:
         try:
             response = self.client.messages.create(
                 model=self.model,
@@ -88,12 +143,12 @@ class GoogleVertexAIAgent(Agent):
         super().__init__()
         if not VERTEX_AI_AVAILABLE:
             raise ImportError("google-cloud-aiplatform package is required for Google Vertex AI support")
-        
+
         vertexai.init(project=project_id, location=location)
         self.client = GenerativeModel(model)
         self._model = model
 
-    def invoke(self, system_prompt: str, user_prompt: str) -> str:
+    def _invoke_impl(self, system_prompt: str, user_prompt: str) -> str:
         try:
             # Combine system and user prompts for Vertex AI
             full_prompt = f"{system_prompt}\n\n{user_prompt}"
@@ -148,16 +203,15 @@ class OllamaAgent(Agent):
         self._base_url: str = "http://localhost:11434"
         self._api_url = f"{self._base_url}/api/generate"
 
-    def invoke(self, system_prompt: str, user_prompt: str) -> str:
-        try:
-            """
-             Send the prompts to Ollama and return the response.
+    def _invoke_impl(self, system_prompt: str, user_prompt: str) -> str:
+        """
+        Send the prompts to Ollama and return the response.
 
-             :param user_prompt: Specific user prompt
-             :param system_prompt: Optional system prompt override. If None, loads from config via prompt manager.
-             :param history: Optional conversation history for context
-             :return: Text of response
-             """
+        :param user_prompt: Specific user prompt
+        :param system_prompt: Optional system prompt override. If None, loads from config via prompt manager.
+        :return: Text of response
+        """
+        try:
             import requests
             full_prompt = f"{system_prompt}\n\n{user_prompt}"
             # Prepare the request payload
@@ -199,6 +253,7 @@ class OllamaAgent(Agent):
                 return error_response
         except Exception as e:
             logger.error(f"Ollama API error: {str(e)}")
+            raise
 
     @property
     def model(self) -> str:

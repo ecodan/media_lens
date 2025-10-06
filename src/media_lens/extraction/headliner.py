@@ -16,7 +16,7 @@ from anthropic import APIError, APIConnectionError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL
-from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
+from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent, ResponseFormat
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -161,8 +161,8 @@ class LLMHeadlineExtractor(HeadlineExtractor):
         wait=wait_exponential(multiplier=1, min=30, max=120),
         retry=lambda e: isinstance(e, (APIError, APIConnectionError))
     )
-    def _call_llm(self, user_prompt: str, system_prompt: str) -> str:
-        return self.agent.invoke(system_prompt=system_prompt, user_prompt=user_prompt)
+    def _call_llm(self, user_prompt: str, system_prompt: str, response_format: ResponseFormat = ResponseFormat.TEXT) -> str:
+        return self.agent.invoke(system_prompt=system_prompt, user_prompt=user_prompt, response_format=response_format)
 
     def _update_stats(self, retry_state):
         self.stats.attempts += 1
@@ -199,12 +199,11 @@ class LLMHeadlineExtractor(HeadlineExtractor):
 
             gathering_response = self._call_llm(
                 system_prompt=SYSTEM_PROMPT,
-                user_prompt=GATHERING_PROMPT.format(analysis=reasoning_response)
+                user_prompt=GATHERING_PROMPT.format(analysis=reasoning_response),
+                response_format=ResponseFormat.JSON
             )
-            # get all text after </analysis>
-            gathering_response_json: str = re.search(r"</analysis>(.*)", gathering_response, re.DOTALL).group(1)
 
-            return json.loads(gathering_response_json)
+            return json.loads(gathering_response)
 
         except Exception as e:
             logger.error(f"Error processing content: {str(e)}")

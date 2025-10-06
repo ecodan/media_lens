@@ -4,10 +4,19 @@ This document provides step-by-step instructions for deploying the Media Lens ap
 
 ## Local Docker Deployment
 
+### Overview
+
+Media Lens provides two Docker configurations:
+- **Local (Mac ARM64)**: Optimized for Apple Silicon development - uses `Dockerfile.local`
+- **Cloud (x86_64)**: Production configuration for Google Cloud - uses `Dockerfile`
+
+See `DOCKER_README.md` for detailed configuration differences.
+
 ### Prerequisites
 - Docker and Docker Compose installed on your machine
 - Python 3.9+ (for local development outside Docker)
 - API keys for required services (Anthropic Claude or Google Vertex AI)
+- For Mac: Apple Silicon (M1/M2/M3) or Intel-based Mac
 
 ### Steps for Local Deployment
 
@@ -20,36 +29,55 @@ This document provides step-by-step instructions for deploying the Media Lens ap
 2. **Create a local environment file**
    Create a `.env` file in the project root with the following variables:
    ```bash
-   # AI Provider (required)
-   AI_PROVIDER=claude
-   ANTHROPIC_API_KEY=your_anthropic_api_key_here
-   
+   # AI Provider (default: vertex)
+   AI_PROVIDER=vertex
+
+   # Google Vertex AI (recommended)
+   GOOGLE_APPLICATION_CREDENTIALS=keys/your-service-account.json
+   VERTEX_AI_PROJECT_ID=your-gcp-project-id
+   VERTEX_AI_LOCATION=us-central1
+   VERTEX_AI_MODEL=gemini-2.5-flash
+   GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+
+   # Or use Anthropic Claude
+   # AI_PROVIDER=claude
+   # ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
    # Local storage (required for Docker)
    USE_CLOUD_STORAGE=false
-   LOCAL_STORAGE_PATH=/app/working
-   PLAYWRIGHT_MODE=cloud
-   
-   # Optional: FTP deployment (leave empty if not deploying)
+   LOCAL_STORAGE_PATH=/app/working/out
+   PLAYWRIGHT_MODE=local
+
+   # Google Cloud Storage (optional for local)
+   GCP_STORAGE_BUCKET=media-lens-storage
+
+   # FTP deployment (optional)
    FTP_HOSTNAME=
    FTP_USERNAME=
-   FTP_SSH_KEY_FILE=
+   FTP_KEY_PATH=
    FTP_PORT=
    FTP_PASSPHRASE=
    FTP_REMOTE_PATH=
-   
-   # Optional: Google Cloud settings (not needed for Claude)
-   GOOGLE_CLOUD_PROJECT=
-   GCP_STORAGE_BUCKET=
-   GOOGLE_APPLICATION_CREDENTIALS=
    ```
 
-3. **Build and run the Docker container with local profile**
+3. **Build and run the Docker container**
+
+   **For Mac (ARM64 - Apple Silicon):**
    ```bash
-   # Build and run with local development profile
-   docker compose --profile local up --build
-   
+   # Build and run with local ARM64 configuration
+   docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local up --build
+
    # Or run in detached mode
-   docker compose --profile local up -d --build
+   docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local up -d
+
+   # View logs
+   docker logs -f media-lens-local
+   ```
+
+   **For Cloud Simulation (x86_64):**
+   ```bash
+   # Test cloud configuration locally (requires x86_64 or emulation)
+   docker compose --profile cloud up --build
    ```
 
 4. **Test the application**
@@ -91,7 +119,11 @@ This document provides step-by-step instructions for deploying the Media Lens ap
 
 6. **Stop the container**
    ```bash
-   docker compose --profile local down
+   # For local Mac ARM64
+   docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local down
+
+   # For cloud simulation
+   docker compose --profile cloud down
    ```
 
 ### Alternative: Direct CLI Usage in Container
@@ -110,10 +142,13 @@ python -m src.media_lens.runner run -s harvest extract
 
 ### Troubleshooting Local Docker
 
-- **Container fails to start**: Check `docker logs media-lens` for error messages
+- **Container fails to start**: Check `docker logs media-lens-local` (or `media-lens` for cloud) for error messages
 - **API not responding**: Ensure the container is running and port 8080 is not blocked
 - **Storage issues**: Verify the `working` directory is properly mounted
 - **Browser/Playwright errors**: The container includes all necessary browser dependencies
+- **ARM64 package errors on Mac**: Ensure you're using `docker-compose.local.yml` which uses `Dockerfile.local`
+- **x86_64 errors**: If testing cloud config on Mac, you may need to enable Docker's x86_64 emulation
+- **Build fails with package errors**: Check that Debian package names match your architecture (ARM64 packages may have `t64` suffix)
 
 ## Google Cloud VM Deployment
 

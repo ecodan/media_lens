@@ -13,7 +13,7 @@ from anthropic import APIError, APIConnectionError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL, UTC_REGEX_PATTERN_BW_COMPAT, get_utc_datetime_from_timestamp, get_week_key, SITES, create_logger
-from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
+from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent, ResponseFormat
 from src.media_lens.job_dir import JobDir
 from src.media_lens.storage import shared_storage
 
@@ -146,47 +146,18 @@ class LLMWebsiteInterpreter:
         wait=wait_exponential(multiplier=1, min=4, max=10),
         retry=lambda e: isinstance(e, (APIError, APIConnectionError))
     )
-    def _call_llm_with_retry(self, user_prompt: str, system_prompt: str) -> str:
+    def _call_llm_with_retry(self, user_prompt: str, system_prompt: str, response_format: ResponseFormat = ResponseFormat.TEXT) -> str:
         """Centralized LLM calling with retry logic."""
-        return self.agent.invoke(system_prompt=system_prompt, user_prompt=user_prompt)
+        return self.agent.invoke(system_prompt=system_prompt, user_prompt=user_prompt, response_format=response_format)
 
     def _parse_llm_response(self, response: str) -> List[Dict]:
-        """Parse LLM response handling both JSON and CoT formats."""
+        """
+        Parse LLM response.
+        Note: Response should already be cleaned if response_format=JSON was used in the agent call.
+        """
         try:
-            # Strip markdown code fences if present
-            response = response.strip()
-            if response.startswith("```json"):
-                response = response[7:]  # Remove ```json
-            if response.startswith("```"):
-                response = response[3:]  # Remove ```
-            if response.endswith("```"):
-                response = response[:-3]  # Remove trailing ```
-            response = response.strip()
-
-            sanitized_response = None
-            if response.startswith("["):
-                # JSON format
-                sanitized_response = ''.join(char for char in response if ord(char) >= 32 or char in '\n\r\t')
-            elif "</thinking>" in response:
-                # Chain of thought format
-                trimmed_response = re.search(r"</thinking>(.*)", response, re.DOTALL)
-                if trimmed_response:
-                    # Also strip code fences from extracted content
-                    extracted = trimmed_response.group(1).strip()
-                    if extracted.startswith("```json"):
-                        extracted = extracted[7:]
-                    if extracted.startswith("```"):
-                        extracted = extracted[3:]
-                    if extracted.endswith("```"):
-                        extracted = extracted[:-3]
-                    sanitized_response = ''.join(char for char in extracted.strip() if ord(char) >= 32 or char in '\n\r\t')
-            else:
-                # Unexpected format
-                logger.warning(f"Unexpected response format: {response[:100]}...")
-                return [{
-                    "question": "Analysis could not be processed",
-                    "answer": "Due to technical limitations, the analysis could not be processed."
-                }]
+            # Sanitize response by removing non-printable characters
+            sanitized_response = ''.join(char for char in response if ord(char) >= 32 or char in '\n\r\t')
 
             if sanitized_response:
                 content = json.loads(sanitized_response)
@@ -430,9 +401,10 @@ class LLMWebsiteInterpreter:
                 system_prompt=SYSTEM_PROMPT,
                 user_prompt=REASONING_PROMPT.format(
                     content=payload
-                )
+                ),
+                response_format=ResponseFormat.JSON
             )
-            
+
             return self._parse_llm_response(response)
                 
         except Exception as e:
@@ -488,7 +460,8 @@ class LLMWebsiteInterpreter:
                     system_prompt=SYSTEM_PROMPT,
                     user_prompt=REASONING_PROMPT.format(
                         content=payload
-                    )
+                    ),
+                    response_format=ResponseFormat.JSON
                 )
 
                 site_content = self._parse_llm_response(response)
