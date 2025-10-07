@@ -16,7 +16,7 @@ except ImportError:
     GenerativeModel = None
     VERTEX_AI_AVAILABLE = False
 
-from src.media_lens.common import LOGGER_NAME, AI_PROVIDER, ANTHROPIC_MODEL, VERTEX_AI_PROJECT_ID, VERTEX_AI_LOCATION, VERTEX_AI_MODEL
+from src.media_lens.common import LOGGER_NAME, DEFAULT_AI_PROVIDER, ANTHROPIC_MODEL, VERTEX_AI_PROJECT_ID, VERTEX_AI_LOCATION, VERTEX_AI_MODEL
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -303,7 +303,7 @@ def create_agent_from_env() -> Agent:
     from src.media_lens.common import ensure_secrets_loaded
     loaded_secrets = ensure_secrets_loaded()
     
-    provider = os.getenv("AI_PROVIDER", AI_PROVIDER).lower()
+    provider = os.getenv("AI_PROVIDER", DEFAULT_AI_PROVIDER).lower()
     
     if provider == "claude":
         # Try environment variable first, then fall back to loaded secrets

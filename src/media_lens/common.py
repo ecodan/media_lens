@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Union
 
 import pytz
+from babel.messages.catalog import DEFAULT_HEADER
 
 UTC_REGEX_PATTERN: str = r'\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\+00:00'
 UTC_REGEX_PATTERN_BW_COMPAT: str = r'\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])_(?:[01]\d|2[0-3])[0-5]\d[0-5]\d'
@@ -149,7 +150,7 @@ SITES_DEFAULT: list[str] = [
 SITES: list[str] = SITES_DEFAULT
 
 # AI Provider Configuration
-AI_PROVIDER: str = "vertex"  # Options: "claude", "vertex"
+DEFAULT_AI_PROVIDER: str = "vertex"  # Options: "claude", "vertex"
 
 # Anthropic Configuration
 ANTHROPIC_MODEL: str = "claude-sonnet-4-5"

@@ -109,10 +109,7 @@ else
     export GOOGLE_APPLICATION_CREDENTIALS=""
 fi
 
-# delete old .env file if it exists
-rm -f /app/.env
-
-# Export variables for docker-compose and create .env file
+# Export variables for docker-compose
 export GIT_REPO_URL=${GIT_REPO_URL:-"https://github.com/ecodan/media_lens.git"}
 export GIT_BRANCH=${GIT_BRANCH:-"master"}
 export GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-medialens}
@@ -133,25 +130,9 @@ export PLAYWRIGHT_MODE=${PLAYWRIGHT_MODE:-cloud}
 # Set default FTP SSH key file path (physical file still needs to be available)
 export FTP_SSH_KEY_FILE="/app/keys/siteground"
 
-# Create .env file for docker-compose with cloud-specific settings
-# Secrets are now loaded by the Python application, so we only set configuration values
-{
-    printf "GIT_REPO_URL=\"%s\"\n" "$GIT_REPO_URL"
-    printf "GIT_BRANCH=\"%s\"\n" "$GIT_BRANCH"
-    printf "GOOGLE_CLOUD_PROJECT=\"%s\"\n" "$GOOGLE_CLOUD_PROJECT"
-    printf "GCP_STORAGE_BUCKET=\"%s\"\n" "$GCP_STORAGE_BUCKET"
-    printf "USE_CLOUD_STORAGE=\"%s\"\n" "$USE_CLOUD_STORAGE"
-    printf "USE_WORKLOAD_IDENTITY=\"%s\"\n" "$USE_WORKLOAD_IDENTITY"
-    printf "GOOGLE_APPLICATION_CREDENTIALS=\"%s\"\n" "$GOOGLE_APPLICATION_CREDENTIALS"
-    printf "FTP_SSH_KEY_FILE=\"%s\"\n" "$FTP_SSH_KEY_FILE"
-    printf "AI_PROVIDER=\"%s\"\n" "$AI_PROVIDER"
-    printf "VERTEX_AI_PROJECT_ID=\"%s\"\n" "$GOOGLE_CLOUD_PROJECT"
-    printf "VERTEX_AI_LOCATION=\"%s\"\n" "$VERTEX_AI_LOCATION"
-    printf "VERTEX_AI_MODEL=\"%s\"\n" "$VERTEX_AI_MODEL"
-    printf "LOCAL_STORAGE_PATH=\"%s\"\n" "$LOCAL_STORAGE_PATH"
-    printf "PLAYWRIGHT_MODE=\"%s\"\n" "$PLAYWRIGHT_MODE"
-    printf "USE_SECRET_MANAGER=\"%s\"\n" "true"
-} > /app/.env
+# Secret Manager Configuration
+export USE_SECRET_MANAGER=true
+export SECRET_MANAGER_PROJECT_ID=${SECRET_MANAGER_PROJECT_ID:-${GOOGLE_CLOUD_PROJECT}}
 
 # REPLACED BY GCLOUD SECRET MANAGER
 ## Merge FTP credentials from .env.ftp if it exists
