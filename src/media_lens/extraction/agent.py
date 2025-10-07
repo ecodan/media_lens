@@ -5,16 +5,7 @@ from abc import ABCMeta, abstractmethod
 from enum import Enum
 from typing import Optional
 
-from anthropic import Anthropic, APIStatusError, APIConnectionError
-
-try:
-    import vertexai
-    from vertexai.generative_models import GenerativeModel
-    VERTEX_AI_AVAILABLE = True
-except ImportError:
-    vertexai = None
-    GenerativeModel = None
-    VERTEX_AI_AVAILABLE = False
+import litellm
 
 from src.media_lens.common import LOGGER_NAME, DEFAULT_AI_PROVIDER, ANTHROPIC_MODEL, VERTEX_AI_PROJECT_ID, VERTEX_AI_LOCATION, VERTEX_AI_MODEL
 
@@ -33,11 +24,12 @@ class Agent(metaclass=ABCMeta):
     """
 
     @abstractmethod
-    def _invoke_impl(self, system_prompt: str, user_prompt: str) -> str:
+    def _invoke_impl(self, system_prompt: str, user_prompt: str, response_format: Optional[ResponseFormat] = None) -> str:
         """
         Implementation-specific invoke method.
         :param system_prompt: generated system prompt
         :param user_prompt: specific user prompt
+        :param response_format: expected response format (TEXT or JSON)
         :return: text of response
         """
         pass
@@ -50,8 +42,9 @@ class Agent(metaclass=ABCMeta):
         :param response_format: expected response format (TEXT or JSON)
         :return: text of response, cleaned according to response_format
         """
-        response = self._invoke_impl(system_prompt, user_prompt)
+        response = self._invoke_impl(system_prompt, user_prompt, response_format)
 
+        # Still apply cleaning for JSON responses to handle edge cases and legacy providers
         if response_format == ResponseFormat.JSON:
             return self._clean_json_response(response)
 
@@ -76,6 +69,12 @@ class Agent(metaclass=ABCMeta):
             if match:
                 response = match.group(1).strip()
 
+        # Extract from output tags if present
+        if "<output>" in response and "</output>" in response:
+            match = re.search(r"<output>(.*?)</output>", response, re.DOTALL)
+            if match:
+                response = match.group(1).strip()
+
         # Strip markdown code fences
         if response.startswith("```json"):
             response = response[7:]
@@ -84,6 +83,18 @@ class Agent(metaclass=ABCMeta):
 
         if response.endswith("```"):
             response = response[:-3]
+
+        response = response.strip()
+
+        # If response still doesn't start with { or [, try to extract JSON
+        if not response.startswith('{') and not response.startswith('['):
+            # Look for first occurrence of { or [
+            json_start = min(
+                (response.find('{') if response.find('{') != -1 else len(response)),
+                (response.find('[') if response.find('[') != -1 else len(response))
+            )
+            if json_start < len(response):
+                response = response[json_start:]
 
         return response.strip()
 
@@ -97,94 +108,67 @@ class Agent(metaclass=ABCMeta):
         pass
 
 
-class ClaudeLLMAgent(Agent):
+class LiteLLMAgent(Agent):
     """
-    Anthropic Claude LLM agent.
+    Unified LLM agent using LiteLLM for provider-agnostic access.
+    Supports Anthropic Claude, Google Vertex AI, Ollama, and 100+ other providers.
     """
-    def __init__(self, api_key: str, model: str):
+    def __init__(self, model: str, **kwargs):
+        """
+        Initialize LiteLLM agent.
+
+        :param model: Model identifier in LiteLLM format
+                     Examples:
+                     - "anthropic/claude-sonnet-4-5"
+                     - "vertex_ai/gemini-2.5-flash"
+                     - "ollama/qwen"
+        :param kwargs: Additional provider-specific parameters
+                      For Vertex AI:
+                      - vertex_project: GCP project ID
+                      - vertex_location: GCP region
+        """
         super().__init__()
-        self.client = Anthropic(api_key=api_key)
         self._model = model
+        self._kwargs = kwargs
 
-    def _invoke_impl(self, system_prompt: str, user_prompt: str) -> str:
+    def _invoke_impl(self, system_prompt: str, user_prompt: str, response_format: Optional['ResponseFormat'] = None) -> str:
+        """
+        Invoke LiteLLM completion API.
+
+        :param system_prompt: System prompt
+        :param user_prompt: User prompt
+        :param response_format: Expected response format (TEXT or JSON)
+        :return: Response text
+        """
         try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=4096,
-                temperature=0,
-                system=system_prompt,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": user_prompt
-                    }
-                ]
-            )
-            logger.debug(f"Claude raw response: {response.content}")
-            if len(response.content) == 1:
-                logger.debug(f".. response: {len(response.content[0].text)} bytes / {len(response.content[0].text.split())} words")
-                return response.content[0].text
-            else:
-                return "ERROR - NO DATA"
-        except (APIStatusError, APIConnectionError) as e:
-            logger.error(f"Claude API error: {str(e)}")
-            raise
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
 
-    @property
-    def model(self) -> str:
-        return self._model
+            # Build completion kwargs
+            completion_kwargs = {
+                "model": self._model,
+                "messages": messages,
+                "temperature": 0,
+                "max_tokens": 4096,
+                **self._kwargs
+            }
 
+            # Add native JSON mode if requested
+            if response_format == ResponseFormat.JSON:
+                completion_kwargs["response_format"] = {"type": "json_object"}
 
-class GoogleVertexAIAgent(Agent):
-    """
-    Google Vertex AI LLM agent.
-    """
-    def __init__(self, project_id: str, location: str, model: str):
-        super().__init__()
-        if not VERTEX_AI_AVAILABLE:
-            raise ImportError("google-cloud-aiplatform package is required for Google Vertex AI support")
+            response = litellm.completion(**completion_kwargs)
 
-        vertexai.init(project=project_id, location=location)
-        self.client = GenerativeModel(model)
-        self._model = model
-
-    def _invoke_impl(self, system_prompt: str, user_prompt: str) -> str:
-        try:
-            # Combine system and user prompts for Vertex AI
-            full_prompt = f"{system_prompt}\n\n{user_prompt}"
-
-            response = self.client.generate_content(
-                full_prompt,
-                generation_config={
-                    "temperature": 0.3,
-                    "max_output_tokens": 20000,  # Increased from 4096, still well under 64K limit
-                }
-            )
-
-            # Handle multi-part responses (e.g., when model uses <thinking> tags)
-            # Vertex AI may split response into multiple parts
-            try:
-                # Try to get text directly first
-                response_text = response.text
-            except ValueError:
-                # If that fails, concatenate all text parts manually
-                if hasattr(response, 'candidates') and response.candidates:
-                    candidate = response.candidates[0]
-                    if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
-                        text_parts = [part.text for part in candidate.content.parts if hasattr(part, 'text')]
-                        response_text = ''.join(text_parts)
-                    else:
-                        raise ValueError("Unable to extract text from Vertex AI response")
-                else:
-                    raise ValueError("Unable to extract text from Vertex AI response")
-
-            logger.debug(f"Vertex AI raw response: {response_text}")
+            response_text = response.choices[0].message.content
+            logger.debug(f"LiteLLM raw response: {response_text}")
             logger.debug(f".. response: {len(response_text)} bytes / {len(response_text.split())} words")
 
             return response_text
 
         except Exception as e:
-            logger.error(f"Vertex AI API error: {str(e)}")
+            logger.error(f"LiteLLM API error: {str(e)}")
             raise
 
     @property
@@ -192,119 +176,56 @@ class GoogleVertexAIAgent(Agent):
         return self._model
 
 
-class OllamaAgent(Agent):
-    """
-    Local Ollama LLM agent.
-    """
-
-    def __init__(self, model_version: str):
-        super().__init__()
-        self._model_version = model_version
-        self._base_url: str = "http://localhost:11434"
-        self._api_url = f"{self._base_url}/api/generate"
-
-    def _invoke_impl(self, system_prompt: str, user_prompt: str) -> str:
-        """
-        Send the prompts to Ollama and return the response.
-
-        :param user_prompt: Specific user prompt
-        :param system_prompt: Optional system prompt override. If None, loads from config via prompt manager.
-        :return: Text of response
-        """
-        try:
-            import requests
-            full_prompt = f"{system_prompt}\n\n{user_prompt}"
-            # Prepare the request payload
-            payload = {
-                "model": self._model_version,
-                "prompt": full_prompt,
-                "stream": False
-            }
-            response = requests.post(
-                self._api_url,
-                json=payload,
-                headers={"Content-Type": "application/json"},
-            )
-            response.raise_for_status()
-
-            # Parse the response
-            response_data = response.json()
-
-            logger.debug(f"Ollama raw response: {response_data}")
-
-            if "response" in response_data:
-                response_text = response_data["response"]
-                logger.debug(
-                    f".. response: {len(response_text)} bytes / {len(response_text.split())} words"
-                )
-
-                # Prepare response data for logging
-                response_log_data = {
-                    "content": response_text,
-                    "tokens_used": {
-                        "input": response_data.get("eval_count"),
-                        "output": response_data.get("prompt_eval_count"),
-                    },
-                }
-
-                return response_text
-            else:
-                error_response = "ERROR - NO DATA"
-                return error_response
-        except Exception as e:
-            logger.error(f"Ollama API error: {str(e)}")
-            raise
-
-    @property
-    def model(self) -> str:
-        return self._model_version
-
-
 def create_agent(provider: str = "claude", **kwargs) -> Agent:
     """
     Factory function to create an agent instance based on provider.
-    
-    :param provider: The AI provider ("claude" or "vertex")
+
+    :param provider: The AI provider ("claude", "vertex", or "ollama")
     :param kwargs: Provider-specific configuration parameters
     :return: Agent instance
     """
     if provider.lower() == "claude":
-        api_key = kwargs.get("api_key")
         model = kwargs.get("model", "claude-3-5-haiku-latest")
-        
-        if not api_key:
-            raise ValueError("api_key is required for Claude provider")
-        
-        return ClaudeLLMAgent(api_key=api_key, model=model)
-    
+        # LiteLLM uses ANTHROPIC_API_KEY from environment
+        litellm_model = f"anthropic/{model}"
+        return LiteLLMAgent(model=litellm_model)
+
     elif provider.lower() == "vertex":
         project_id = kwargs.get("project_id")
         location = kwargs.get("location", "us-central1")
         model = kwargs.get("model", "gemini-2.5-flash")
-        
+
         if not project_id:
             raise ValueError("project_id is required for Vertex AI provider")
-        
-        return GoogleVertexAIAgent(project_id=project_id, location=location, model=model)
+
+        litellm_model = f"vertex_ai/{model}"
+        return LiteLLMAgent(
+            model=litellm_model,
+            vertex_project=project_id,
+            vertex_location=location
+        )
+
     elif provider.lower() == "ollama":
-        model = kwargs.get("model")
-        return OllamaAgent(model_version=model)
+        model = kwargs.get("model", "qwen")
+        litellm_model = f"ollama/{model}"
+        return LiteLLMAgent(model=litellm_model)
+
     else:
-        raise ValueError(f"Unsupported provider: {provider}. Supported providers: claude, vertex")
+        raise ValueError(f"Unsupported provider: {provider}. Supported providers: claude, vertex, ollama")
 
 
 def create_agent_from_env() -> Agent:
     """
     Create an agent instance using environment variables and common configuration.
-    
+
     :return: Agent instance configured from environment
     """
     # Ensure secrets are loaded before creating the agent
-    from src.media_lens.common import ensure_secrets_loaded
-    loaded_secrets = ensure_secrets_loaded()
-    
+    from src.media_lens.secret_manager import load_secrets_from_gcp
+    loaded_secrets = load_secrets_from_gcp()
+
     provider = os.getenv("AI_PROVIDER", DEFAULT_AI_PROVIDER).lower()
-    
+
     if provider == "claude":
         # Try environment variable first, then fall back to loaded secrets
         api_key = os.getenv("ANTHROPIC_API_KEY") or loaded_secrets.get("ANTHROPIC_API_KEY")
@@ -312,22 +233,26 @@ def create_agent_from_env() -> Agent:
             logger.error(f"ANTHROPIC_API_KEY not found in environment or loaded secrets")
             logger.error(f"Environment keys: {list(k for k in os.environ.keys() if 'ANTHROPIC' in k)}")
             logger.error(f"Loaded secrets: {list(loaded_secrets.keys())}")
-            logger.error(f"ANTHROPIC_API_KEY from secrets: {loaded_secrets.get('ANTHROPIC_API_KEY') is not None}")
             raise ValueError("ANTHROPIC_API_KEY environment variable is required for Claude provider")
-        
+
+        # Set API key for LiteLLM
+        os.environ["ANTHROPIC_API_KEY"] = api_key
+
         model = os.getenv("ANTHROPIC_MODEL", ANTHROPIC_MODEL)
-        return create_agent(provider="claude", api_key=api_key, model=model)
-    
+        return create_agent(provider="claude", model=model)
+
     elif provider == "vertex":
         project_id = os.getenv("VERTEX_AI_PROJECT_ID", VERTEX_AI_PROJECT_ID)
         if not project_id:
             raise ValueError("VERTEX_AI_PROJECT_ID environment variable is required for Vertex AI provider")
-        
+
         location = os.getenv("VERTEX_AI_LOCATION", VERTEX_AI_LOCATION)
         model = os.getenv("VERTEX_AI_MODEL", VERTEX_AI_MODEL)
         return create_agent(provider="vertex", project_id=project_id, location=location, model=model)
+
     elif provider == "ollama":
-        model = os.getenv("OLLAMA_MODEL_VERSION")
+        model = os.getenv("OLLAMA_MODEL_VERSION", "qwen")
         return create_agent(provider="ollama", model=model)
+
     else:
-        return create_agent(provider=provider)  # Let create_agent handle the error
+        raise ValueError(f"Unsupported provider: {provider}. Supported providers: claude, vertex, ollama")

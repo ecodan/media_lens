@@ -13,7 +13,7 @@ from anthropic import APIError, APIConnectionError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL, UTC_REGEX_PATTERN_BW_COMPAT, get_utc_datetime_from_timestamp, get_week_key, SITES, create_logger
-from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent, ResponseFormat
+from src.media_lens.extraction.agent import Agent, create_agent_from_env, ResponseFormat
 from src.media_lens.job_dir import JobDir
 from src.media_lens.storage import shared_storage
 

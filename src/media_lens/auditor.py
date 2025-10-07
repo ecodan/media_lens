@@ -15,7 +15,7 @@ from src.media_lens.common import (
     get_utc_datetime_from_timestamp,
     ANTHROPIC_MODEL
 )
-from src.media_lens.extraction.agent import ClaudeLLMAgent
+from src.media_lens.extraction.agent import create_agent_from_env
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.storage import shared_storage
 
@@ -302,12 +302,11 @@ async def _repair_extraction(needs_extraction: List[tuple], audit_data: dict) ->
         dirs_to_process[timestamp_dir].append(site)
     
     # Create extractor with API key
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        logger.error("ANTHROPIC_API_KEY not found - cannot run extraction repair")
+    try:
+        agent = create_agent_from_env()
+    except Exception as e:
+        logger.error(f"Failed to create agent - cannot run extraction repair: {e}")
         return
-        
-    agent = ClaudeLLMAgent(api_key=api_key, model=ANTHROPIC_MODEL)
     
     for timestamp_dir, sites in dirs_to_process.items():
         try:

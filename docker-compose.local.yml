@@ -37,6 +37,9 @@ services:
       - ./working:/app/working
       - ./logs:/app/logs
       - ./keys:/app/keys:ro
+      # Mount source code for live updates (no rebuild needed for code changes)
+      - ./src:/app/src
+      - ./config:/app/config
       # Remove VM-specific credential mounts
     depends_on:
       storage:

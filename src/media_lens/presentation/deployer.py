@@ -162,8 +162,8 @@ def upload_file(local_file: Path, target_filename: str = None):
     """
 
     # Get FTP credentials from environment or loaded secrets
-    from src.media_lens.common import ensure_secrets_loaded
-    loaded_secrets = ensure_secrets_loaded()
+    from src.media_lens.secret_manager import load_secrets_from_gcp
+    loaded_secrets = load_secrets_from_gcp()
     
     hostname = os.getenv("FTP_HOSTNAME") or loaded_secrets.get("FTP_HOSTNAME")
     ip_fallback = os.getenv("FTP_IP_FALLBACK") or loaded_secrets.get("FTP_IP_FALLBACK")

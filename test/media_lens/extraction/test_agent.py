@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
+from src.media_lens.extraction.agent import Agent, LiteLLMAgent, ResponseFormat
 
 
 def test_agent_abstract_class():
@@ -10,70 +10,204 @@ def test_agent_abstract_class():
         Agent()  # Should fail because Agent is abstract
 
 
-@patch('src.media_lens.extraction.agent.Anthropic')
-def test_claude_llm_agent_init(mock_anthropic):
-    """Test ClaudeLLMAgent initialization."""
-    # Create a mock Anthropic client
-    mock_client = MagicMock()
-    mock_anthropic.return_value = mock_client
-    
-    # Create agent
-    agent = ClaudeLLMAgent(api_key="test_key", model="claude-3-opus-20240229")
-    
-    # Verify initialization
-    assert agent.model == "claude-3-opus-20240229"
-    assert agent.client == mock_client
-    mock_anthropic.assert_called_once_with(api_key="test_key")
+@patch('src.media_lens.extraction.agent.litellm.completion')
+def test_litellm_agent_init(mock_completion):
+    """Test LiteLLMAgent initialization."""
+    agent = LiteLLMAgent(model="anthropic/claude-3-opus-20240229")
+
+    assert agent.model == "anthropic/claude-3-opus-20240229"
+    assert agent._model == "anthropic/claude-3-opus-20240229"
 
 
-@patch('src.media_lens.extraction.agent.Anthropic')
-def test_claude_llm_agent_invoke(mock_anthropic):
-    """Test ClaudeLLMAgent invoke method."""
-    # Create a mock Anthropic client with response
-    mock_client = MagicMock()
+@patch('src.media_lens.extraction.agent.litellm.completion')
+def test_litellm_agent_invoke(mock_completion):
+    """Test LiteLLMAgent invoke method."""
+    # Create mock response
     mock_message = MagicMock()
-    mock_message.content = [MagicMock(text="Test response")]
-    mock_client.messages.create.return_value = mock_message
-    mock_anthropic.return_value = mock_client
-    
+    mock_message.content = "Test response"
+    mock_choice = MagicMock()
+    mock_choice.message = mock_message
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+    mock_completion.return_value = mock_response
+
     # Create agent
-    agent = ClaudeLLMAgent(api_key="test_key", model="claude-3-opus-20240229")
-    
+    agent = LiteLLMAgent(model="anthropic/claude-3-opus-20240229")
+
     # Call invoke
     response = agent.invoke(
         system_prompt="You are a helpful assistant",
         user_prompt="Tell me about testing"
     )
-    
-    # Verify calls and response
-    mock_client.messages.create.assert_called_once()
-    create_args = mock_client.messages.create.call_args[1]
-    assert create_args["model"] == "claude-3-opus-20240229"
-    assert create_args["system"] == "You are a helpful assistant"
-    assert create_args["max_tokens"] < 5000  # Should have a reasonable token limit
-    assert "Tell me about testing" in create_args["messages"][0]["content"]
+
+    # Verify completion was called correctly
+    mock_completion.assert_called_once()
+    call_kwargs = mock_completion.call_args[1]
+    assert call_kwargs["model"] == "anthropic/claude-3-opus-20240229"
+    assert call_kwargs["temperature"] == 0
+    assert call_kwargs["max_tokens"] == 4096
+
+    # Verify messages structure
+    messages = call_kwargs["messages"]
+    assert len(messages) == 2
+    assert messages[0]["role"] == "system"
+    assert messages[0]["content"] == "You are a helpful assistant"
+    assert messages[1]["role"] == "user"
+    assert messages[1]["content"] == "Tell me about testing"
+
     assert response == "Test response"
 
 
-@patch('src.media_lens.extraction.agent.Anthropic')
-def test_claude_llm_agent_default_max_tokens(mock_anthropic):
-    """Test ClaudeLLMAgent with default max_tokens parameter."""
-    # Create a mock Anthropic client
-    mock_client = MagicMock()
+@patch('src.media_lens.extraction.agent.litellm.completion')
+def test_litellm_agent_with_vertex_params(mock_completion):
+    """Test LiteLLMAgent with Vertex AI parameters."""
+    # Create mock response
     mock_message = MagicMock()
-    mock_message.content = [MagicMock(text="Test response")]
-    mock_client.messages.create.return_value = mock_message
-    mock_anthropic.return_value = mock_client
-    
-    # Create agent with default parameters
-    agent = ClaudeLLMAgent(api_key="test_key", model="claude-3-opus-20240229")
-    
-    # Call invoke
-    agent.invoke(
-        system_prompt="You are a helpful assistant",
-        user_prompt="Tell me about testing"
+    mock_message.content = "Vertex response"
+    mock_choice = MagicMock()
+    mock_choice.message = mock_message
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+    mock_completion.return_value = mock_response
+
+    # Create agent with Vertex parameters
+    agent = LiteLLMAgent(
+        model="vertex_ai/gemini-2.5-flash",
+        vertex_project="test-project",
+        vertex_location="us-central1"
     )
-    
-    # Verify default max_tokens was used
-    create_args = mock_client.messages.create.call_args[1]
-    assert create_args["max_tokens"] == 4096
+
+    # Call invoke
+    response = agent.invoke(
+        system_prompt="You are a helpful assistant",
+        user_prompt="Test prompt"
+    )
+
+    # Verify Vertex parameters were passed through
+    call_kwargs = mock_completion.call_args[1]
+    assert call_kwargs["vertex_project"] == "test-project"
+    assert call_kwargs["vertex_location"] == "us-central1"
+    assert response == "Vertex response"
+
+
+@patch('src.media_lens.extraction.agent.litellm.completion')
+def test_litellm_agent_json_response_format(mock_completion):
+    """Test LiteLLMAgent with JSON response format cleaning."""
+    # Create mock response with markdown fences
+    mock_message = MagicMock()
+    mock_message.content = '```json\n{"key": "value"}\n```'
+    mock_choice = MagicMock()
+    mock_choice.message = mock_message
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+    mock_completion.return_value = mock_response
+
+    agent = LiteLLMAgent(model="anthropic/claude-3-5-haiku-latest")
+
+    # Call invoke with JSON format
+    response = agent.invoke(
+        system_prompt="System",
+        user_prompt="User",
+        response_format=ResponseFormat.JSON
+    )
+
+    # Verify response_format parameter was passed to completion
+    call_kwargs = mock_completion.call_args[1]
+    assert call_kwargs["response_format"] == {"type": "json_object"}
+
+    # Verify JSON cleaning still works (for legacy/edge cases)
+    assert response == '{"key": "value"}'
+    assert "```" not in response
+
+
+@patch('src.media_lens.extraction.agent.litellm.completion')
+def test_litellm_agent_json_with_thinking_tags(mock_completion):
+    """Test JSON cleaning with thinking tags."""
+    # Create mock response with thinking tags
+    mock_message = MagicMock()
+    mock_message.content = '<thinking>Analysis here</thinking>\n```json\n{"result": "data"}\n```'
+    mock_choice = MagicMock()
+    mock_choice.message = mock_message
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+    mock_completion.return_value = mock_response
+
+    agent = LiteLLMAgent(model="anthropic/claude-3-5-haiku-latest")
+
+    response = agent.invoke(
+        system_prompt="System",
+        user_prompt="User",
+        response_format=ResponseFormat.JSON
+    )
+
+    # Verify thinking tags and fences are removed
+    assert response == '{"result": "data"}'
+    assert "thinking" not in response
+    assert "```" not in response
+
+
+@patch('src.media_lens.extraction.agent.litellm.completion')
+def test_litellm_agent_error_handling(mock_completion):
+    """Test LiteLLMAgent error handling."""
+    # Mock an exception
+    mock_completion.side_effect = Exception("API Error")
+
+    agent = LiteLLMAgent(model="anthropic/claude-3-5-haiku-latest")
+
+    # Verify exception is raised
+    with pytest.raises(Exception, match="API Error"):
+        agent.invoke(
+            system_prompt="System",
+            user_prompt="User"
+        )
+
+
+@patch('src.media_lens.extraction.agent.litellm.completion')
+def test_litellm_agent_json_with_output_tags(mock_completion):
+    """Test JSON cleaning with output tags."""
+    # Create mock response with output tags
+    mock_message = MagicMock()
+    mock_message.content = '<thinking>Analysis here</thinking>\n<output>```json\n{"result": "data"}```</output>'
+    mock_choice = MagicMock()
+    mock_choice.message = mock_message
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+    mock_completion.return_value = mock_response
+
+    agent = LiteLLMAgent(model="anthropic/claude-3-5-haiku-latest")
+
+    response = agent.invoke(
+        system_prompt="System",
+        user_prompt="User",
+        response_format=ResponseFormat.JSON
+    )
+
+    # Verify output tags and fences are removed
+    assert response == '{"result": "data"}'
+    assert "output" not in response
+    assert "```" not in response
+
+
+@patch('src.media_lens.extraction.agent.litellm.completion')
+def test_litellm_agent_json_with_preamble(mock_completion):
+    """Test JSON cleaning with text preamble before JSON."""
+    # Create mock response with text before JSON
+    mock_message = MagicMock()
+    mock_message.content = 'analysis\nHere is the result:\n{"result": "data"}'
+    mock_choice = MagicMock()
+    mock_choice.message = mock_message
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+    mock_completion.return_value = mock_response
+
+    agent = LiteLLMAgent(model="anthropic/claude-3-5-haiku-latest")
+
+    response = agent.invoke(
+        system_prompt="System",
+        user_prompt="User",
+        response_format=ResponseFormat.JSON
+    )
+
+    # Verify preamble is removed and only JSON remains
+    assert response == '{"result": "data"}'
+    assert "analysis" not in response

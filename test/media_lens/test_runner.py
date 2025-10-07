@@ -48,9 +48,9 @@ async def test_extract(mock_extractor_class, temp_dir, mock_env_vars):
 
 
 @pytest.mark.asyncio
-@patch('src.media_lens.runner.ClaudeLLMAgent')
+@patch('src.media_lens.runner.create_agent_from_env')
 @patch('src.media_lens.runner.LLMWebsiteInterpreter')
-async def test_interpret(mock_interpreter_class, mock_agent_class, temp_dir, mock_env_vars):
+async def test_interpret(mock_interpreter_class, mock_create_agent, temp_dir, mock_env_vars):
     """Test interpret function."""
     # Mock the interpreter
     mock_interpreter = MagicMock()

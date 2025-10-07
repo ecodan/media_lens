@@ -16,7 +16,7 @@ from anthropic import APIError, APIConnectionError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL
-from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent, ResponseFormat
+from src.media_lens.extraction.agent import Agent, create_agent_from_env, ResponseFormat
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -235,10 +235,7 @@ class LLMHeadlineExtractor(HeadlineExtractor):
 ##############################
 # TEST
 def main(working_dir: Path):
-    agent: ClaudeLLMAgent = ClaudeLLMAgent(
-        api_key=os.getenv("ANTHROPIC_API_KEY"),
-        model=ANTHROPIC_MODEL
-    )
+    agent = create_agent_from_env()
     extractor: LLMHeadlineExtractor = LLMHeadlineExtractor(
         agent=agent
     )

@@ -80,7 +80,37 @@ See `DOCKER_README.md` for detailed configuration differences.
    docker compose --profile cloud up --build
    ```
 
-4. **Test the application**
+4. **Development Workflow (Fast Iteration)**
+
+   The local configuration mounts your source code as volumes, enabling fast development without rebuilds:
+
+   **For Python code changes** (no rebuild needed):
+   ```bash
+   # Edit your Python files in src/
+   # Then simply restart the container
+   docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local restart app
+
+   # Container restarts in ~2 seconds with your new code
+   ```
+
+   **For dependency changes** (rebuild required):
+   ```bash
+   # After modifying requirements.txt
+   docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local up --build
+   ```
+
+   **When to rebuild vs restart:**
+   | Change Type | Action | Time | Command |
+   |-------------|--------|------|---------|
+   | Python code in `src/` | Restart | ~2s | `docker compose ... restart app` |
+   | Config files in `config/` | Restart | ~2s | `docker compose ... restart app` |
+   | `requirements.txt` | Rebuild | ~60s | `docker compose ... up --build` |
+   | Dockerfile changes | Rebuild | ~60s | `docker compose ... up --build` |
+   | System dependencies | Rebuild | ~60s | `docker compose ... up --build` |
+
+   **Note**: The cloud/production configuration does NOT mount source code as volumes, ensuring the container matches exactly what will be deployed.
+
+5. **Test the application**
    The application runs a web server on port 8080. You can trigger operations using HTTP API calls:
    
    ```bash
@@ -104,20 +134,20 @@ See `DOCKER_README.md` for detailed configuration differences.
    curl http://localhost:8080/status
    ```
 
-5. **View the results**
+6. **View the results**
    Output files will be stored in the `working` directory which is mounted as a volume in the Docker container.
    ```bash
    # Check the output directory
-   docker exec -it media-lens ls -la /app/working
-   
+   docker exec -it media-lens-local ls -la /app/working
+
    # View container logs
-   docker logs media-lens
-   
+   docker logs media-lens-local
+
    # Access the container shell if needed
-   docker exec -it media-lens /bin/bash
+   docker exec -it media-lens-local /bin/bash
    ```
 
-6. **Stop the container**
+7. **Stop the container**
    ```bash
    # For local Mac ARM64
    docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local down

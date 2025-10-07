@@ -219,7 +219,6 @@ def create_logger(name: str, logfile_path: Union[str, Path] = None) -> logging.L
             logger.addHandler(handler)
     return logger
 
-
 def ensure_secrets_loaded():
     """Ensure that secrets are loaded from Google Cloud Secret Manager if available.
     

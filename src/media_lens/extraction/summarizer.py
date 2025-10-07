@@ -6,7 +6,7 @@ from typing import List, Union
 import dotenv
 
 from src.media_lens.common import LOGGER_NAME, ANTHROPIC_MODEL, create_logger
-from src.media_lens.extraction.agent import Agent, ClaudeLLMAgent
+from src.media_lens.extraction.agent import Agent, create_agent_from_env
 from src.media_lens.storage_adapter import StorageAdapter
 from src.media_lens.storage import shared_storage
 
@@ -122,7 +122,8 @@ class DailySummarizer:
 
 
 def main(job_dir: Path):
-    summarizer: DailySummarizer = DailySummarizer(agent=ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL))
+    agent = create_agent_from_env()
+    summarizer: DailySummarizer = DailySummarizer(agent=agent)
     summarizer.generate_summary_from_job_dir(job_dir)
 
 if __name__ == "__main__":

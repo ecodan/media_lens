@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 import dotenv
 
 from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL
-from src.media_lens.extraction.agent import ClaudeLLMAgent, Agent
+from src.media_lens.extraction.agent import Agent, create_agent_from_env
 from src.media_lens.extraction.headliner import LLMHeadlineExtractor
 from src.media_lens.extraction.collector import ArticleCollector
 from src.media_lens.job_dir import JobDir
@@ -123,7 +123,7 @@ class ContextExtractor:
 
 ################
 async def main():
-    agent: Agent = ClaudeLLMAgent(api_key=os.getenv("ANTHROPIC_API_KEY"), model=ANTHROPIC_MODEL)
+    agent = create_agent_from_env()
     extractor: ContextExtractor = ContextExtractor(
         agent=agent
     )
