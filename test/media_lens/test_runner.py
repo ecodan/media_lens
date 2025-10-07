@@ -50,38 +50,44 @@ async def test_extract(mock_extractor_class, temp_dir, mock_env_vars):
 @pytest.mark.asyncio
 @patch('src.media_lens.runner.create_agent_from_env')
 @patch('src.media_lens.runner.LLMWebsiteInterpreter')
-async def test_interpret(mock_interpreter_class, mock_create_agent, temp_dir, mock_env_vars):
+@patch('src.media_lens.runner.storage')
+async def test_interpret(mock_storage, mock_interpreter_class, mock_create_agent, temp_dir, mock_env_vars):
     """Test interpret function."""
     # Mock the interpreter
     mock_interpreter = MagicMock()
-    mock_interpreter.interpret_from_files.return_value = [
+    mock_interpreter.interpret_files.return_value = [
         {"question": "Test Question", "answer": "Test Answer"}
     ]
     mock_interpreter_class.return_value = mock_interpreter
-    
-    # Create job directory and test files
-    job_dir = temp_dir / "2025-02-26T15:30:00+00:00"
-    job_dir.mkdir(exist_ok=True)
-    
+
+    # Mock storage operations
+    job_dir = "jobs/2025/02/26/153000"
     sites = ["www.test1.com", "www.test2.com"]
-    for site in sites:
-        # Create article files
-        for i in range(3):
-            article_path = job_dir / f"{site}-clean-article-{i}.json"
-            with open(article_path, "w") as f:
-                f.write('{"title": "Test Article", "text": "Test content"}')
-    
-    # Call interpret - convert Path to string since function expects string
-    await interpret(str(job_dir), sites)
-    
-    # Verify results
-    for site in sites:
-        # Check that interpreted file was created
-        interpreted_path = job_dir / f"{site}-interpreted.json"
-        assert interpreted_path.exists()
-        
-        # Verify the interpreter was called once per site
-        assert mock_interpreter.interpret_from_files.call_count == len(sites)
+
+    def mock_get_files_by_pattern(directory, pattern):
+        # Return different files for each site
+        site = pattern.split('-clean-article-')[0]
+        return [f"{directory}/{site}-clean-article-0.json", f"{directory}/{site}-clean-article-1.json"]
+
+    def mock_get_absolute_path(file_path):
+        return f"/abs/path/{file_path}"
+
+    mock_storage.create_directory = MagicMock()
+    mock_storage.get_files_by_pattern = mock_get_files_by_pattern
+    mock_storage.get_absolute_path = mock_get_absolute_path
+    mock_storage.directory_manager.parse_job_timestamp.return_value = "2025/02/26/153000"
+    mock_storage.get_intermediate_directory.return_value = "intermediate/2025/02/26/153000"
+    mock_storage.write_json = MagicMock()
+
+    # Call interpret
+    with patch('src.media_lens.runner.time.sleep'):  # Skip sleep in tests
+        await interpret(job_dir, sites)
+
+    # Verify the interpreter was called once per site
+    assert mock_interpreter.interpret_files.call_count == len(sites)
+
+    # Verify write_json was called for each site
+    assert mock_storage.write_json.call_count == len(sites)
 
 
 @pytest.mark.asyncio
@@ -209,14 +215,14 @@ async def test_summarize_all(mock_storage, mock_summarizer_class, temp_dir, mock
     
     # Call summarize_all without force
     await summarize_all(force=False)
-    
+
     # Verify summarizer was called for directories without summary (should be 2 out of 3)
     assert mock_summarizer.generate_summary_from_job_dir.call_count == 2
-    
+
     # Call summarize_all with force=True
     mock_summarizer.generate_summary_from_job_dir.reset_mock()
-    await summarize_all(temp_dir, force=True)
-    
+    await summarize_all(force=True)
+
     # Verify summarizer was called for all directories when forced
     assert mock_summarizer.generate_summary_from_job_dir.call_count == 3
 
@@ -487,23 +493,28 @@ def test_run_command_with_force_flags(mock_asyncio_run, mock_run, capsys):
 
 
 @patch('src.media_lens.runner.format_output')
-@patch('src.media_lens.runner.deploy_output')  
-@patch('src.media_lens.runner.run')
-async def test_run_function_with_force_flags(mock_run_impl, mock_deploy, mock_format):
+@patch('src.media_lens.runner.deploy_output')
+async def test_run_function_with_force_flags(mock_deploy, mock_format):
     """Test run function passes force flags to format and deploy."""
     from src.media_lens.runner import run
-    
-    # Mock the format and deploy functions
+
+    # Mock the format and deploy functions as AsyncMocks
     mock_format.return_value = None
     mock_deploy.return_value = None
-    
+
     # Call run with force flags
     result = await run(
         steps=[Steps.FORMAT, Steps.DEPLOY],
         force_full_format=True,
         force_full_deploy=True
     )
-    
+
     # Verify force flags were passed to format and deploy
-    mock_format.assert_called_once_with(force_full=True)
-    mock_deploy.assert_called_once_with(force_full=True)
+    # Note: sites parameter is passed with default value
+    mock_format.assert_called_once()
+    call_kwargs = mock_format.call_args.kwargs
+    assert call_kwargs['force_full'] == True
+
+    mock_deploy.assert_called_once()
+    call_kwargs = mock_deploy.call_args.kwargs
+    assert call_kwargs['force_full'] == True

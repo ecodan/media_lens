@@ -155,9 +155,9 @@ class TestRunPipeline:
         
         steps = [Steps.HARVEST, Steps.EXTRACT]
         run_task_async(steps, run_id)
-        
-        # Verify run was called correctly
-        mock_run.assert_called_once_with(steps=steps, run_id=run_id)
+
+        # Verify run was called correctly (with sites=None)
+        mock_run.assert_called_once_with(steps=steps, sites=None, run_id=run_id)
         
         # Verify active_runs was updated
         assert active_runs[run_id]['status'] == 'success'

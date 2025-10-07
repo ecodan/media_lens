@@ -12,20 +12,38 @@ async def test_get_page_content_desktop():
         mock_context = AsyncMock()
         mock_page = AsyncMock()
         mock_browser = AsyncMock()
-        mock_playwright.return_value.__aenter__.return_value.chromium.launch.return_value = mock_browser
-        mock_browser.new_context.return_value = mock_context
-        mock_context.new_page.return_value = mock_page
-        mock_page.content.return_value = "<html><body>Test Content</body></html>"
-        
+
+        # Create a proper async mock for async_playwright()
+        mock_pw_instance = AsyncMock()
+        mock_pw_instance.chromium.launch = AsyncMock(return_value=mock_browser)
+        mock_pw_instance.stop = AsyncMock()
+
+        # Mock the async_playwright() call chain
+        mock_playwright.return_value.start = AsyncMock(return_value=mock_pw_instance)
+
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+        mock_browser.is_connected = MagicMock(return_value=True)
+        mock_browser.close = AsyncMock()
+
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_context.close = AsyncMock()
+
+        mock_page.content = AsyncMock(return_value="<html><body>Test Content</body></html>")
+        mock_page.goto = AsyncMock()
+        mock_page.set_extra_http_headers = AsyncMock()
+        mock_page.is_closed = MagicMock(return_value=False)
+        mock_page.close = AsyncMock()
+
         # Call function with desktop browser type
-        result = await WebpageScraper.get_page_content(
-            "https://example.com", 
-            WebpageScraper.BrowserType.DESKTOP
-        )
-        
+        with patch('src.media_lens.collection.scraper.stealth_async', new_callable=AsyncMock):
+            result = await WebpageScraper.get_page_content(
+                "https://example.com",
+                WebpageScraper.BrowserType.DESKTOP
+            )
+
         # Check results
         assert result == "<html><body>Test Content</body></html>"
-        
+
         # Verify desktop configuration was used
         mock_browser.new_context.assert_called_once()
         context_args = mock_browser.new_context.call_args[1]
@@ -42,20 +60,38 @@ async def test_get_page_content_mobile():
         mock_context = AsyncMock()
         mock_page = AsyncMock()
         mock_browser = AsyncMock()
-        mock_playwright.return_value.__aenter__.return_value.chromium.launch.return_value = mock_browser
-        mock_browser.new_context.return_value = mock_context
-        mock_context.new_page.return_value = mock_page
-        mock_page.content.return_value = "<html><body>Mobile Test Content</body></html>"
-        
+
+        # Create a proper async mock for async_playwright()
+        mock_pw_instance = AsyncMock()
+        mock_pw_instance.chromium.launch = AsyncMock(return_value=mock_browser)
+        mock_pw_instance.stop = AsyncMock()
+
+        # Mock the async_playwright() call chain
+        mock_playwright.return_value.start = AsyncMock(return_value=mock_pw_instance)
+
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+        mock_browser.is_connected = MagicMock(return_value=True)
+        mock_browser.close = AsyncMock()
+
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_context.close = AsyncMock()
+
+        mock_page.content = AsyncMock(return_value="<html><body>Mobile Test Content</body></html>")
+        mock_page.goto = AsyncMock()
+        mock_page.set_extra_http_headers = AsyncMock()
+        mock_page.is_closed = MagicMock(return_value=False)
+        mock_page.close = AsyncMock()
+
         # Call function with mobile browser type
-        result = await WebpageScraper.get_page_content(
-            "https://example.com", 
-            WebpageScraper.BrowserType.MOBILE
-        )
-        
+        with patch('src.media_lens.collection.scraper.stealth_async', new_callable=AsyncMock):
+            result = await WebpageScraper.get_page_content(
+                "https://example.com",
+                WebpageScraper.BrowserType.MOBILE
+            )
+
         # Check results
         assert result == "<html><body>Mobile Test Content</body></html>"
-        
+
         # Verify mobile configuration was used
         mock_browser.new_context.assert_called_once()
         context_args = mock_browser.new_context.call_args[1]
@@ -71,26 +107,55 @@ async def test_get_page_content_error_handling():
     with patch('src.media_lens.collection.scraper.async_playwright') as mock_playwright:
         # Make the browser.new_context raise an exception
         mock_browser = AsyncMock()
-        mock_playwright.return_value.__aenter__.return_value.chromium.launch.return_value = mock_browser
-        mock_browser.new_context.side_effect = Exception("Network error")
-        
-        # Check that the exception is propagated
-        with pytest.raises(Exception, match="Network error"):
-            await WebpageScraper.get_page_content(
-                "https://example.com", 
+
+        # Create a proper async mock for async_playwright()
+        mock_pw_instance = AsyncMock()
+        mock_pw_instance.chromium.launch = AsyncMock(return_value=mock_browser)
+        mock_pw_instance.stop = AsyncMock()
+
+        # Mock the async_playwright() call chain
+        mock_playwright.return_value.start = AsyncMock(return_value=mock_pw_instance)
+
+        mock_browser.new_context = AsyncMock(side_effect=Exception("Network error"))
+        mock_browser.is_connected = MagicMock(return_value=True)
+        mock_browser.close = AsyncMock()
+
+        # The function catches exceptions and returns None
+        with patch('src.media_lens.collection.scraper.stealth_async', new_callable=AsyncMock):
+            result = await WebpageScraper.get_page_content(
+                "https://example.com",
                 WebpageScraper.BrowserType.DESKTOP
             )
+
+        # Verify that the error was caught and None was returned
+        assert result is None
 
 
 @pytest.mark.asyncio
 async def test_unknown_browser_type():
     """Test handling of invalid browser type."""
-    # Create an invalid browser type
-    invalid_browser_type = MagicMock()
-    
-    # Check that ValueError is raised
-    with pytest.raises(ValueError, match="Unknown browser type"):
-        await WebpageScraper.get_page_content(
-            "https://example.com", 
-            invalid_browser_type
-        )
+    with patch('src.media_lens.collection.scraper.async_playwright') as mock_playwright:
+        # Create an invalid browser type
+        invalid_browser_type = MagicMock()
+
+        # Create a proper async mock for async_playwright()
+        mock_browser = AsyncMock()
+        mock_pw_instance = AsyncMock()
+        mock_pw_instance.chromium.launch = AsyncMock(return_value=mock_browser)
+        mock_pw_instance.stop = AsyncMock()
+
+        # Mock the async_playwright() call chain
+        mock_playwright.return_value.start = AsyncMock(return_value=mock_pw_instance)
+
+        mock_browser.is_connected = MagicMock(return_value=True)
+        mock_browser.close = AsyncMock()
+
+        # The function catches exceptions and returns None
+        with patch('src.media_lens.collection.scraper.stealth_async', new_callable=AsyncMock):
+            result = await WebpageScraper.get_page_content(
+                "https://example.com",
+                invalid_browser_type
+            )
+
+        # Verify that the error was caught and None was returned
+        assert result is None

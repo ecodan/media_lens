@@ -142,7 +142,7 @@ def sample_job_directory(temp_dir, test_storage_adapter):
 def mock_llm_agent():
     """Mock LLM agent that returns predefined responses."""
     class MockAgent:
-        def invoke(self, system_prompt, user_prompt):
+        def invoke(self, system_prompt, user_prompt, response_format=None):
             """Return a mock response."""
             return """
             [
@@ -156,5 +156,5 @@ def mock_llm_agent():
                 }
             ]
             """
-    
+
     return MockAgent()

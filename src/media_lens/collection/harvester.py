@@ -1,9 +1,11 @@
 import asyncio
+import gc
 import logging
 import traceback
 from pathlib import Path
 
 import dotenv
+import psutil
 
 from src.media_lens.collection.cleaning import WebpageCleaner, cleaner_for_site
 from src.media_lens.collection.scraper import WebpageScraper
@@ -129,18 +131,36 @@ class Harvester(object):
                 # Use the storage adapter to read content
                 content_path = f"{job_dir}/{site}.html"
                 if self.storage.file_exists(content_path):
-                    content: str = self.storage.read_text(content_path)
-                    await self._clean_site(job_dir, content, site)
-                    successful_cleanings += 1
+                    try:
+                        # Get process info and memory before cleaning
+                        process = psutil.Process()
+                        mem_before_mb = process.memory_info().rss / 1024 / 1024
+
+                        content: str = self.storage.read_text(content_path)
+                        await self._clean_site(job_dir, content, site)
+                        successful_cleanings += 1
+
+                        # Force garbage collection to free memory after each site
+                        del content
+                        gc.collect()
+
+                        # Measure memory after cleanup
+                        mem_after_mb = process.memory_info().rss / 1024 / 1024
+                        mem_reclaimed_mb = mem_before_mb - mem_after_mb
+
+                        logger.info(f"Memory for {site}: {mem_before_mb:.1f}MB → {mem_after_mb:.1f}MB (reclaimed: {mem_reclaimed_mb:+.1f}MB)")
+                    except Exception as e:
+                        logger.error(f"Failed to clean {site}: {e}")
+                        traceback.print_exc()
                 else:
                     logger.warning(f"Scraped content file not found for {site} in {job_dir}")
             except Exception as e:
-                logger.error(f"Failed to clean {site}: {e}")
+                logger.error(f"Failed to process {site}: {e}")
                 traceback.print_exc()
 
         logger.info(f"Successfully cleaned {successful_cleanings} out of {len(sites)} sites")
 
-    async def _clean_site(self, directory_path, content, site):
+    async def _clean_site(self, directory_path: str, content: str, site: str) -> None:
         """
         Clean the content of the site and save it to the directory.
         :param directory_path: the directory path to save the cleaned content
@@ -158,6 +178,10 @@ class Harvester(object):
         # Use the storage adapter to write cleaned content
         clean_file_path = f"{directory_path}/{site}-clean.html"
         self.storage.write_text(clean_file_path, clean_content, encoding="utf-8")
+
+        # Clean up references to allow garbage collection
+        del cleaner
+        del clean_content
 
 
 ####################

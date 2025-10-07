@@ -128,7 +128,7 @@ See `DOCKER_README.md` for detailed configuration differences.
    # Run a full pipeline
    curl -X POST http://localhost:8080/run \
      -H "Content-Type: application/json" \
-     -d '{"steps": ["harvest", "extract", "interpret", "format"]}'
+     -d '{"steps": ["harvest", "extract", "interpret_weekly", "format"]}'
    
    # Check run status
    curl http://localhost:8080/status
