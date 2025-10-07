@@ -1,9 +1,10 @@
 import datetime
-import os
 import json
 import logging
+import os
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union, BinaryIO
+from typing import List, Any, Optional, Union
+
 from google.auth import default
 
 # Import cloud storage conditionally
@@ -13,6 +14,7 @@ if os.getenv('USE_CLOUD_STORAGE', 'false').lower() == 'true':
 from src.media_lens.common import LOGGER_NAME
 
 logger = logging.getLogger(LOGGER_NAME)
+
 
 class StorageAdapter:
     """
@@ -28,26 +30,26 @@ class StorageAdapter:
     """
     _instance = None
     _initialized = False
-    
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
-    
+
     def __init__(self):
         # Prevent multiple initializations
         if self._initialized:
             import traceback
             logger.warning(f"StorageAdapter.__init__() called on already initialized singleton. "
-                         f"This is harmless but inefficient. Consider using StorageAdapter.get_instance() "
-                         f"or the shared_storage from storage.py instead. Call stack:\n{traceback.format_stack()}")
+                           f"This is harmless but inefficient. Consider using StorageAdapter.get_instance() "
+                           f"or the shared_storage from storage.py instead. Call stack:\n{traceback.format_stack()}")
             return
-        
+
         self.bucket_name = os.getenv("GCP_STORAGE_BUCKET")
         self.use_cloud = os.getenv('USE_CLOUD_STORAGE', 'false').lower() == 'true'
         local_path = os.getenv('LOCAL_STORAGE_PATH', './working')
         self.local_root = Path(local_path)
-        
+
         # Initialize directory manager
         from src.media_lens.directory_manager import DirectoryManager
         self.directory_manager = DirectoryManager(base_path="")
@@ -78,7 +80,7 @@ class StorageAdapter:
                     elif use_workload_identity:
                         logger.info("Using workload identity (VM's service account)")
                         logger.info(f"Creating storage client with default credentials and project ID: {project_id}")
-                        
+
                         # Add explicit environment variable for Google Application Default Credentials discovery
                         if 'GOOGLE_APPLICATION_CREDENTIALS' not in os.environ:
                             logger.info("GOOGLE_APPLICATION_CREDENTIALS not set, checking VM credential paths")
@@ -93,7 +95,7 @@ class StorageAdapter:
                                     logger.info(f"Found credentials at {cred_path}, setting GOOGLE_APPLICATION_CREDENTIALS")
                                     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
                                     break
-                        
+
                         credentials, _ = default()
                         self.client = storage.Client(credentials=credentials, project=project_id)
                     else:
@@ -103,7 +105,7 @@ class StorageAdapter:
                 except Exception as e:
                     logger.warning(f"Failed to create storage client: {str(e)}")
                     logger.warning("Searching for credential files in /app/keys directory")
-                    
+
                     # Search for any JSON credential files in the keys directory
                     found_key = False
                     keys_dir = '/app/keys'
@@ -121,7 +123,7 @@ class StorageAdapter:
                                     break
                                 except Exception as key_error:
                                     logger.warning(f"Failed to use {key_file}: {str(key_error)}")
-                    
+
                     if not found_key:
                         # Fall back to anonymous client as last resort
                         logger.warning("No valid service account keys found, falling back to anonymous client")
@@ -140,10 +142,10 @@ class StorageAdapter:
                 # Fall back to local storage if cloud fails
                 self.use_cloud = False
                 logger.info("Falling back to local storage due to error")
-        
+
         logger.info(f"Storage adapter initialized. Using cloud: {self.use_cloud}")
         self._initialized = True
-    
+
     @classmethod
     def get_instance(cls):
         """
@@ -156,7 +158,7 @@ class StorageAdapter:
             cls._instance = cls.__new__(cls)
             cls._instance.__init__()
         return cls._instance
-    
+
     @classmethod
     def reset_instance(cls):
         """
@@ -167,7 +169,7 @@ class StorageAdapter:
         """
         cls._instance = None
         cls._initialized = False
-    
+
     def write_text(self, path: Union[str, Path], content: str, encoding: str = "utf-8") -> str:
         """
         Write text content to a file.
@@ -181,7 +183,7 @@ class StorageAdapter:
             Full path to the created file
         """
         path_str = str(path)
-        
+
         if self.use_cloud:
             blob = self.bucket.blob(path_str)
             blob.upload_from_string(content, content_type="text/plain")
@@ -193,7 +195,7 @@ class StorageAdapter:
             with open(local_path, 'w', encoding=encoding) as f:
                 f.write(content)
             return str(local_path)
-    
+
     def read_text(self, path: Union[str, Path], encoding: str = "utf-8") -> str:
         """
         Read text content from a file.
@@ -206,7 +208,7 @@ class StorageAdapter:
             Text content of the file
         """
         path_str = str(path)
-        
+
         if self.use_cloud:
             blob = self.bucket.blob(path_str)
             return blob.download_as_text(encoding=encoding)
@@ -215,7 +217,7 @@ class StorageAdapter:
             local_path = self.local_root / path_str
             with open(local_path, 'r', encoding=encoding) as f:
                 return f.read()
-    
+
     def write_json(self, path: Union[str, Path], data: Any, indent: int = 2) -> str:
         """
         Write JSON data to a file.
@@ -230,7 +232,7 @@ class StorageAdapter:
         """
         json_str = json.dumps(data, indent=indent)
         return self.write_text(path, json_str)
-    
+
     def read_json(self, path: Union[str, Path]) -> Any:
         """
         Read JSON data from a file.
@@ -243,7 +245,7 @@ class StorageAdapter:
         """
         content = self.read_text(path)
         return json.loads(content)
-    
+
     def write_binary(self, path: Union[str, Path], content: bytes) -> str:
         """
         Write binary content to a file.
@@ -256,7 +258,7 @@ class StorageAdapter:
             Full path to the created file
         """
         path_str = str(path)
-        
+
         if self.use_cloud:
             blob = self.bucket.blob(path_str)
             blob.upload_from_string(content)
@@ -268,7 +270,7 @@ class StorageAdapter:
             with open(local_path, 'wb') as f:
                 f.write(content)
             return str(local_path)
-    
+
     def read_binary(self, path: Union[str, Path]) -> bytes:
         """
         Read binary content from a file.
@@ -280,7 +282,7 @@ class StorageAdapter:
             Binary content of the file
         """
         path_str = str(path)
-        
+
         if self.use_cloud:
             blob = self.bucket.blob(path_str)
             return blob.download_as_bytes()
@@ -289,7 +291,7 @@ class StorageAdapter:
             local_path = self.local_root / path_str
             with open(local_path, 'rb') as f:
                 return f.read()
-    
+
     # Maintain backward compatibility with original methods
     def upload_file(self, local_path, remote_path):
         """Upload a file to storage (legacy method for compatibility)"""
@@ -304,7 +306,7 @@ class StorageAdapter:
             with open(local_path, 'rb') as src_file, open(dest_path, 'wb') as dest_file:
                 dest_file.write(src_file.read())
             return str(dest_path)
-    
+
     def download_file(self, remote_path, local_path):
         """Download a file from storage (legacy method for compatibility)"""
         if self.use_cloud:
@@ -317,7 +319,7 @@ class StorageAdapter:
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
             with open(src_path, 'rb') as src_file, open(local_path, 'wb') as dest_file:
                 dest_file.write(src_file.read())
-    
+
     def list_files(self, prefix: str = "") -> List[str]:
         """List files in storage with the given prefix"""
         if self.use_cloud:
@@ -327,7 +329,7 @@ class StorageAdapter:
             path = self.local_root / prefix
             if not path.exists():
                 return []
-            
+
             files = []
             for p in Path(path).rglob('*'):
                 if p.is_file():
@@ -353,18 +355,18 @@ class StorageAdapter:
             path = self.local_root / prefix
             if not path.exists():
                 return []
-            
+
             dirs = []
             for p in Path(path).rglob('*'):
                 if p.is_dir():
                     rel_path = p.relative_to(self.local_root)
                     dirs.append(str(rel_path))
             return dirs
-    
+
     def file_exists(self, path: Union[str, Path]) -> bool:
         """Check if a file exists in storage"""
         path_str = str(path)
-        
+
         if self.use_cloud:
             blob = self.bucket.blob(path_str)
             return blob.exists()
@@ -372,7 +374,7 @@ class StorageAdapter:
             # Local file system
             local_path = self.local_root / path_str
             return local_path.exists()
-    
+
     def get_file_modified_time(self, path: Union[str, Path]) -> Optional[datetime.datetime]:
         """
         Get the modification time of a file.
@@ -384,7 +386,7 @@ class StorageAdapter:
             Modification time as datetime object or None if file doesn't exist
         """
         path_str = str(path)
-        
+
         try:
             if self.use_cloud:
                 blob = self.bucket.blob(path_str)
@@ -404,7 +406,7 @@ class StorageAdapter:
         except Exception as e:
             logger.warning(f"Could not get modification time for {path_str}: {e}")
             return None
-    
+
     def delete_file(self, path: Union[str, Path]) -> bool:
         """
         Delete a file from storage.
@@ -416,7 +418,7 @@ class StorageAdapter:
             True if file was deleted successfully, False otherwise
         """
         path_str = str(path)
-        
+
         try:
             if self.use_cloud:
                 blob = self.bucket.blob(path_str)
@@ -440,7 +442,7 @@ class StorageAdapter:
         except Exception as e:
             logger.error(f"Failed to delete file {path_str}: {e}")
             return False
-    
+
     def delete_directory(self, path: Union[str, Path], recursive: bool = False) -> bool:
         """
         Delete a directory from storage.
@@ -453,7 +455,7 @@ class StorageAdapter:
             True if directory was deleted successfully, False otherwise
         """
         path_str = str(path)
-        
+
         try:
             if self.use_cloud:
                 # For cloud storage, delete all files with this prefix
@@ -498,7 +500,7 @@ class StorageAdapter:
         except Exception as e:
             logger.error(f"Failed to delete directory {path_str}: {e}")
             return False
-    
+
     def create_directory(self, path: Union[str, Path]) -> str:
         """
         Create a directory in storage.
@@ -512,7 +514,7 @@ class StorageAdapter:
             Full path to the created directory
         """
         path_str = str(path)
-        
+
         if self.use_cloud:
             # Directories don't exist in cloud storage, but we can create an
             # empty placeholder file to simulate directory creation
@@ -525,7 +527,7 @@ class StorageAdapter:
             local_path = self.local_root / path_str
             os.makedirs(local_path, exist_ok=True)
             return str(local_path)
-    
+
     def get_files_by_pattern(self, path: Union[str, Path], pattern: str) -> List[str]:
         """
         Find files matching a glob pattern.
@@ -538,28 +540,28 @@ class StorageAdapter:
             List of matching file paths
         """
         path_str = str(path)
-        
+
         if self.use_cloud:
             # Cloud storage doesn't have glob support, so we'll list all files
             # in the path and filter them manually
             all_files = self.list_files(path_str)
-            
+
             # Convert glob pattern to regex pattern for matching
             import fnmatch
             regex_pattern = fnmatch.translate(pattern)
             import re
             matcher = re.compile(regex_pattern)
-            
+
             # Filter files that match the pattern
             return [f for f in all_files if matcher.match(os.path.basename(f))]
         else:
             # Local file system has glob support
             local_path = self.local_root / path_str
             glob_files = list(local_path.glob(pattern))
-            
+
             # Convert to relative paths
             return [str(f.relative_to(self.local_root)) for f in glob_files]
-    
+
     def get_absolute_path(self, path: Union[str, Path]) -> str:
         """
         Get the absolute path or URI for a file in storage.
@@ -571,12 +573,12 @@ class StorageAdapter:
             Absolute path or URI to the file
         """
         path_str = str(path)
-        
+
         if self.use_cloud:
             return f"gs://{self.bucket_name}/{path_str}"
         else:
             return str(self.local_root / path_str)
-    
+
     def get_job_directory(self, timestamp: Optional[str] = None) -> str:
         """
         Get a job directory path in YYYY/MM/DD/HHmmss format.
@@ -588,7 +590,7 @@ class StorageAdapter:
             Job directory path
         """
         return self.directory_manager.get_job_dir(timestamp)
-    
+
     def get_intermediate_directory(self, subdir: str = "") -> str:
         """
         Get intermediate data directory path.
@@ -600,7 +602,7 @@ class StorageAdapter:
             Intermediate directory path
         """
         return self.directory_manager.get_intermediate_dir(subdir)
-    
+
     def get_staging_directory(self, subdir: str = "") -> str:
         """
         Get staging directory path for website-ready files.
@@ -612,7 +614,7 @@ class StorageAdapter:
             Staging directory path
         """
         return self.directory_manager.get_staging_dir(subdir)
-    
+
     def get_jobs_in_date_range(self, start_date: str, end_date: str) -> List[str]:
         """
         Get all job directories within a date range.
@@ -625,7 +627,7 @@ class StorageAdapter:
             List of job directory paths within the date range
         """
         return self.directory_manager.get_jobs_in_date_range(start_date, end_date, self)
-    
+
     def get_directory_path(self, timestamp: str) -> str:
         """
         Get a timestamped directory path (deprecated - use get_job_directory).

@@ -7,10 +7,11 @@ import dotenv
 
 from src.media_lens.collection.cleaning import WebpageCleaner, cleaner_for_site
 from src.media_lens.collection.scraper import WebpageScraper
-from src.media_lens.common import LOGGER_NAME, utc_timestamp, get_project_root, SITES, UTC_REGEX_PATTERN_BW_COMPAT, UTC_DATE_PATTERN_BW_COMPAT, utc_bw_compat_timestamp
+from src.media_lens.common import LOGGER_NAME, get_project_root, SITES
 from src.media_lens.storage import shared_storage
 
 logger = logging.getLogger(LOGGER_NAME)
+
 
 class Harvester(object):
     """
@@ -51,13 +52,13 @@ class Harvester(object):
         :return: the newly created job directory path (as string)
         """
         logger.info(f"Harvesting {len(sites)} sites (sequential: scrape → clean)")
-        
+
         # Phase 1: Scrape all sites
         job_dir = await self.scrape_sites(sites=sites, browser_type=browser_type)
-        
+
         # Phase 2: Clean all scraped content
         await self.clean_sites(job_dir=job_dir, sites=sites)
-        
+
         return job_dir
 
     async def scrape_sites(self, sites: list[str], browser_type: WebpageScraper.BrowserType = WebpageScraper.BrowserType.MOBILE) -> str:
@@ -69,38 +70,38 @@ class Harvester(object):
         """
         logger.info(f"Scraping {len(sites)} sites")
         scraper: WebpageScraper = WebpageScraper()
-        
+
         # Create a timestamped job directory using new hierarchical structure
         directory_path = self.storage.get_job_directory()
         self.storage.create_directory(directory_path)
-        
+
         async def scrape_site(site):
             try:
                 logger.info(f"Scraping {site}")
                 content: str = await scraper.get_page_content(url="https://" + site, browser_type=browser_type)
-                
+
                 if content is None:
                     logger.error(f"Failed to get content for {site}, skipping...")
                     return None, site
-                
+
                 logger.info(f"Writing {site} to {directory_path}")
                 # Use the storage adapter to write content
                 file_path = f"{directory_path}/{site}.html"
                 self.storage.write_text(file_path, content, encoding="utf-8")
-                
+
                 return content, site
             except Exception as e:
                 logger.error(f"Failed to scrape {site}: {e}")
                 traceback.print_exc()
                 return None, site
-        
+
         # Scrape all sites sequentially
         logger.info("Scraping all sites sequentially")
         scrape_results = []
         for site in sites:
             result = await scrape_site(site)
             scrape_results.append(result)
-        
+
         # Log results
         successful_sites = []
         for result in scrape_results:
@@ -110,7 +111,7 @@ class Harvester(object):
             content, site = result
             if content is not None:
                 successful_sites.append(site)
-        
+
         logger.info(f"Successfully scraped {len(successful_sites)} out of {len(sites)} sites")
         return directory_path
 
@@ -121,7 +122,7 @@ class Harvester(object):
         :param sites: media sites to clean
         """
         logger.info(f"Cleaning {len(sites)} sites in {job_dir}")
-        
+
         successful_cleanings = 0
         for site in sites:
             try:
@@ -136,7 +137,7 @@ class Harvester(object):
             except Exception as e:
                 logger.error(f"Failed to clean {site}: {e}")
                 traceback.print_exc()
-        
+
         logger.info(f"Successfully cleaned {successful_cleanings} out of {len(sites)} sites")
 
     async def _clean_site(self, directory_path, content, site):
@@ -152,7 +153,7 @@ class Harvester(object):
         cleaner: WebpageCleaner = WebpageCleaner(site_cleaner=cleaner_for_site(site))
         clean_content: str = cleaner.clean_html(content)
         clean_content = cleaner.filter_text_elements(clean_content)
-        
+
         logger.debug(f"Writing clean {site} to {directory_path}")
         # Use the storage adapter to write cleaned content
         clean_file_path = f"{directory_path}/{site}-clean.html"

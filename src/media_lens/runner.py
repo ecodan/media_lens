@@ -54,10 +54,10 @@ async def interpret(job_dir, sites):
             # Use storage adapter to get files instead of Path.glob
             file_pattern = f"{site}-clean-article-*.json"
             files = storage.get_files_by_pattern(job_dir, file_pattern)
-            
+
             # Convert to full paths if needed for the interpreter
             file_paths = [storage.get_absolute_path(f) for f in files]
-            
+
             if not files:
                 logger.warning(f"No clean article files found for site {site} in {job_dir}")
                 # Create an empty interpretation to avoid FileNotFoundError later
@@ -67,7 +67,7 @@ async def interpret(job_dir, sites):
                 }]
             else:
                 interpretation: list = interpreter.interpret_files(file_paths)
-                
+
             # Write the interpreted file to intermediate directory organized by job
             # Extract job timestamp from artifacts_dir for organization
             if job_dir.startswith("jobs/"):
@@ -75,12 +75,12 @@ async def interpret(job_dir, sites):
             else:
                 # Legacy flat directory format
                 job_timestamp = job_dir
-                
+
             intermediate_dir = storage.get_intermediate_directory(job_timestamp)
             storage.create_directory(intermediate_dir)
             output_path = f"{intermediate_dir}/{site}-interpreted.json"
             storage.write_json(output_path, interpretation)
-            
+
             time.sleep(30)
         except Exception as e:
             logger.error(f"Error interpreting site {site}: {str(e)}")
@@ -95,7 +95,7 @@ async def interpret(job_dir, sites):
             else:
                 # Legacy flat directory format
                 job_timestamp = job_dir
-                
+
             intermediate_dir = storage.get_intermediate_directory(job_timestamp)
             storage.create_directory(intermediate_dir)
             output_path = f"{intermediate_dir}/{site}-interpreted.json"
@@ -119,7 +119,7 @@ async def interpret_weekly(use_rolling_daily=True, specific_weeks=None, sites: l
 
     agent: Agent = create_agent_from_env()
     interpreter: LLMWebsiteInterpreter = LLMWebsiteInterpreter(agent=agent)
-    
+
     # Check if today is Sunday (last day of the week) or if specific weeks were provided
     today = datetime.datetime.now(datetime.timezone.utc)
     current_week: str = get_week_key(today)
@@ -133,10 +133,9 @@ async def interpret_weekly(use_rolling_daily=True, specific_weeks=None, sites: l
     #  so logic: 1/ get list of weeks (specific_weeks OR current_week); 2/ if one of the weeks is current_week, do rolling or calendar
     # edge case: if Sunday and processing "current week", run the previous calendar week and overwrite
 
-
     if not specific_weeks:
         weeks_to_process.append(current_week)
-    
+
     # Check if previous week was processed (in case we missed a week transition)
     intermediate_dir = storage.get_intermediate_directory()
     previous_week_file_path = f"{intermediate_dir}/weekly-{previous_week}-interpreted.json"
@@ -144,11 +143,11 @@ async def interpret_weekly(use_rolling_daily=True, specific_weeks=None, sites: l
         logger.info(f"Previous week {previous_week} was not processed. Adding to processing list.")
         if previous_week not in weeks_to_process:
             weeks_to_process.append(previous_week)
-    
+
     # Only proceed if there are weeks to process
     if weeks_to_process:
         logger.info(f"Processing weeks: {', '.join(weeks_to_process)}")
-        
+
         # Set minimum calendar days requirement - in this case it's moot due to rolling, but if calendar week take one or more
         interpreter.minimum_calendar_days_required = 1
 
@@ -156,7 +155,7 @@ async def interpret_weekly(use_rolling_daily=True, specific_weeks=None, sites: l
             sites=sites,
             specific_weeks=weeks_to_process
         )
-        
+
         # Log if results have fewer than 7 days
         for result in weekly_results:
             calendar_days_span = result.get('calendar_days_span', 0)
@@ -165,7 +164,7 @@ async def interpret_weekly(use_rolling_daily=True, specific_weeks=None, sites: l
                 logger.warning(f"Weekly interpretation for {result['week']} only covers {calendar_days_span} calendar days (minimum is 7)")
             else:
                 logger.info(f"Weekly interpretation for {result['week']} covers {calendar_days_span} calendar days with data from {data_days_count} actual days")
-        
+
         # Write results to files using storage adapter
         for result in weekly_results:
             file_path = result['file_path']
@@ -181,8 +180,6 @@ async def interpret_weekly(use_rolling_daily=True, specific_weeks=None, sites: l
             storage.write_json(file_path, interpretation_data)
     else:
         logger.info("No weeks to process.")
-
-
 
 
 async def extract(job_dir):
@@ -211,7 +208,7 @@ async def format_output(force_full: bool = False, sites: list[str] = None) -> No
 
     # Generate HTML files (index and weekly pages) with cursor support
     generate_html_from_path(sites, Path(template_dir_path), force_full=force_full)
-    
+
     logger.info("HTML files generated successfully")
 
 
@@ -226,24 +223,24 @@ async def deploy_output(force_full: bool = False) -> None:
         None
     """
     logger.info(f"Deploying files (force_full={force_full})")
-    
+
     # Get cursor and determine what files need deployment
     cursor = None if force_full else get_deploy_cursor()
     files_to_deploy = get_files_to_deploy(cursor)
-    
+
     if not files_to_deploy and cursor is not None:
         logger.info("No files need deployment since last deploy - skipping")
         return
-    
+
     # Track deployment success and latest file timestamp
     successful_uploads = []
     latest_file_time = None
-    
+
     # Deploy each file
     for file_path in files_to_deploy:
         logger.info(f"Uploading file: {file_path}")
         success = upload_html_content_from_storage(storage_path=file_path)
-        
+
         if success:
             successful_uploads.append(file_path)
             # Track the latest file modification time for cursor update
@@ -255,19 +252,17 @@ async def deploy_output(force_full: bool = False) -> None:
                 logger.warning(f"Could not get modification time for {file_path}: {e}")
         else:
             logger.error(f"Failed to upload {file_path}")
-    
+
     # Update cursor if we had successful uploads
     if successful_uploads and latest_file_time:
         update_deploy_cursor(latest_file_time)
         logger.info(f"Updated deploy cursor to {latest_file_time.isoformat()}")
-    
+
     logger.info(f"Deployment completed: {len(successful_uploads)}/{len(files_to_deploy)} files uploaded successfully")
 
 
-
-
-async def process_weekly_content(current_week_only: bool = True, 
-                       overwrite: bool = False, specific_weeks: List[str] = None):
+async def process_weekly_content(current_week_only: bool = True,
+                                 overwrite: bool = False, specific_weeks: List[str] = None):
     """
     Process weekly content and deploy the results.
     This function now respects the last-day-of-week logic in interpret_weekly.
@@ -284,7 +279,7 @@ async def process_weekly_content(current_week_only: bool = True,
 
     # Format output
     await format_output()
-    
+
     # Deploy output
     await deploy_output()
 
@@ -297,39 +292,40 @@ async def reinterpret_weeks_from_date(start_date: datetime, overwrite: bool = Tr
     :param start_date: The date to start reinterpreting from (will include the week containing this date)
     :param overwrite: If True, overwrite existing weekly interpretations
     """
-    
+
     # Make sure start_date has timezone info
     if start_date.tzinfo is None:
         start_date = start_date.replace(tzinfo=datetime.timezone.utc)
-    
+
     # Get the current date
     current_date = datetime.datetime.now(datetime.timezone.utc)
-    
+
     # Get week keys for each Sunday from start_date to current date
     weeks_to_process = []
-    
+
     # Start with the week containing the start date
     week_date = start_date
     while week_date <= current_date:
         week_key = get_week_key(week_date)
         if week_key not in weeks_to_process:
             weeks_to_process.append(week_key)
-        
+
         # Move to the next Sunday
         days_until_sunday = (6 - week_date.weekday()) % 7
         if days_until_sunday == 0:
             days_until_sunday = 7  # If already Sunday, go to next Sunday
-        
+
         week_date = week_date + datetime.timedelta(days=days_until_sunday)
-    
+
     logger.info(f"Reinterpreting {len(weeks_to_process)} weeks: {', '.join(weeks_to_process)}")
-    
+
     # Process all the weeks
     await process_weekly_content(
         current_week_only=False,
         overwrite=overwrite,
         specific_weeks=weeks_to_process
     )
+
 
 async def summarize_all(force: bool = False):
     logger.info("Summarizing extracted content")
@@ -338,13 +334,13 @@ async def summarize_all(force: bool = False):
     # Get all directories using storage adapter
     all_dirs = storage.list_directories("")
     job_dirs = set()
-    
+
     # Filter directory names that match UTC pattern
     for dir_name in all_dirs:
         # Check if it matches the UTC regex pattern
         if re.match(UTC_REGEX_PATTERN_BW_COMPAT, dir_name):
             job_dirs.add(dir_name)
-    
+
     for job_dir_name in job_dirs:
         # Check if summary file already exists
         summary_file_path = f"{job_dir_name}/daily_news.txt"
@@ -366,18 +362,18 @@ def validate_step_combinations(steps: list[Steps]) -> None:
         ValueError: If step combinations are invalid
     """
     step_values = [step.value for step in steps]
-    
+
     # Check for conflicting harvest steps
     if Steps.HARVEST.value in step_values:
         if Steps.HARVEST_SCRAPE.value in step_values:
             raise ValueError("Cannot combine 'harvest' with 'harvest_scrape' - harvest includes scraping")
         if Steps.HARVEST_CLEAN.value in step_values:
             raise ValueError("Cannot combine 'harvest' with 'harvest_clean' - harvest includes cleaning")
-    
+
     # Check for harvest_clean without preceding harvest_scrape (when not using harvest)
-    if (Steps.HARVEST_CLEAN.value in step_values and 
-        Steps.HARVEST.value not in step_values and 
-        Steps.HARVEST_SCRAPE.value not in step_values):
+    if (Steps.HARVEST_CLEAN.value in step_values and
+            Steps.HARVEST.value not in step_values and
+            Steps.HARVEST_SCRAPE.value not in step_values):
         logger.warning("Running 'harvest_clean' without 'harvest_scrape' - ensure scraped content exists in the job directory")
 
 
@@ -409,6 +405,7 @@ async def clean(job_dir: str, sites: list[str]) -> None:
     harvester: Harvester = Harvester()
     await harvester.clean_sites(job_dir=job_dir, sites=sites)
 
+
 async def run(steps: list[Steps], sites: list[str] = None, **kwargs) -> dict:
     """
     Execute the media lens pipeline with the specified steps.
@@ -427,19 +424,19 @@ async def run(steps: list[Steps], sites: list[str] = None, **kwargs) -> dict:
 
     # Validate step combinations before starting
     validate_step_combinations(steps)
-    
+
     # Generate a unique run ID and reset the stop flag
     run_id = kwargs.get('run_id', str(uuid.uuid4())[:8])
     RunState.reset(run_id=run_id)
     logger.info(f"Starting run {run_id} with steps: {[step.value for step in steps]}")
-    
+
     result = {
         "run_id": run_id,
         "status": "success",
         "completed_steps": [],
         "error": None
     }
-    
+
     # Storage adapter handles directory creation automatically
 
     if 'job_dir' not in kwargs or kwargs['job_dir'] == "latest":
@@ -523,16 +520,16 @@ async def run(steps: list[Steps], sites: list[str] = None, **kwargs) -> dict:
             force_full_deploy = kwargs.get('force_full_deploy', False)
             await deploy_output(force_full=force_full_deploy)
             result["completed_steps"].append(Steps.DEPLOY.value)
-            
+
         if RunState.stop_requested():
             logger.info(f"[Run {run_id}] Run was stopped before completion")
             result["status"] = "stopped"
-            
+
     except Exception as e:
         logger.error(f"[Run {run_id}] Error during execution: {str(e)}", exc_info=True)
         result["status"] = "error"
         result["error"] = str(e)
-        
+
     logger.info(f"[Run {run_id}] Completed with status: {result['status']}")
     return result
 
@@ -541,7 +538,7 @@ def main():
     # Initialize secrets at startup
     from src.media_lens.common import ensure_secrets_loaded
     ensure_secrets_loaded()
-    
+
     parser = argparse.ArgumentParser(description='Media Lens CLI')
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
@@ -600,7 +597,6 @@ def main():
         help='Rewind format and deploy cursors by specified number of days before running'
     )
 
-
     # Summarize daily news command with option to force resummarization if no summary present
     summarize_parser = subparsers.add_parser('summarize', help='Summarize daily news')
     summarize_parser.add_argument(
@@ -608,7 +604,7 @@ def main():
         action='store_true',
         help='Force resummarization even if summary exists'
     )
-    
+
     # Weekly reinterpretation command
     reinterpret_parser = subparsers.add_parser('reinterpret-weeks', help='Reinterpret weekly content from a date')
     reinterpret_parser.add_argument(
@@ -622,10 +618,10 @@ def main():
         action='store_true',
         help='Do not overwrite existing weekly interpretations'
     )
-    
+
     # Stop command
     stop_parser = subparsers.add_parser('stop', help='Stop a currently running workflow')
-    
+
     # Reset cursor command
     reset_cursor_parser = subparsers.add_parser('reset-cursor', help='Reset format and/or deploy cursors')
     reset_cursor_parser.add_argument(
@@ -643,7 +639,7 @@ def main():
         action='store_true',
         help='Reset both format and deploy cursors'
     )
-    
+
     # Audit command
     audit_parser = subparsers.add_parser('audit', help='Audit directories for missing or incomplete files')
     audit_parser.add_argument(
@@ -664,7 +660,7 @@ def main():
 
     # Load environment variables first
     dotenv.load_dotenv()
-    
+
     args = parser.parse_args()
     # Use string path for logger
     log_path = str(get_working_dir() / "runner.log")
@@ -687,26 +683,26 @@ def main():
         logger.info(f"Using Playwright mode: {playwright_mode}")
 
         logger.info(f"Using sites: {', '.join(sites_to_use)}")
-        
+
         # Handle cursor rewind if specified
         if hasattr(args, 'rewind_days') and args.rewind_days:
             days = args.rewind_days
             logger.info(f"Rewinding cursors by {days} days")
             rewind_format_cursor(days)
             rewind_deploy_cursor(days)
-        
+
         # Handle date range processing
         if args.start_date or args.end_date:
             if not args.start_date or not args.end_date:
                 logger.error("Both --start-date and --end-date must be provided when using date range")
                 return
-            
+
             # Get job directories in date range
             job_dirs = storage.get_jobs_in_date_range(args.start_date, args.end_date)
             if not job_dirs:
                 logger.warning(f"No job directories found in date range {args.start_date} to {args.end_date}")
                 return
-            
+
             logger.info(f"Processing {len(job_dirs)} job directories in date range")
             for job_dir in job_dirs:
                 logger.info(f"Processing job directory: {job_dir}")
@@ -751,7 +747,7 @@ def main():
             start_date = strptime(args.date, "%Y-%m-%d")
             start_date = start_date.replace(tzinfo=datetime.timezone.utc)
             logger.info(f"Reinterpreting weekly content from {args.date}")
-            
+
             asyncio.run(reinterpret_weeks_from_date(
                 start_date=start_date,
                 overwrite=not args.no_overwrite
@@ -782,7 +778,7 @@ def main():
         # Audit directories for completeness
         start_date = None
         end_date = None
-        
+
         if args.start_date:
             try:
                 start_date = strptime(args.start_date, "%Y-%m-%d")
@@ -791,7 +787,7 @@ def main():
                 logger.error(f"Invalid start date format: {str(e)}")
                 print(f"Error: Invalid start date format. Use YYYY-MM-DD")
                 return
-                
+
         if args.end_date:
             try:
                 end_date = strptime(args.end_date, "%Y-%m-%d")
@@ -800,13 +796,14 @@ def main():
                 logger.error(f"Invalid end date format: {str(e)}")
                 print(f"Error: Invalid end date format. Use YYYY-MM-DD")
                 return
-        
+
         generate_report = not args.no_report
         logger.info(f"Starting audit from {args.start_date if args.start_date else 'earliest'} to {args.end_date if args.end_date else 'latest'}")
         audit_days(start_date=start_date, end_date=end_date, audit_report=generate_report)
         print("Audit completed successfully")
     else:
         parser.print_help()
+
 
 if __name__ == '__main__':
     main()

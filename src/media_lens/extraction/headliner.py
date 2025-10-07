@@ -2,7 +2,6 @@ import datetime
 import hashlib
 import json
 import logging
-import os
 import re
 import traceback
 from abc import ABCMeta, abstractmethod
@@ -15,7 +14,7 @@ import dotenv
 from anthropic import APIError, APIConnectionError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL
+from src.media_lens.common import LOGGER_NAME, get_project_root
 from src.media_lens.extraction.agent import Agent, create_agent_from_env, ResponseFormat
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -28,7 +27,7 @@ You only extract factual information.
             
 """
 
-REASONING_PROMPT: str= """
+REASONING_PROMPT: str = """
 
 For the following analysis, you will use a Chain of Thought (CoT) approach with reflection.
 
@@ -113,6 +112,7 @@ After your analysis process, provide only the formatted JSON as your final outpu
 
 """
 
+
 @dataclass
 class RetryStats:
     attempts: int = 0
@@ -147,10 +147,12 @@ class HeadlineExtractor(metaclass=ABCMeta):
 
         return truncated_text
 
+
 class LLMHeadlineExtractor(HeadlineExtractor):
     """
     Extractor class that uses a large language model (LLM) to extract headlines and key stories from HTML content.
     """
+
     def __init__(self, agent: Agent):
         super().__init__()
         self.agent: Agent = agent
@@ -220,7 +222,7 @@ class LLMHeadlineExtractor(HeadlineExtractor):
             content_hash = self._get_content_hash(content)
             res: Dict = self._process_content(content_hash, self._truncate_html(content, max_tokens=25000))
             if "error" in res:
-                return {} # TODO consider more robust error handling
+                return {}  # TODO consider more robust error handling
             return res
 
         except Exception as e:
@@ -231,6 +233,7 @@ class LLMHeadlineExtractor(HeadlineExtractor):
                 "stories": [],
                 "error": str(e)
             }
+
 
 ##############################
 # TEST

@@ -12,6 +12,7 @@ class ArticleCollector:
     """
     Simple wrapper around trafilatura to extract article content.
     """
+
     def __init__(self):
         self.scraper: WebpageScraper = WebpageScraper()
 
@@ -94,6 +95,7 @@ class ArticleCollector:
 async def main():
     collector = ArticleCollector()
     print(await collector.extract_article("https://www.cnn.com/2025/02/21/politics/trump-fires-top-us-general-cq-brown/index.html"))
+
 
 if __name__ == '__main__':
     asyncio.run(main())

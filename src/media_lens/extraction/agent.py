@@ -113,6 +113,7 @@ class LiteLLMAgent(Agent):
     Unified LLM agent using LiteLLM for provider-agnostic access.
     Supports Anthropic Claude, Google Vertex AI, Ollama, and 100+ other providers.
     """
+
     def __init__(self, model: str, **kwargs):
         """
         Initialize LiteLLM agent.

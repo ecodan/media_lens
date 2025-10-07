@@ -1,15 +1,16 @@
-import os
+import asyncio
 import logging
+import os
 import time
 import uuid
-from flask import Flask, request, jsonify
-import asyncio
 from threading import Thread
 
-from src.media_lens.common import create_logger, LOGGER_NAME, RunState, SITES, ensure_secrets_loaded
-from src.media_lens.runner import run, Steps, process_weekly_content, summarize_all
+from flask import Flask, request, jsonify
+
+from src.media_lens.common import create_logger, LOGGER_NAME, RunState, ensure_secrets_loaded
 from src.media_lens.presentation.deployer import rewind_deploy_cursor
 from src.media_lens.presentation.html_formatter import rewind_format_cursor
+from src.media_lens.runner import run, Steps, process_weekly_content, summarize_all
 from src.media_lens.storage_adapter import StorageAdapter
 
 # Initialize Flask app
@@ -30,6 +31,7 @@ storage: StorageAdapter = StorageAdapter.get_instance()
 # Dictionary to track running tasks
 active_runs = {}
 
+
 @app.route('/')
 def index():
     """Root endpoint that returns the application status"""
@@ -46,10 +48,12 @@ def index():
         ]
     })
 
+
 @app.route('/health')
 def health():
     """Health check endpoint"""
     return jsonify({"status": "healthy"})
+
 
 def run_task_async(steps, run_id, data=None):
     """Run a task in a separate thread and track its status"""
@@ -70,7 +74,7 @@ def run_task_async(steps, run_id, data=None):
             sites=sites,
             run_id=run_id
         ))
-        
+
         # Update status when done
         active_runs[run_id]["status"] = result["status"]
         active_runs[run_id]["completed_steps"] = result["completed_steps"]
@@ -84,6 +88,7 @@ def run_task_async(steps, run_id, data=None):
         # Mark the run as no longer running
         active_runs[run_id]["running"] = False
 
+
 @app.route('/run', methods=['POST'])
 def run_pipeline():
     """Endpoint to run the daily pipeline asynchronously"""
@@ -91,7 +96,7 @@ def run_pipeline():
         # Parse request parameters
         data = request.get_json(silent=True) or {}
         requested_steps = data.get('steps', ['harvest', 'extract', 'interpret', 'deploy'])
-        
+
         # Convert string steps to enum
         steps = [Steps(step) for step in requested_steps]
 
@@ -106,14 +111,14 @@ def run_pipeline():
 
         # Generate a unique run ID
         run_id = data.get('run_id', str(uuid.uuid4())[:8])
-        
+
         # Check if this run ID is already in use
         if run_id in active_runs and active_runs[run_id]["running"]:
             return jsonify({
                 "status": "error",
                 "message": f"Run with ID {run_id} is already in progress"
             }), 409
-        
+
         # Create a new task entry
         active_runs[run_id] = {
             "run_id": run_id,
@@ -124,25 +129,26 @@ def run_pipeline():
             "error": None,
             "start_time": time.time()
         }
-        
+
         # Start the task in a separate thread
         logger.info(f"Starting run {run_id} with steps: {', '.join(s.value for s in steps)}")
         thread = Thread(target=run_task_async, args=(steps, run_id, data))
         thread.daemon = True
         thread.start()
-        
+
         return jsonify({
-            "status": "accepted", 
+            "status": "accepted",
             "message": f"Pipeline run started with ID: {run_id}",
             "run_id": run_id
         })
-    
+
     except Exception as e:
         logger.error(f"Error setting up pipeline run: {str(e)}", exc_info=True)
         return jsonify({
-            "status": "error", 
+            "status": "error",
             "message": f"Failed to start pipeline: {str(e)}"
         }), 500
+
 
 @app.route('/stop/<run_id>', methods=['POST'])
 def stop_run(run_id):
@@ -152,28 +158,29 @@ def stop_run(run_id):
             "status": "error",
             "message": f"No run found with ID: {run_id}"
         }), 404
-        
+
     if not active_runs[run_id]["running"]:
         return jsonify({
             "status": "error",
             "message": f"Run {run_id} is not currently running"
         }), 400
-    
+
     # Request the run to stop
     RunState.request_stop()
     logger.info(f"Stop requested for run {run_id}")
-    
+
     return jsonify({
         "status": "accepted",
         "message": f"Stop requested for run {run_id}"
     })
+
 
 @app.route('/status', methods=['GET'])
 def get_status():
     """Get status of all active runs"""
     # Optionally filter by run_id
     run_id = request.args.get('run_id')
-    
+
     if run_id and run_id in active_runs:
         return jsonify({
             "status": "success",
@@ -184,7 +191,7 @@ def get_status():
             "status": "error",
             "message": f"No run found with ID: {run_id}"
         }), 404
-    
+
     # Return all runs
     return jsonify({
         "status": "success",
@@ -192,6 +199,7 @@ def get_status():
         "total_runs": len(active_runs),
         "runs": active_runs
     })
+
 
 @app.route('/weekly', methods=['POST'])
 def run_weekly():
@@ -202,10 +210,10 @@ def run_weekly():
         current_week_only = data.get('current_week_only', True)
         overwrite = data.get('overwrite', False)
         specific_weeks = data.get('specific_weeks', None)
-        
+
         # Generate a unique run ID
         run_id = data.get('run_id', f"weekly-{str(uuid.uuid4())[:8]}")
-        
+
         # Create a new task entry
         active_runs[run_id] = {
             "run_id": run_id,
@@ -220,10 +228,10 @@ def run_weekly():
             "error": None,
             "start_time": time.time()
         }
-        
+
         # Reset run state
         RunState.reset(run_id=run_id)
-        
+
         # Define the async task
         def run_weekly_async():
             try:
@@ -240,25 +248,26 @@ def run_weekly():
                 active_runs[run_id]["error"] = str(e)
             finally:
                 active_runs[run_id]["running"] = False
-        
+
         # Start the task in a separate thread
         logger.info(f"Starting weekly processing {run_id} with current_week_only={current_week_only}")
         thread = Thread(target=run_weekly_async)
         thread.daemon = True
         thread.start()
-        
+
         return jsonify({
             "status": "accepted",
             "message": f"Weekly processing started with ID: {run_id}",
             "run_id": run_id
         })
-    
+
     except Exception as e:
         logger.error(f"Error setting up weekly processing: {str(e)}", exc_info=True)
         return jsonify({
-            "status": "error", 
+            "status": "error",
             "message": f"Failed to start weekly processing: {str(e)}"
         }), 500
+
 
 @app.route('/summarize', methods=['POST'])
 def run_summarize():
@@ -267,10 +276,10 @@ def run_summarize():
         # Parse request parameters
         data = request.get_json(silent=True) or {}
         force = data.get('force', False)
-        
+
         # Generate a unique run ID
         run_id = data.get('run_id', f"summary-{str(uuid.uuid4())[:8]}")
-        
+
         # Create a new task entry
         active_runs[run_id] = {
             "run_id": run_id,
@@ -283,10 +292,10 @@ def run_summarize():
             "error": None,
             "start_time": time.time()
         }
-        
+
         # Reset run state
         RunState.reset(run_id=run_id)
-        
+
         # Define the async task
         def run_summarize_async():
             try:
@@ -299,25 +308,26 @@ def run_summarize():
                 active_runs[run_id]["error"] = str(e)
             finally:
                 active_runs[run_id]["running"] = False
-        
+
         # Start the task in a separate thread
         logger.info(f"Starting daily summarization {run_id} with force={force}")
         thread = Thread(target=run_summarize_async)
         thread.daemon = True
         thread.start()
-        
+
         return jsonify({
             "status": "accepted",
             "message": f"Summarization started with ID: {run_id}",
             "run_id": run_id
         })
-    
+
     except Exception as e:
         logger.error(f"Error setting up summarization: {str(e)}", exc_info=True)
         return jsonify({
-            "status": "error", 
+            "status": "error",
             "message": f"Failed to start summarization: {str(e)}"
         }), 500
+
 
 if __name__ == '__main__':
     # For local testing

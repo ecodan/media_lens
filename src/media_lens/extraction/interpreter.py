@@ -1,19 +1,16 @@
 import datetime
 import json
 import logging
-import os
-import re
 import time
 import traceback
 from pathlib import Path
 from typing import List, Dict
 
-import dotenv
 from anthropic import APIError, APIConnectionError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL, UTC_REGEX_PATTERN_BW_COMPAT, get_utc_datetime_from_timestamp, get_week_key, SITES, create_logger
-from src.media_lens.extraction.agent import Agent, create_agent_from_env, ResponseFormat
+from src.media_lens.common import LOGGER_NAME, get_utc_datetime_from_timestamp, get_week_key
+from src.media_lens.extraction.agent import Agent, ResponseFormat
 from src.media_lens.job_dir import JobDir
 from src.media_lens.storage import shared_storage
 
@@ -96,8 +93,6 @@ Example of the expected JSON structure (with generic content):
 Remember to provide only the JSON response without any additional text.
 """
 
-
-
 OLD_REASONING_PROMPT: str = """
 Step back, analyze this news content and answer the following questions concisely:
 - What is the most important news right now? [Output format: concise narrative]
@@ -126,10 +121,12 @@ Respond ONLY with JSON and no other text.
 RESPONSE: 
 """
 
+
 class LLMWebsiteInterpreter:
     """
     Class to interpret and answer questions about the content of a website using a large language model (LLM).
     """
+
     def __init__(self, agent: Agent, storage=None, last_n_days=None):
         self.agent: Agent = agent
         self.last_n_days = last_n_days  # If set, only use content from the last N days
@@ -183,7 +180,6 @@ class LLMWebsiteInterpreter:
             payload.append(formatted)
         return payload
 
-
     def interpret_from_files(self, files: List[Path]) -> List:
         """
         Convenience method to create a concatenated list of articles from a list of files.
@@ -198,7 +194,7 @@ class LLMWebsiteInterpreter:
             # Extract only the relative path if it's an absolute path
             if hasattr(file, 'name') and self.storage.local_root in file.parents:
                 file_path = str(file.relative_to(self.storage.local_root))
-            
+
             article: dict = self.storage.read_json(file_path)
             content.append(article)
         return self.interpret_articles(content)
@@ -211,7 +207,7 @@ class LLMWebsiteInterpreter:
         :return: List of question-answer pairs
         """
         return self._interpret_core(articles)
-    
+
     def interpret_files(self, file_paths: List[str]) -> List[Dict]:
         """
         Convenience method: read files then analyze content.
@@ -232,11 +228,11 @@ class LLMWebsiteInterpreter:
             else:
                 # String path
                 storage_path = file_path
-            
+
             article = self.storage.read_json(storage_path)
             articles.append(article)
         return self.interpret_articles(articles)
-    
+
     def interpret_jobs(self, job_dirs: List[str], sites: List[str]) -> Dict[str, List[Dict]]:
         """
         Batch processing: analyze multiple jobs/sites.
@@ -246,15 +242,15 @@ class LLMWebsiteInterpreter:
         :return: Dictionary mapping site names to their interpretation results
         """
         results = {}
-        
+
         for site in sites:
             site_articles = []
-            
+
             # Gather articles from all job directories for this site
             for job_dir in job_dirs:
                 pattern = f"{site}-clean-article-*.json"
                 article_files = self.storage.get_files_by_pattern(job_dir, pattern)
-                
+
                 for file_path in sorted(article_files):
                     try:
                         article = self.storage.read_json(file_path)
@@ -262,7 +258,7 @@ class LLMWebsiteInterpreter:
                         site_articles.append(article)
                     except json.JSONDecodeError:
                         logger.error(f"Failed to decode JSON from {file_path}")
-            
+
             if site_articles:
                 # Preprocess and analyze
                 processed_articles = self._preprocess_articles(site_articles, site_name=site)
@@ -270,11 +266,11 @@ class LLMWebsiteInterpreter:
             else:
                 logger.warning(f"No articles found for site: {site}")
                 results[site] = []
-        
+
         return results
 
-    def interpret_time_period(self, start_date: datetime.datetime = None, end_date: datetime.datetime = None, 
-                             sites: List[str] = None, group_by: str = 'week') -> Dict[str, List[Dict]]:
+    def interpret_time_period(self, start_date: datetime.datetime = None, end_date: datetime.datetime = None,
+                              sites: List[str] = None, group_by: str = 'week') -> Dict[str, List[Dict]]:
         """
         Time-based analysis with flexible grouping.
         
@@ -287,7 +283,7 @@ class LLMWebsiteInterpreter:
         if sites is None:
             from src.media_lens.common import SITES
             sites = SITES
-            
+
         if group_by == 'week':
             # Use existing weekly interpretation logic
             if start_date is None and end_date is None:
@@ -300,22 +296,22 @@ class LLMWebsiteInterpreter:
                     specific_weeks.append(get_week_key(start_date))
                 if end_date and end_date != start_date:
                     specific_weeks.append(get_week_key(end_date))
-                
+
                 if specific_weeks:
                     weekly_results = self.interpret_weeks(sites, specific_weeks=list(set(specific_weeks)))
                 else:
                     weekly_results = self.interpret_weeks(sites, current_week_only=False)
-            
+
             # Convert to consistent format
             results = {}
             for result in weekly_results:
                 results[result['week']] = result['interpretation']
             return results
-        
+
         elif group_by == 'day' or group_by == 'all':
             # For daily or all-at-once analysis, gather job directories in date range
             job_dirs = JobDir.list_all(self.storage)
-            
+
             # Filter by date range if specified
             if start_date or end_date:
                 filtered_dirs = []
@@ -327,14 +323,14 @@ class LLMWebsiteInterpreter:
                             job_date = get_utc_datetime_from_timestamp(job_dir)
                         except ValueError:
                             continue
-                    
+
                     if start_date and job_date < start_date:
                         continue
                     if end_date and job_date > end_date:
                         continue
                     filtered_dirs.append(job_dir)
                 job_dirs = filtered_dirs
-            
+
             if group_by == 'day':
                 # Group by day and analyze each day separately
                 day_groups = {}
@@ -349,11 +345,11 @@ class LLMWebsiteInterpreter:
                             job_path = job_dir
                         except ValueError:
                             continue
-                    
+
                     if day_key not in day_groups:
                         day_groups[day_key] = []
                     day_groups[day_key].append(job_path)
-                
+
                 # Analyze each day
                 results = {}
                 for day_key, day_job_dirs in day_groups.items():
@@ -363,9 +359,9 @@ class LLMWebsiteInterpreter:
                     for site_results in day_results.values():
                         day_combined.extend(site_results)
                     results[day_key] = day_combined
-                
+
                 return results
-            
+
             else:  # group_by == 'all'
                 # Analyze all together
                 job_paths = []
@@ -374,16 +370,16 @@ class LLMWebsiteInterpreter:
                         job_paths.append(job_dir.storage_path)
                     else:
                         job_paths.append(job_dir)
-                
+
                 all_results = self.interpret_jobs(job_paths, sites)
                 # Flatten all results
                 combined = []
                 for site_results in all_results.values():
                     combined.extend(site_results)
-                
+
                 period_key = f"{start_date.strftime('%Y-%m-%d') if start_date else 'all'}_to_{end_date.strftime('%Y-%m-%d') if end_date else 'now'}"
                 return {period_key: combined}
-        
+
         else:
             raise ValueError(f"Invalid group_by value: {group_by}. Must be 'week', 'day', or 'all'")
 
@@ -406,7 +402,7 @@ class LLMWebsiteInterpreter:
             )
 
             return self._parse_llm_response(response)
-                
+
         except Exception as e:
             logger.error(f"Error extracting news content: {str(e)}")
             print(traceback.format_exc())
@@ -465,7 +461,7 @@ class LLMWebsiteInterpreter:
                 )
 
                 site_content = self._parse_llm_response(response)
-                
+
                 if site_content:
                     # Ensure questions end with question marks and add site info
                     for qa_pair in site_content:
@@ -473,7 +469,7 @@ class LLMWebsiteInterpreter:
                             question = qa_pair['question'].rstrip('.!?,:;')
                             qa_pair['question'] = question + '?'
                         qa_pair['site'] = site
-                    
+
                     results.extend(site_content)
 
             except json.JSONDecodeError as json_err:
@@ -490,7 +486,7 @@ class LLMWebsiteInterpreter:
                     "answer": f"The analysis for {site} is currently unavailable due to system limitations.",
                     "site": site
                 })
-            
+
             # If no results were gathered, return a fallback response
             if not results:
                 return [
@@ -500,7 +496,7 @@ class LLMWebsiteInterpreter:
                         "site": site
                     }
                 ]
-                
+
             return results
 
         except Exception as e:
@@ -515,16 +511,15 @@ class LLMWebsiteInterpreter:
                 }
             ]
 
-
     def _preprocess_articles(self, articles: List[Dict], max_articles: int = 50, site_name: str = None) -> List[Dict]:
         """Preprocess articles with filtering, truncation, and selection."""
         # Filter out articles with no text content
         filtered_articles = [article for article in articles if article.get('text')]
-        
+
         if site_name:
             total_words = sum(len(article['text'].split()) for article in filtered_articles)
             logger.debug(f"Total words for {site_name}: {total_words}")
-        
+
         # Truncate article text to first 5 paragraphs
         for article in filtered_articles:
             paragraphs = article['text'].split('\n\n')
@@ -532,26 +527,25 @@ class LLMWebsiteInterpreter:
             # If no proper paragraphs, limit to first 1000 chars
             if len(paragraphs) <= 1:
                 article['text'] = article['text'][:1000]
-        
+
         if site_name:
             total_words = sum(len(article['text'].split()) for article in filtered_articles)
             logger.debug(f"Total words for {site_name} after truncation: {total_words}")
-        
+
         # Sort by position if available (prioritizing top headlines)
         sorted_articles = sorted(
             filtered_articles,
             key=lambda x: x.get('position', 999)
         )
-        
+
         # Take top N articles
         selected_articles = sorted_articles[:max_articles]
-        
+
         if site_name:
             total_words = sum(len(article['text'].split()) for article in selected_articles)
             logger.debug(f"Total words for {site_name} after selection: {total_words}")
-        
-        return selected_articles
 
+        return selected_articles
 
     def interpret_weeks(self, sites: list[str],
                         specific_weeks: List[str],
@@ -740,13 +734,13 @@ class LLMWebsiteInterpreter:
         # Gather all content from all sites for this week
         all_content: dict = {}
         included_days: list[str] = []
-        
+
         # If last_n_days is set, calculate the cutoff date
         cutoff_date = None
         if self.last_n_days:
             cutoff_date = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=self.last_n_days)
             logger.info(f"Limiting content to the last {self.last_n_days} days (since {cutoff_date.strftime('%Y-%m-%d')})")
-        
+
         for site in sites:
             site_content = []
             all_content[site] = site_content
@@ -764,7 +758,7 @@ class LLMWebsiteInterpreter:
                         job_datetime = get_utc_datetime_from_timestamp(job_dir)
                     except ValueError:
                         job_datetime = None
-                
+
                 # Check if this job directory is within our date range if cutoff_date is set
                 if cutoff_date and job_datetime:
                     if job_datetime < cutoff_date:
@@ -773,17 +767,17 @@ class LLMWebsiteInterpreter:
                 elif cutoff_date and not job_datetime:
                     # If we can't parse the date, include it anyway
                     logger.warning(f"Could not parse date from job dir {job_dir_path}, including anyway")
-                
+
                 # Track which day we're including
                 if job_datetime:
                     day_str = job_datetime.strftime('%Y-%m-%d')
                     if day_str not in included_days:
                         included_days.append(day_str)
-                
+
                 # Use storage adapter to find article files
                 pattern = f"{site}-clean-article-*.json"
                 article_files = self.storage.get_files_by_pattern(job_dir_path, pattern)
-                
+
                 job_content: List = []
                 for file_path in sorted(article_files):
                     try:
@@ -791,7 +785,7 @@ class LLMWebsiteInterpreter:
                         job_content.append(article)
                     except json.JSONDecodeError:
                         logger.error(f"Failed to decode JSON from {file_path}")
-                
+
                 site_content.append(job_content)
 
         # Sort included days chronologically
@@ -814,77 +808,78 @@ class LLMWebsiteInterpreter:
         """
         # Start with the initial directories
         extended_dirs = initial_dirs.copy()
-        
+
         # Get initial content
         all_content, included_days = self._gather_content(extended_dirs, sites)
-        
+
         # Calculate calendar days span
         calendar_days_span, date_range = self._calculate_calendar_days_span(included_days)
         data_days_count = len(included_days)
-        
+
         logger.info(f"Initial content for {target_week_key}: {calendar_days_span} calendar days ({date_range}) with data from {data_days_count} days")
-        
+
         # If we have enough calendar days coverage or minimum requirement is disabled, return
         if calendar_days_span >= self.minimum_calendar_days_required or self.minimum_calendar_days_required <= 0:
             return all_content, included_days, calendar_days_span, date_range
-        
+
         # Need to extend backwards to get more calendar days coverage
         logger.info(f"Insufficient calendar days coverage ({calendar_days_span} days). Extending backwards to meet minimum {self.minimum_calendar_days_required} calendar days requirement")
-        
+
         # Get all week keys sorted in reverse chronological order  
         all_week_keys = sorted(weeks_data.keys(), reverse=True)
         target_week_idx = None
-        
+
         try:
             target_week_idx = all_week_keys.index(target_week_key)
         except ValueError:
             logger.warning(f"Target week {target_week_key} not found in available data")
             return all_content, included_days, calendar_days_span, date_range
-        
+
         # Extend backwards one week at a time
         extension_attempts = 0
         max_extension_weeks = 4  # Limit to avoid excessive lookback
-        
+
         while calendar_days_span < self.minimum_calendar_days_required and extension_attempts < max_extension_weeks:
             # Get the next earlier week
             prev_week_idx = target_week_idx + 1 + extension_attempts
-            
+
             if prev_week_idx >= len(all_week_keys):
                 logger.info(f"No more previous weeks available for extension")
                 break
-                
+
             prev_week_key = all_week_keys[prev_week_idx]
             prev_week_dirs = weeks_data.get(prev_week_key, [])
-            
+
             if not prev_week_dirs:
                 logger.info(f"No job directories found for previous week {prev_week_key}")
                 extension_attempts += 1
                 continue
-                
+
             # Add previous week's directories
             for prev_dir in prev_week_dirs:
                 if prev_dir not in extended_dirs:
                     extended_dirs.append(prev_dir)
-            
+
             # Recalculate content with extended directories
             all_content, included_days = self._gather_content(extended_dirs, sites)
             new_calendar_days_span, new_date_range = self._calculate_calendar_days_span(included_days)
             new_data_days_count = len(included_days)
-            
+
             calendar_days_added = new_calendar_days_span - calendar_days_span
             data_days_added = new_data_days_count - data_days_count
-            logger.info(f"Extended to include {prev_week_key}: +{calendar_days_added} calendar days, +{data_days_added} data days (total: {new_calendar_days_span} calendar days, {new_data_days_count} data days)")
-            
+            logger.info(
+                f"Extended to include {prev_week_key}: +{calendar_days_added} calendar days, +{data_days_added} data days (total: {new_calendar_days_span} calendar days, {new_data_days_count} data days)")
+
             calendar_days_span = new_calendar_days_span
             date_range = new_date_range
             data_days_count = new_data_days_count
             extension_attempts += 1
-            
+
         if calendar_days_span >= self.minimum_calendar_days_required:
             logger.info(f"Successfully extended {target_week_key} to cover {calendar_days_span} calendar days ({date_range}) - minimum {self.minimum_calendar_days_required}")
         else:
             logger.warning(f"Could not meet minimum calendar days requirement for {target_week_key}: got {calendar_days_span} calendar days, needed {self.minimum_calendar_days_required}")
-        
+
         return all_content, included_days, calendar_days_span, date_range
 
     def _calculate_calendar_days_span(self, included_days: list[str]) -> tuple[int, str]:

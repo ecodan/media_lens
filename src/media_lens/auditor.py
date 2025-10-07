@@ -1,19 +1,15 @@
 import asyncio
 import logging
-import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from src.media_lens.collection.cleaner import WebpageCleaner, cleaner_for_site
-from src.media_lens.collection.harvester import Harvester
 from src.media_lens.common import (
-    LOGGER_NAME, 
+    LOGGER_NAME,
     SITES,
-    UTC_DATE_PATTERN_BW_COMPAT,
-    get_utc_datetime_from_timestamp,
-    ANTHROPIC_MODEL
+    get_utc_datetime_from_timestamp
 )
 from src.media_lens.extraction.agent import create_agent_from_env
 from src.media_lens.extraction.extractor import ContextExtractor
@@ -35,10 +31,10 @@ def audit_days(start_date: datetime = None, end_date: datetime = None, audit_rep
     :param audit_report: if True, write an audit report to audit.txt (default: True)
     :return: None
     """
-    
+
     logger.info("Starting audit_days process")
     storage = shared_storage
-    
+
     # Initialize audit report data
     audit_data = {
         "timestamp": datetime.now().isoformat(),
@@ -51,11 +47,11 @@ def audit_days(start_date: datetime = None, end_date: datetime = None, audit_rep
         "total_problems": 0,
         "total_repairs": 0
     }
-    
+
     # Get all job directories using new hierarchical structure and legacy support
     all_dirs = storage.list_directories("")
     job_dirs = []
-    
+
     # Look for both hierarchical job directories and legacy flat directories
     for dir_name in all_dirs:
         # Check for new hierarchical pattern jobs/YYYY/MM/DD/HHmmss
@@ -68,9 +64,9 @@ def audit_days(start_date: datetime = None, end_date: datetime = None, audit_rep
         # Check for legacy flat directories
         elif re.match(r'^\d{4}-\d{2}-\d{2}_\d{6}$', dir_name):
             job_dirs.append((dir_name, dir_name))
-    
+
     timestamp_dirs = set([job_dir[0] for job_dir in job_dirs])
-    
+
     # Filter directories by date range if specified
     filtered_dirs = []
     for job_dir_path, timestamp in job_dirs:
@@ -83,35 +79,35 @@ def audit_days(start_date: datetime = None, end_date: datetime = None, audit_rep
             else:
                 # Legacy flat format
                 dir_datetime = get_utc_datetime_from_timestamp(timestamp)
-            
+
             # Check if within date range
             if start_date and dir_datetime.date() < start_date.date():
                 continue
             if end_date and dir_datetime.date() > end_date.date():
                 continue
-                
+
             filtered_dirs.append(job_dir_path)
         except ValueError as e:
             logger.warning(f"Could not parse timestamp from directory {job_dir_path}: {e}")
             continue
-    
+
     if not filtered_dirs:
         logger.info("No directories found matching the specified date range")
         return
-    
+
     logger.info(f"Auditing {len(filtered_dirs)} directories")
     audit_data["total_directories"] = len(filtered_dirs)
-    
+
     # Audit each directory
     for timestamp_dir in filtered_dirs:
         logger.info(f"Auditing directory: {timestamp_dir}")
         audit_data["directories_audited"].append(timestamp_dir)
         _audit_single_directory(timestamp_dir, SITES, audit_data)
-    
+
     # Calculate final totals
     audit_data["total_problems"] = len(audit_data["problems_found"])
     audit_data["total_repairs"] = len([r for r in audit_data["repairs_made"] if r["success"]])
-    
+
     # Generate audit report if requested
     if audit_report:
         _generate_audit_report(audit_data, storage)
@@ -129,13 +125,13 @@ def _audit_single_directory(timestamp_dir: str, sites: List[str], audit_data: di
     missing_files = []
     needs_cleaning = []
     needs_extraction = []
-    
+
     for site in sites:
         # Check for required files
         raw_html = f"{timestamp_dir}/{site}.html"
         clean_html = f"{timestamp_dir}/{site}-clean.html"
         extracted_json = f"{timestamp_dir}/{site}-clean-extracted.json"
-        
+
         # Check if raw HTML exists
         if not storage.file_exists(raw_html):
             problem = f"Missing raw HTML file: {raw_html} - nothing to do"
@@ -150,7 +146,7 @@ def _audit_single_directory(timestamp_dir: str, sites: List[str], audit_data: di
                 "repairable": False
             })
             continue
-            
+
         # Check if clean HTML exists
         if not storage.file_exists(clean_html):
             problem = f"Missing clean HTML file: {clean_html} - will regenerate"
@@ -164,7 +160,7 @@ def _audit_single_directory(timestamp_dir: str, sites: List[str], audit_data: di
                 "description": problem,
                 "repairable": True
             })
-            
+
         # Check if extracted JSON exists
         if not storage.file_exists(extracted_json):
             problem = f"Missing extracted JSON file: {extracted_json} - will regenerate"
@@ -182,7 +178,7 @@ def _audit_single_directory(timestamp_dir: str, sites: List[str], audit_data: di
             # Check for article files (typically 0-4, but we'll check what exists)
             try:
                 extracted_data = storage.read_json(extracted_json)
-                
+
                 # Check if the JSON is empty or missing stories
                 if not extracted_data or not extracted_data.get("stories"):
                     problem = f"Empty or invalid extracted JSON file: {extracted_json} - will regenerate"
@@ -225,13 +221,13 @@ def _audit_single_directory(timestamp_dir: str, sites: List[str], audit_data: di
                     "repairable": True
                 })
                 needs_extraction.append((timestamp_dir, site))
-    
+
     # Note: totals will be calculated after all directories are processed
-    
+
     # Run repair operations
     if needs_cleaning:
         _repair_cleaning(needs_cleaning, audit_data)
-    
+
     if needs_extraction:
         asyncio.run(_repair_extraction(needs_extraction, audit_data))
 
@@ -244,24 +240,24 @@ def _repair_cleaning(needs_cleaning: List[tuple], audit_data: dict) -> None:
     :param audit_data: Dictionary to collect audit information for reporting
     """
     storage = shared_storage
-    
+
     for timestamp_dir, site in needs_cleaning:
         try:
             logger.info(f"Repairing clean HTML for {site} in {timestamp_dir}")
-            
+
             # Read the raw HTML
             raw_html_path = f"{timestamp_dir}/{site}.html"
             content = storage.read_text(raw_html_path)
-            
+
             # Clean the content
             cleaner = WebpageCleaner(site_cleaner=cleaner_for_site(site))
             clean_content = cleaner.clean_html(content)
             clean_content = cleaner.filter_text_elements(clean_content)
-            
+
             # Write the cleaned content
             clean_html_path = f"{timestamp_dir}/{site}-clean.html"
             storage.write_text(clean_html_path, clean_content, encoding="utf-8")
-            
+
             logger.info(f"Successfully repaired clean HTML: {clean_html_path}")
             audit_data["repairs_made"].append({
                 "directory": timestamp_dir,
@@ -271,7 +267,7 @@ def _repair_cleaning(needs_cleaning: List[tuple], audit_data: dict) -> None:
                 "description": f"Successfully regenerated clean HTML for {site}",
                 "success": True
             })
-            
+
         except Exception as e:
             error_msg = f"Failed to repair clean HTML for {site} in {timestamp_dir}: {e}"
             logger.error(error_msg)
@@ -293,34 +289,34 @@ async def _repair_extraction(needs_extraction: List[tuple], audit_data: dict) ->
     :param audit_data: Dictionary to collect audit information for reporting
     """
     storage = shared_storage
-    
+
     # Group by timestamp directory to process efficiently
     dirs_to_process = {}
     for timestamp_dir, site in needs_extraction:
         if timestamp_dir not in dirs_to_process:
             dirs_to_process[timestamp_dir] = []
         dirs_to_process[timestamp_dir].append(site)
-    
+
     # Create extractor with API key
     try:
         agent = create_agent_from_env()
     except Exception as e:
         logger.error(f"Failed to create agent - cannot run extraction repair: {e}")
         return
-    
+
     for timestamp_dir, sites in dirs_to_process.items():
         try:
             logger.info(f"Repairing extraction for {len(sites)} sites in {timestamp_dir}")
-            
+
             # Create a Path object for the extractor (it expects this)
             # Since we're using storage adapter, we'll create a mock path
             working_dir = Path(storage.get_absolute_path(timestamp_dir))
-            
+
             extractor = ContextExtractor(agent=agent, working_dir=working_dir)
-            
+
             # Run extraction with a delay to avoid rate limiting
             await extractor.run(delay_between_sites_secs=30)
-            
+
             logger.info(f"Successfully repaired extraction for {timestamp_dir}")
             for site in sites:
                 audit_data["repairs_made"].append({
@@ -331,7 +327,7 @@ async def _repair_extraction(needs_extraction: List[tuple], audit_data: dict) ->
                     "description": f"Successfully regenerated extraction files for {site}",
                     "success": True
                 })
-            
+
         except Exception as e:
             error_msg = f"LLM extraction failed for {timestamp_dir}: {e}"
             logger.error(error_msg)
@@ -363,7 +359,7 @@ def _generate_audit_report(audit_data: dict, storage) -> None:
     :param storage: Storage adapter instance
     """
     report_lines = []
-    
+
     # Header
     report_lines.append("=" * 80)
     report_lines.append("MEDIA LENS AUDIT REPORT")
@@ -374,7 +370,7 @@ def _generate_audit_report(audit_data: dict, storage) -> None:
     report_lines.append(f"Total Problems Found: {audit_data['total_problems']}")
     report_lines.append(f"Total Repairs Made: {audit_data['total_repairs']}")
     report_lines.append("")
-    
+
     # Summary by directory
     report_lines.append("DIRECTORIES AUDITED:")
     report_lines.append("-" * 40)
@@ -383,7 +379,7 @@ def _generate_audit_report(audit_data: dict, storage) -> None:
         dir_repairs = [r for r in audit_data["repairs_made"] if r["directory"] == directory]
         report_lines.append(f"  {directory}: {len(dir_problems)} problems, {len(dir_repairs)} repairs")
     report_lines.append("")
-    
+
     # Problems found
     if audit_data["problems_found"]:
         report_lines.append("PROBLEMS FOUND:")
@@ -399,7 +395,7 @@ def _generate_audit_report(audit_data: dict, storage) -> None:
     else:
         report_lines.append("PROBLEMS FOUND: None")
         report_lines.append("")
-    
+
     # Repairs made
     if audit_data["repairs_made"]:
         report_lines.append("REPAIRS MADE:")
@@ -415,16 +411,16 @@ def _generate_audit_report(audit_data: dict, storage) -> None:
     else:
         report_lines.append("REPAIRS MADE: None")
         report_lines.append("")
-    
+
     # Footer
     report_lines.append("=" * 80)
     report_lines.append("END OF AUDIT REPORT")
     report_lines.append("=" * 80)
-    
+
     # Write report to storage
     report_content = "\n".join(report_lines)
     report_path = "audit.txt"
     storage.write_text(report_path, report_content)
-    
+
     logger.info(f"Audit report written to: {storage.get_absolute_path(report_path)}")
     print(f"Audit report saved to: {storage.get_absolute_path(report_path)}")

@@ -7,19 +7,21 @@ from urllib.parse import urlparse
 
 import dotenv
 
-from src.media_lens.common import LOGGER_NAME, get_project_root, ANTHROPIC_MODEL
+from src.media_lens.common import LOGGER_NAME
 from src.media_lens.extraction.agent import Agent, create_agent_from_env
-from src.media_lens.extraction.headliner import LLMHeadlineExtractor
 from src.media_lens.extraction.collector import ArticleCollector
+from src.media_lens.extraction.headliner import LLMHeadlineExtractor
 from src.media_lens.job_dir import JobDir
 from src.media_lens.storage import shared_storage
 
 logger = logging.getLogger(LOGGER_NAME)
 
+
 class ContextExtractor:
     """
     Orchestrates the extraction of headlines and articles from a set of HTML files.
     """
+
     def __init__(self, agent: Agent, working_dir=None):
         super().__init__()
         self.storage = shared_storage
@@ -63,7 +65,7 @@ class ContextExtractor:
         :return:
         """
         logger.info(f"Starting extraction at {self.working_dir}")
-        
+
         # Get the directory name (for cloud storage path)
         # Handle JobDir objects, strings, and Path objects
         if isinstance(self.working_dir, JobDir):
@@ -78,24 +80,24 @@ class ContextExtractor:
         else:
             # Path object
             dir_name = self.working_dir.name
-        
+
         # Get clean HTML files using the storage adapter
         clean_html_files = self.storage.get_files_by_pattern(dir_name, "*-clean.html")
-        
+
         for file_path in clean_html_files:
             logger.info(f"Processing {file_path}")
-            
+
             # Read content using storage adapter
             content = self.storage.read_text(file_path)
             file_name = os.path.basename(file_path)
             file_stem = os.path.splitext(file_name)[0]
-            
+
             try:
                 results: dict = self.headline_extractor.extract(content)
                 if results.get("error"):
                     logger.warning(f"error in extraction: {results['error']}")
                     continue
-                    
+
                 # summarize stories
                 for idx, result in enumerate(results.get("stories", [])):
                     url: str = result.get("url")
@@ -110,14 +112,14 @@ class ContextExtractor:
                                 self.storage.write_json(article_file_path, article)
                         except Exception as e:
                             logger.error(f"Failed to extract article: {url} - {str(e)}")
-                            
+
                 # Use storage adapter to write extracted data
                 extracted_file_path = f"{dir_name}/{file_stem}-extracted.json"
                 self.storage.write_json(extracted_file_path, results)
-                
+
             except Exception as e:
                 logger.error(f"Failed to extract headlines from {file_path}: {str(e)}")
-                
+
             time.sleep(delay_between_sites_secs)
 
 
@@ -128,6 +130,7 @@ async def main():
         agent=agent
     )
     await extractor.run()
+
 
 if __name__ == '__main__':
     dotenv.load_dotenv()

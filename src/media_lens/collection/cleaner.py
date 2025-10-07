@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import time
 from abc import abstractmethod
@@ -13,11 +12,13 @@ logger = logging.getLogger(LOGGER_NAME)
 
 TEXT_ELEMENTS: set[str] = {'span', 'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'a'}
 
+
 class SiteSpecificCleaner:
 
     @abstractmethod
     def clean_page(self, page: BeautifulSoup) -> BeautifulSoup:
         pass
+
 
 class PatternBasedCleaner(SiteSpecificCleaner):
 
@@ -55,13 +56,16 @@ class PatternBasedCleaner(SiteSpecificCleaner):
         logger.debug(f"Pattern matching took {elapsed_time:.2f} seconds")
         return page
 
+
 class CNNCleaner(PatternBasedCleaner):
     def __init__(self):
         super().__init__(CleanerConfig.SITE_PATTERNS["www.cnn.com"])
 
+
 class BBCCleaner(PatternBasedCleaner):
     def __init__(self):
         super().__init__(CleanerConfig.SITE_PATTERNS["www.bbc.com"])
+
 
 class FoxNewsCleaner(PatternBasedCleaner):
     def __init__(self):
@@ -139,7 +143,7 @@ class WebpageCleaner:
 
             # Check if element has any text display descendants
             has_text_descendant = any(descendant.name in text_tags
-                                    for descendant in element.find_all())
+                                      for descendant in element.find_all())
 
             if not has_text_descendant:
                 elements_to_remove.append(element)
@@ -193,12 +197,14 @@ class WebpageCleaner:
             element = element.parent
         return '//' + '/'.join(path)
 
+
 ############################################################
 # TESTING
 def load_test_file(file_path: Path) -> str:
     with open(file_path, "r") as file:
         content = file.read()
     return content
+
 
 async def main(working_dir: Path, fname: str, cleaner: SiteSpecificCleaner):
     fpath: Path = working_dir / fname
@@ -216,6 +222,7 @@ async def main(working_dir: Path, fname: str, cleaner: SiteSpecificCleaner):
 
     with open(working_dir / f"{fpath.stem}-clean.html", "w") as file:
         file.write(cleaned)
+
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)

@@ -24,7 +24,7 @@ def get_deploy_cursor() -> Optional[datetime.datetime]:
     """
     cursor_path = "deploy_cursor.txt"
     storage = shared_storage
-    
+
     if storage.file_exists(cursor_path):
         try:
             cursor_str = storage.read_text(cursor_path).strip()
@@ -44,7 +44,7 @@ def update_deploy_cursor(timestamp: datetime.datetime) -> None:
     """
     cursor_path = "deploy_cursor.txt"
     storage = shared_storage
-    
+
     try:
         storage.write_text(cursor_path, timestamp.isoformat())
         logger.info(f"Updated deploy cursor to {timestamp.isoformat()}")
@@ -74,7 +74,7 @@ def reset_deploy_cursor() -> None:
     """
     cursor_path = "deploy_cursor.txt"
     storage = shared_storage
-    
+
     try:
         if storage.file_exists(cursor_path):
             storage.delete_file(cursor_path)
@@ -95,14 +95,14 @@ def get_files_to_deploy(cursor: Optional[datetime.datetime] = None) -> List[str]
     """
     storage = shared_storage
     staging_dir = storage.get_staging_directory()
-    
+
     # Get all HTML files in staging directory
     all_files = storage.get_files_by_pattern(staging_dir, "*.html")
-    
+
     if cursor is None:
         logger.info("No deploy cursor found - deploying all files")
         return all_files
-    
+
     # Filter files by modification time
     files_to_deploy = []
     for file_path in all_files:
@@ -118,7 +118,7 @@ def get_files_to_deploy(cursor: Optional[datetime.datetime] = None) -> List[str]
             logger.debug(f"Could not get modification time for {file_path}: {e}")
             # If we can't get mtime, include the file to be safe
             files_to_deploy.append(file_path)
-    
+
     logger.info(f"Found {len(files_to_deploy)} files to deploy since cursor")
     return files_to_deploy
 
@@ -135,20 +135,20 @@ def upload_html_content_from_storage(storage_path: str) -> bool:
     """
     # Get content from storage
     content = shared_storage.read_text(storage_path)
-    
+
     # Extract the original filename from storage_path
     original_filename = Path(storage_path).name
-    
+
     # Create temporary file and upload
     with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
         f.write(content)
         local_temp_path = f.name
-    
+
     success = upload_file(local_file=Path(local_temp_path), target_filename=original_filename)
-    
+
     # Clean up temp file
     os.unlink(local_temp_path)
-    
+
     return success
 
 
@@ -164,7 +164,7 @@ def upload_file(local_file: Path, target_filename: str = None):
     # Get FTP credentials from environment or loaded secrets
     from src.media_lens.secret_manager import load_secrets_from_gcp
     loaded_secrets = load_secrets_from_gcp()
-    
+
     hostname = os.getenv("FTP_HOSTNAME") or loaded_secrets.get("FTP_HOSTNAME")
     ip_fallback = os.getenv("FTP_IP_FALLBACK") or loaded_secrets.get("FTP_IP_FALLBACK")
     username = os.getenv("FTP_USERNAME") or loaded_secrets.get("FTP_USERNAME")
@@ -173,7 +173,8 @@ def upload_file(local_file: Path, target_filename: str = None):
     port: int = int(port_str) if port_str else 22
 
     remote_path_from_secrets = os.getenv("FTP_REMOTE_PATH") or loaded_secrets.get("FTP_REMOTE_PATH")
-    logger.info(f"FTP credentials loaded: hostname: {hostname} | ip_fallback: {ip_fallback} | username: {username} | port: {port} | key_file_path: {key_file_path} | remote path {remote_path_from_secrets}")
+    logger.info(
+        f"FTP credentials loaded: hostname: {hostname} | ip_fallback: {ip_fallback} | username: {username} | port: {port} | key_file_path: {key_file_path} | remote path {remote_path_from_secrets}")
 
     try:
         connect_hostname = hostname
@@ -188,10 +189,10 @@ def upload_file(local_file: Path, target_filename: str = None):
             logger.debug("Loading Ed25519 key...")
             if not key_file_path:
                 raise ValueError("FTP_SSH_KEY_FILE environment variable is not set")
-            
+
             # Get passphrase from loaded secrets
             passphrase = os.getenv("FTP_PASSPHRASE") or loaded_secrets.get("FTP_PASSPHRASE")
-            
+
             if passphrase:
                 private_key = paramiko.Ed25519Key.from_private_key_file(key_file_path, password=passphrase)
             else:
@@ -234,7 +235,7 @@ def upload_file(local_file: Path, target_filename: str = None):
                 except Exception as ip_e:
                     logger.error(f"Failed to connect using IP fallback: {str(ip_e)}")
                     # Keep the original error
-        
+
         # If we still have an error, raise it
         if connection_error:
             raise connection_error
@@ -286,12 +287,12 @@ def upload_file(local_file: Path, target_filename: str = None):
         return False
 
 
-
 ##################
 # Test
 def main():
     local: Path = get_project_root() / "working/out/medialens.html"
     upload_file(local_file=local)
+
 
 if __name__ == '__main__':
     dotenv.load_dotenv()

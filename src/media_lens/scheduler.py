@@ -1,9 +1,10 @@
-import schedule
-import time
-import subprocess
-import os
 import argparse
+import os
+import subprocess
+import time
 from datetime import datetime
+
+import schedule
 
 
 def validate_time(time_str):

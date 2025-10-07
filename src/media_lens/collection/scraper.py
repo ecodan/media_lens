@@ -13,8 +13,8 @@ from src.media_lens.common import LOGGER_NAME, get_project_root
 
 logger = logging.getLogger(LOGGER_NAME)
 
-class WebpageScraper:
 
+class WebpageScraper:
     class BrowserType(Enum):
         DESKTOP = 1
         MOBILE = 2
@@ -34,14 +34,14 @@ class WebpageScraper:
         context = None
         page = None
         content = None
-        
+
         try:
             playwright = await async_playwright().start()
 
             # Different browser args based on PLAYWRIGHT_MODE environment variable
             # Defaults to 'cloud' for backwards compatibility and cloud deployment
             playwright_mode = os.getenv('PLAYWRIGHT_MODE', 'cloud').lower()
-            
+
             if playwright_mode == 'local':
                 # Local development arguments (macOS-friendly)
                 base_args = [
@@ -64,14 +64,14 @@ class WebpageScraper:
                     '--single-process'
                 ]
                 logger.debug("Using cloud/container-optimized browser args")
-            
+
             # Launch browser in stealth mode with environment-optimized settings
             browser = await playwright.chromium.launch(
                 headless=True,
                 timeout=180000,  # 3 minute timeout for browser launch
                 args=base_args
             )
-            
+
             if browser_type == WebpageScraper.BrowserType.DESKTOP:
                 context = await browser.new_context(
                     viewport={'width': 1920, 'height': 1080},
@@ -131,14 +131,14 @@ class WebpageScraper:
             logger.error(f"Error fetching page content: {str(e)}")
             traceback.print_exc()
             content = None
-            
+
         finally:
             # Properly close resources in reverse order with timeouts
             logger.debug("Starting resource cleanup...")
-            
+
             # Give a brief moment for any pending operations to complete
             await asyncio.sleep(0.1)
-            
+
             if page:
                 try:
                     if not page.is_closed():
@@ -146,14 +146,14 @@ class WebpageScraper:
                 except (Exception, asyncio.TimeoutError) as e:
                     if "Target page, context or browser has been closed" not in str(e):
                         logger.warning(f"Error closing page: {str(e)}")
-                    
+
             if context:
                 try:
                     await asyncio.wait_for(context.close(), timeout=5.0)
                 except (Exception, asyncio.TimeoutError) as e:
                     if "Target page, context or browser has been closed" not in str(e):
                         logger.warning(f"Error closing context: {str(e)}")
-                    
+
             if browser:
                 try:
                     if browser.is_connected():
@@ -161,16 +161,15 @@ class WebpageScraper:
                 except (Exception, asyncio.TimeoutError) as e:
                     if "Target page, context or browser has been closed" not in str(e):
                         logger.warning(f"Error closing browser: {str(e)}")
-                    
+
             if playwright:
                 try:
                     await asyncio.wait_for(playwright.stop(), timeout=10.0)
                 except (Exception, asyncio.TimeoutError) as e:
                     logger.warning(f"Error stopping playwright: {str(e)}")
-            
-            
+
             logger.debug("Resource cleanup completed")
-        
+
         return content
 
 

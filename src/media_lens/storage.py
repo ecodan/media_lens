@@ -14,6 +14,7 @@ logger = logging.getLogger(LOGGER_NAME)
 # Lazy-loaded shared instance to ensure .env is loaded first
 _shared_storage = None
 
+
 def get_shared_storage():
     """Get the shared storage adapter instance, creating it if needed."""
     global _shared_storage
@@ -28,9 +29,11 @@ def get_shared_storage():
         _shared_storage = StorageAdapter.get_instance()
     return _shared_storage
 
+
 # Create a property-like access for backward compatibility
 class _SharedStorageProxy:
     def __getattr__(self, name):
         return getattr(get_shared_storage(), name)
+
 
 shared_storage = _SharedStorageProxy()

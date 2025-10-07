@@ -18,7 +18,7 @@ logger = logging.getLogger(LOGGER_NAME)
 
 class DirectoryManager:
     """Manages directory structure for media lens application."""
-    
+
     def __init__(self, base_path: Union[str, Path] = ""):
         """
         Initialize the directory manager.
@@ -27,7 +27,7 @@ class DirectoryManager:
             base_path: Base path for all directories (e.g., 'working' or cloud storage prefix)
         """
         self.base_path = Path(base_path) if base_path else Path("")
-    
+
     def get_job_dir(self, timestamp: Optional[str] = None) -> str:
         """
         Get a job directory path in YYYY/MM/DD/HHmmss format.
@@ -45,16 +45,16 @@ class DirectoryManager:
             # Parse existing timestamp to get datetime
             dt = datetime.strptime(timestamp, UTC_DATE_PATTERN_BW_COMPAT)
             dt = dt.replace(tzinfo=timezone.utc)
-        
+
         # Format: YYYY/MM/DD/HHmmss
         year = dt.strftime("%Y")
         month = dt.strftime("%m")
         day = dt.strftime("%d")
         time_part = dt.strftime("%H%M%S")
-        
+
         job_path = self.base_path / "jobs" / year / month / day / time_part
         return str(job_path)
-    
+
     def get_intermediate_dir(self, subdir: str = "") -> str:
         """
         Get intermediate data directory path.
@@ -70,7 +70,7 @@ class DirectoryManager:
         else:
             path = self.base_path / "intermediate"
         return str(path)
-    
+
     def get_staging_dir(self, subdir: str = "") -> str:
         """
         Get staging directory path for website-ready files.
@@ -86,7 +86,7 @@ class DirectoryManager:
         else:
             path = self.base_path / "staging"
         return str(path)
-    
+
     def parse_job_timestamp(self, job_dir: str) -> str:
         """
         Extract timestamp from job directory path.
@@ -100,21 +100,21 @@ class DirectoryManager:
         # Extract components from path like "jobs/2025/01/15/143022"
         path = Path(job_dir)
         parts = path.parts
-        
+
         # Find the timestamp parts
         if len(parts) >= 4 and "jobs" in parts:
             jobs_idx = parts.index("jobs")
             if jobs_idx + 4 < len(parts):
                 year = parts[jobs_idx + 1]
-                month = parts[jobs_idx + 2] 
+                month = parts[jobs_idx + 2]
                 day = parts[jobs_idx + 3]
                 time_part = parts[jobs_idx + 4]
-                
+
                 # Convert to timestamp format YYYY-MM-DD_HHMMSS
                 return f"{year}-{month}-{day}_{time_part}"
-        
+
         raise ValueError(f"Could not parse timestamp from job directory: {job_dir}")
-    
+
     def get_jobs_in_date_range(self, start_date: str, end_date: str, storage_adapter) -> List[str]:
         """
         Get all job directories within a date range.
@@ -129,31 +129,31 @@ class DirectoryManager:
         """
         start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc)
-        
+
         job_dirs = []
         jobs_base = str(self.base_path / "jobs")
-        
+
         # Get all directories under jobs/
         try:
             all_dirs = storage_adapter.list_directories(jobs_base)
-            
+
             for dir_path in all_dirs:
                 try:
                     timestamp = self.parse_job_timestamp(dir_path)
                     job_dt = datetime.strptime(timestamp, UTC_DATE_PATTERN_BW_COMPAT)
                     job_dt = job_dt.replace(tzinfo=timezone.utc)
-                    
+
                     if start_dt <= job_dt <= end_dt:
                         job_dirs.append(dir_path)
                 except ValueError:
                     # Skip directories that don't match expected format
                     continue
-                    
+
         except Exception as e:
             logger.warning(f"Could not list job directories: {e}")
-        
+
         return sorted(job_dirs)
-    
+
     def get_date_range_boundaries(self, start_date: str, end_date: str) -> Tuple[datetime, datetime]:
         """
         Parse date range strings and handle month/year boundaries properly.
@@ -171,9 +171,9 @@ class DirectoryManager:
         end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
             hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc
         )
-        
+
         return start_dt, end_dt
-    
+
     def get_jobs_by_pattern(self, pattern: str, storage_adapter) -> List[str]:
         """
         Get job directories matching a pattern.
@@ -187,7 +187,7 @@ class DirectoryManager:
         """
         jobs_base = str(self.base_path / "jobs")
         search_pattern = f"{jobs_base}/{pattern}"
-        
+
         try:
             return storage_adapter.get_files_by_pattern("", search_pattern)
         except Exception as e:
