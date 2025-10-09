@@ -29,3 +29,4 @@ wheels/
 *.bak
 *.backup**/__pycache__/
 *.pyc
+/.ai/

@@ -22,75 +22,57 @@ about the content of the articles and what might be deduced from them.
 """
 
 REASONING_PROMPT: str = """
-You are a highly skilled media analyst and sociologist tasked with analyzing a set of news articles and providing insights on current events. Your analysis will focus on global issues, with particular attention to the situation in the United States and the performance of the U.S. President.
+You are a highly skilled media analyst and sociologist tasked with analyzing news articles and providing insights on current events. Your analysis will focus on global issues, with particular attention to the situation in the United States and the performance of the U.S. President.
 
-First, carefully read through the following news content:
+Carefully read through the following news content:
 
 {content}
 
-After reading the news content, you will answer a series of questions. For each question, wrap your thought process in <thinking> </thinking> tags to break down your reasoning and ensure thorough analysis before providing your final answer. Pay close attention to the specified output format for each question.
-
-Questions to answer:
+Based on this news content, answer these five questions:
 
 1. What is the most important news right now?
-   Output format: Concise narrative
+   - Provide a concise narrative (2-4 sentences)
 
 2. What are the biggest issues in the world right now?
-   Output format: Concise narrative
+   - Provide a concise narrative (2-4 sentences)
 
 3. For articles referring to the president of the U.S. (Donald Trump), is the president doing a [poor, ok, good, excellent] job based on the portrayal?
-   Output format: [Poor, Ok, Good, Excellent] - reasoning: 50 words or less
+   - Format: [Poor, Ok, Good, Excellent] - brief reasoning (50 words or less)
 
 4. What are three adjectives that best describe the situation in the U.S.?
-   Output format: Adjective, Adjective, Adjective
+   - Format: Adjective1, Adjective2, Adjective3
 
 5. What are three adjectives that best describe the job performance and character of the U.S. President?
-   Output format: Adjective, Adjective, Adjective
+   - Format: Adjective1, Adjective2, Adjective3
 
-For each question, follow these steps:
-1. List relevant quotes from the news content that support your analysis.
-2. Consider multiple perspectives and potential interpretations.
-3. For questions 4 and 5, brainstorm a list of potential adjectives before selecting the final three.
-4. Formulate your answer based on the evidence in the articles.
-5. Double-check that your answer adheres to the specified output format.
-6. Ensure your reasoning is clear, concise, and well-supported by the information provided.
+IMPORTANT: Return ONLY a JSON array with exactly 5 objects, each containing a "question" field (the question text exactly as written above) and an "answer" field (your response). Do not include any additional wrapper objects, thinking tags, or analysis fields.
 
-Your final response should be formatted as a JSON object containing the questions (as written above) and your answers. Use the following structure:
-
-[
-  {{
-    "question": "<question as written above>",
-    "answer": "<your answer, following the format guidelines for each question>"
-  }},
-  ...
-]
-
-Example of the expected JSON structure (with generic content):
+Required format (copy this structure exactly):
 
 [
   {{
     "question": "What is the most important news right now?",
-    "answer": "A concise narrative describing the most important current news."
+    "answer": "<your concise narrative here>"
   }},
   {{
     "question": "What are the biggest issues in the world right now?",
-    "answer": "A concise narrative outlining the most significant global issues."
+    "answer": "<your concise narrative here>"
   }},
   {{
     "question": "For articles referring to the president of the U.S. (Donald Trump), is the president doing a [poor, ok, good, excellent] job based on the portrayal?",
-    "answer": "Ok - A 50-word explanation of why the portrayal suggests good performance."
+    "answer": "<Poor/Ok/Good/Excellent> - <your brief reasoning here>"
   }},
   {{
     "question": "What are three adjectives that best describe the situation in the U.S.?",
-    "answer": "Adjective1, Adjective2, Adjective3"
+    "answer": "<Adjective1, Adjective2, Adjective3>"
   }},
   {{
     "question": "What are three adjectives that best describe the job performance and character of the U.S. President?",
-    "answer": "Adjective1, Adjective2, Adjective3"
+    "answer": "<Adjective1, Adjective2, Adjective3>"
   }}
 ]
 
-Remember to provide only the JSON response without any additional text.
+Return ONLY the JSON array above with your answers filled in. No additional text, wrappers, or fields.
 """
 
 OLD_REASONING_PROMPT: str = """
@@ -149,24 +131,66 @@ class LLMWebsiteInterpreter:
 
     def _parse_llm_response(self, response: str) -> List[Dict]:
         """
-        Parse LLM response.
+        Parse LLM response, handling various unexpected JSON structures.
         Note: Response should already be cleaned if response_format=JSON was used in the agent call.
         """
         try:
             # Sanitize response by removing non-printable characters
             sanitized_response = ''.join(char for char in response if ord(char) >= 32 or char in '\n\r\t')
 
-            if sanitized_response:
-                content = json.loads(sanitized_response)
-                return content
+            if not sanitized_response:
+                logger.warning("Empty response after sanitization")
+                return []
+
+            content = json.loads(sanitized_response)
+
+            # Handle various unexpected JSON structures
+            # Expected: List of dicts with "question" and "answer" keys
+            # Sometimes LLMs wrap this in extra objects like {"analysis": [...]}
+
+            if isinstance(content, list):
+                # Correct format - verify it has the right structure
+                if all(isinstance(item, dict) and 'question' in item and 'answer' in item for item in content):
+                    return content
+                else:
+                    logger.error(f"Response is a list but items don't have expected structure: {content[:2] if len(content) > 2 else content}")
+                    return []
+
+            elif isinstance(content, dict):
+                # LLM wrapped the response in an object - try to extract the array
+                logger.warning(f"Response is wrapped in a dict with keys: {list(content.keys())}")
+
+                # Common wrapper keys: "analysis", "response", "result", "questions"
+                for key in ['analysis', 'response', 'result', 'questions', 'answers']:
+                    if key in content:
+                        extracted = content[key]
+                        if isinstance(extracted, list):
+                            logger.info(f"Extracted list from '{key}' wrapper")
+                            return self._parse_llm_response(json.dumps(extracted))  # Recursively parse
+                        elif isinstance(extracted, str):
+                            # The content might be a JSON string
+                            logger.info(f"Found string in '{key}' wrapper, attempting to parse")
+                            try:
+                                return self._parse_llm_response(extracted)  # Recursively parse
+                            except:
+                                logger.error(f"Could not parse string from '{key}' wrapper")
+                                return []
+
+                logger.error(f"Could not find expected list in dict structure: {content}")
+                return []
+
             else:
+                logger.error(f"Unexpected response type: {type(content)}")
                 return []
 
         except json.JSONDecodeError as json_err:
             logger.error(f"JSON parse error: {str(json_err)}")
+            logger.debug(f"Failed to parse: {sanitized_response[:500] if len(sanitized_response) > 500 else sanitized_response}")
             return []
         except Exception as e:
             logger.error(f"Error parsing LLM response: {str(e)}")
+            import traceback
+            logger.debug(traceback.format_exc())
             return []
 
     def _format_articles_for_llm(self, articles: List[Dict], include_site: bool = False) -> List[str]:
