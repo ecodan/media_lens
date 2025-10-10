@@ -16,9 +16,13 @@ from src.media_lens.storage_adapter import StorageAdapter
 # Initialize Flask app
 app = Flask(__name__)
 
-# Setup logging with persistent log file
-# create_logger(LOGGER_NAME, logfile_path="/app/logs/media-lens.log")
-create_logger(LOGGER_NAME)
+# Setup logging with persistent log file (100MB max size)
+create_logger(
+    LOGGER_NAME,
+    logfile_path="/app/working/logs/media-lens.log",
+    max_bytes=10 * 1024 * 1024,  # 10MB
+    backup_count=5  # Keep 5 backup files (total ~600MB max)
+)
 logger = logging.getLogger(LOGGER_NAME)
 
 # Initialize secrets at startup

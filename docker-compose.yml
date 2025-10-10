@@ -51,6 +51,13 @@ services:
       # Alternative credential paths that might exist on VM
       - /var/google-cloud/auth:/var/google-cloud/auth:ro
       - /etc/google/auth:/etc/google/auth:ro
+    # Configure Docker logging to send to GCP Cloud Logging
+    logging:
+      driver: gcplogs
+      options:
+        gcp-project: medialens
+        gcp-log-cmd: "true"
+        labels: "app,environment"
     # The container-startup.sh script will be used by default (defined in Dockerfile)
     # Only make app depend on storage when running locally with the storage emulator
     depends_on:

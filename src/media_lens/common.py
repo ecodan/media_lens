@@ -203,7 +203,24 @@ class RunState:
         return cls._current_run_id
 
 
-def create_logger(name: str, logfile_path: Union[str, Path] = None) -> logging.Logger:
+def create_logger(
+    name: str,
+    logfile_path: Union[str, Path] = None,
+    max_bytes: int = 1000000,
+    backup_count: int = 10
+) -> logging.Logger:
+    """
+    Create a logger with stdout and optional rotating file handler.
+
+    Args:
+        name: Logger name
+        logfile_path: Optional path to log file
+        max_bytes: Maximum size of log file before rotation (default: 1MB)
+        backup_count: Number of backup files to keep (default: 10)
+
+    Returns:
+        Configured logger instance
+    """
     logger = logging.getLogger(name)
     formatter = logging.Formatter(LOG_FORMAT)
     logger.setLevel(logging.DEBUG)
@@ -221,8 +238,8 @@ def create_logger(name: str, logfile_path: Union[str, Path] = None) -> logging.L
             logfile_path.parent.mkdir(parents=True, exist_ok=True)
             handler = RotatingFileHandler(
                 filename=str(logfile_path),
-                maxBytes=1000000,
-                backupCount=10
+                maxBytes=max_bytes,
+                backupCount=backup_count
             )
             handler.setFormatter(formatter)
             logger.addHandler(handler)
