@@ -17,6 +17,7 @@ from src.media_lens.auditor import audit_days
 from src.media_lens.collection.harvester import Harvester
 from src.media_lens.common import create_logger, LOGGER_NAME, get_project_root, get_working_dir, UTC_REGEX_PATTERN_BW_COMPAT, RunState, get_week_key, SITES
 from src.media_lens.extraction.agent import Agent, create_agent_from_env
+from src.media_lens.extraction.exceptions import ExtractionError
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
 from src.media_lens.extraction.summarizer import DailySummarizer
@@ -482,8 +483,14 @@ async def run(steps: list[Steps], sites: list[str] = None, **kwargs) -> dict:
         if Steps.EXTRACT in steps and not RunState.stop_requested():
             # Extract
             logger.info(f"[Run {run_id}] Starting extract step")
-            await extract(artifacts_dir)
-            result["completed_steps"].append(Steps.EXTRACT.value)
+            try:
+                await extract(artifacts_dir)
+                result["completed_steps"].append(Steps.EXTRACT.value)
+            except ExtractionError as e:
+                logger.error(f"Extraction failed: {e}")
+                result["status"] = "error"
+                result["error"] = str(e)
+                raise  # Stop the pipeline
 
         if Steps.INTERPRET in steps and not RunState.stop_requested():
             # Interpret individual run

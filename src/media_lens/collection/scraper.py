@@ -151,16 +151,24 @@ class WebpageScraper:
                 try:
                     await asyncio.wait_for(context.close(), timeout=5.0)
                 except (Exception, asyncio.TimeoutError) as e:
-                    if "Target page, context or browser has been closed" not in str(e):
-                        logger.warning(f"Error closing context: {str(e)}")
+                    error_str = str(e)
+                    # Suppress expected errors during cleanup
+                    if error_str and "Target page, context or browser has been closed" not in error_str:
+                        logger.warning(f"Error closing context: {type(e).__name__}: {error_str}")
+                    elif not error_str:
+                        logger.debug(f"Context close returned empty error: {type(e).__name__}")
 
             if browser:
                 try:
                     if browser.is_connected():
                         await asyncio.wait_for(browser.close(), timeout=10.0)
                 except (Exception, asyncio.TimeoutError) as e:
-                    if "Target page, context or browser has been closed" not in str(e):
-                        logger.warning(f"Error closing browser: {str(e)}")
+                    error_str = str(e)
+                    # Suppress expected errors during cleanup
+                    if error_str and "Target page, context or browser has been closed" not in error_str:
+                        logger.warning(f"Error closing browser: {type(e).__name__}: {error_str}")
+                    elif not error_str:
+                        logger.debug(f"Browser close returned empty error: {type(e).__name__}")
 
             if playwright:
                 try:

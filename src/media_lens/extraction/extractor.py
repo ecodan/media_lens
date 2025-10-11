@@ -10,6 +10,7 @@ import dotenv
 from src.media_lens.common import LOGGER_NAME
 from src.media_lens.extraction.agent import Agent, create_agent_from_env
 from src.media_lens.extraction.collector import ArticleCollector
+from src.media_lens.extraction.exceptions import ArticleExtractionError
 from src.media_lens.extraction.headliner import LLMHeadlineExtractor
 from src.media_lens.job_dir import JobDir
 from src.media_lens.storage import shared_storage
@@ -56,6 +57,49 @@ class ContextExtractor:
         # Append https:// and domain to the relative URL
         url_path = url[1:] if url.startswith('/') else url
         return f'https://{domain}/{url_path}'
+
+    def _validate_extractions(self, dir_name: str) -> None:
+        """
+        Validate that all sites have extracted the minimum number of articles.
+
+        :param dir_name: Directory containing the extracted files
+        :raises ArticleExtractionError: If any site has insufficient articles
+        """
+        MIN_ARTICLES = 5
+        extraction_errors = []
+
+        # Get all extracted files
+        extracted_files = self.storage.get_files_by_pattern(dir_name, "*-clean-extracted.json")
+
+        for extracted_path in extracted_files:
+            # Extract site name from filename
+            filename = os.path.basename(extracted_path)
+            site_match = re.match(r'^(www\.[^-]+)', filename)
+            if not site_match:
+                logger.warning(f"Could not extract site name from {filename}")
+                continue
+
+            site = site_match.group(1)
+
+            # Read extracted data
+            extracted_data = self.storage.read_json(extracted_path)
+
+            # Check story count
+            stories = extracted_data.get('stories', [])
+            if len(stories) < MIN_ARTICLES:
+                error = ArticleExtractionError(site, MIN_ARTICLES, len(stories))
+                logger.error(str(error))
+                extraction_errors.append(error)
+
+        # Raise if any validation errors
+        if extraction_errors:
+            error_summary = "; ".join(str(e) for e in extraction_errors)
+            raise ArticleExtractionError(
+                site="multiple",
+                expected=MIN_ARTICLES,
+                actual=0,
+                message=f"Extraction validation failed: {error_summary}"
+            )
 
     async def run(self, delay_between_sites_secs: int = 0):
         """
@@ -121,6 +165,9 @@ class ContextExtractor:
                 logger.error(f"Failed to extract headlines from {file_path}: {str(e)}")
 
             time.sleep(delay_between_sites_secs)
+
+        # Validate all sites have minimum articles
+        self._validate_extractions(dir_name)
 
 
 ################

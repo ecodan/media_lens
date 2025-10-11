@@ -16,6 +16,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.media_lens.common import LOGGER_NAME, get_project_root
 from src.media_lens.extraction.agent import Agent, create_agent_from_env, ResponseFormat
+from src.media_lens.extraction.exceptions import JSONParsingError
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -73,43 +74,29 @@ Use the following format for your response:
 """
 
 GATHERING_PROMPT: str = """
-You are a specialized news content analyzer with expertise in extracting and formatting headlines from web content. Your task is to process the results of a previous Chain of Thought (CoT) 
-analysis and format the extracted headlines into a structured JSON format.
+You are a specialized news content analyzer. Extract the headlines from the <output/> section of the previous analysis and format them as JSON.
 
-Here is the previous agent's Chain of Thought analysis:
-
+Previous analysis:
 <cot_analysis>
 {analysis}
 </cot_analysis>
 
-Your objective is to extract the headlines from the <output/> section of the above analysis and format them into a specific JSON structure. Follow these steps:
-
-1. Carefully read and analyze the CoT analysis, focusing on the content within the <output/> tags.
-2. Extract each headline, along with its associated information (title, date if available, and URL).
-3. Format this information into a JSON object following the structure specified below.
-4. Ensure that your output is pure JSON, without any additional text, comments, or formatting.
-
-Use the following JSON structure for your output:
-
+Return ONLY valid JSON with this exact structure:
 {{
     "stories": [
         {{
-            "title": "<story title exactly as it is on the web page>",
-            "date": "<publication date if available>",
-            "url": "<link to referenced article>"
-        }},
-        ...
+            "title": "exact headline text from the page",
+            "date": "publication date if available",
+            "url": "link to the article"
+        }}
     ]
 }}
 
-Before providing your final output, show your thinking and verification process inside <analysis/> tags. In this process:
-1. Extract and list each headline with its associated information, numbering them sequentially.
-2. Verify that each headline has all required information (title, date if available, URL).
-3. Double-check the JSON structure by writing out a skeleton of the JSON object.
-4. Explicitly confirm that there is no extraneous text or formatting that would interfere with the pure JSON output.
-
-After your analysis process, provide only the formatted JSON as your final output. Do not include any additional text, comments, or formatting outside of the JSON structure.
-
+Critical requirements:
+- Return ONLY the JSON object, nothing else
+- No explanations, comments, or text before/after the JSON
+- No markdown code fences
+- The "stories" key must be at the root level of the JSON object
 """
 
 
@@ -205,8 +192,15 @@ class LLMHeadlineExtractor(HeadlineExtractor):
                 response_format=ResponseFormat.JSON
             )
 
-            return json.loads(gathering_response)
+            try:
+                return json.loads(gathering_response)
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON parsing failed: {str(e)}")
+                logger.error(f"Raw LLM response (first 1000 chars): {gathering_response[:1000]}")
+                raise JSONParsingError(gathering_response, str(e))
 
+        except JSONParsingError:
+            raise  # Re-raise JSONParsingError
         except Exception as e:
             logger.error(f"Error processing content: {str(e)}")
             return {"error": str(e)}

@@ -211,3 +211,86 @@ def test_litellm_agent_json_with_preamble(mock_completion):
     # Verify preamble is removed and only JSON remains
     assert response == '{"result": "data"}'
     assert "analysis" not in response
+
+
+@patch('src.media_lens.extraction.agent.litellm.completion')
+def test_clean_json_response_with_schema_wrapper(mock_completion):
+    """Test JSON Schema wrapper detection and unwrapping."""
+    # Create mock response with JSON Schema wrapper format
+    mock_message = MagicMock()
+    mock_message.content = '{"properties": {"stories": [{"title": "News 1"}, {"title": "News 2"}]}, "additionalProperties": false}'
+    mock_choice = MagicMock()
+    mock_choice.message = mock_message
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+    mock_completion.return_value = mock_response
+
+    agent = LiteLLMAgent(model="vertex_ai/gemini-2.5-flash")
+
+    response = agent.invoke(
+        system_prompt="System",
+        user_prompt="User",
+        response_format=ResponseFormat.JSON
+    )
+
+    # Verify schema wrapper is unwrapped
+    assert response == '{"stories": [{"title": "News 1"}, {"title": "News 2"}]}'
+    assert "properties" not in response
+    assert "additionalProperties" not in response
+
+
+@patch('src.media_lens.extraction.agent.litellm.completion')
+def test_clean_json_response_with_trailing_text(mock_completion):
+    """Test JSON cleaning returns response with trailing text (error handling is in caller)."""
+    # Create mock response with valid JSON followed by trailing text
+    mock_message = MagicMock()
+    mock_message.content = '{"stories": [{"title": "News 1"}]} This is extra text'
+    mock_choice = MagicMock()
+    mock_choice.message = mock_message
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+    mock_completion.return_value = mock_response
+
+    agent = LiteLLMAgent(model="anthropic/claude-3-5-haiku-latest")
+
+    response = agent.invoke(
+        system_prompt="System",
+        user_prompt="User",
+        response_format=ResponseFormat.JSON
+    )
+
+    # Agent returns the cleaned response (trailing text may still be present)
+    # The caller (headliner.py) is responsible for catching JSONDecodeError
+    # Verify the response starts with valid JSON
+    assert response.startswith('{"stories":')
+
+    # Verify that json.loads would raise an error (expected behavior)
+    import json
+    with pytest.raises(json.JSONDecodeError, match="Extra data"):
+        json.loads(response)
+
+
+@patch('src.media_lens.extraction.agent.litellm.completion')
+def test_clean_json_response_with_schema_wrapper_and_fences(mock_completion):
+    """Test JSON Schema wrapper with markdown fences."""
+    # Create mock response combining schema wrapper and markdown
+    mock_message = MagicMock()
+    mock_message.content = '```json\n{"properties": {"stories": [{"title": "News 1"}]}}\n```'
+    mock_choice = MagicMock()
+    mock_choice.message = mock_message
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+    mock_completion.return_value = mock_response
+
+    agent = LiteLLMAgent(model="vertex_ai/gemini-2.5-flash")
+
+    response = agent.invoke(
+        system_prompt="System",
+        user_prompt="User",
+        response_format=ResponseFormat.JSON
+    )
+
+    # Verify both markdown fences and schema wrapper are removed
+    assert response == '{"stories": [{"title": "News 1"}]}'
+    assert "properties" not in response
+    assert "```" not in response

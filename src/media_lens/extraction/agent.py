@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import re
@@ -95,6 +96,18 @@ class Agent(metaclass=ABCMeta):
             )
             if json_start < len(response):
                 response = response[json_start:]
+
+        # Try to parse and unwrap JSON Schema format
+        try:
+            parsed = json.loads(response)
+
+            # Detect JSON Schema wrapper: {"properties": {...}, "additionalProperties": ...}
+            if isinstance(parsed, dict) and "properties" in parsed and len(parsed) <= 2:
+                logger.warning("Detected JSON Schema wrapper, unwrapping 'properties'")
+                response = json.dumps(parsed["properties"])
+
+        except json.JSONDecodeError:
+            pass  # Let the caller handle JSON errors
 
         return response.strip()
 
