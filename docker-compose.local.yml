@@ -41,6 +41,12 @@ services:
       - ./src:/app/src
       - ./config:/app/config
       # Remove VM-specific credential mounts
+    # Override logging for local development (use json-file instead of gcplogs)
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       storage:
         condition: service_started

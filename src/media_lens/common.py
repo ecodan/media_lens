@@ -206,43 +206,65 @@ class RunState:
 def create_logger(
     name: str,
     logfile_path: Union[str, Path] = None,
-    max_bytes: int = 1000000,
-    backup_count: int = 10
+    max_bytes: int = 10_000_000,
+    backup_count: int = 10,
+    console_level: str = None,
+    file_level: str = None
 ) -> logging.Logger:
     """
-    Create a logger with stdout and optional rotating file handler.
+    Create a logger with dual output: console (INFO) and file (DEBUG).
+
+    This prevents memory issues in production by sending only INFO logs to Cloud Logging
+    while maintaining detailed DEBUG logs on local disk for troubleshooting.
 
     Args:
         name: Logger name
         logfile_path: Optional path to log file
-        max_bytes: Maximum size of log file before rotation (default: 1MB)
+        max_bytes: Maximum size of log file before rotation (default: 10MB)
         backup_count: Number of backup files to keep (default: 10)
+        console_level: Console log level (default: INFO, overridden by LOG_LEVEL_CONSOLE env var)
+        file_level: File log level (default: DEBUG, overridden by LOG_LEVEL_FILE env var)
 
     Returns:
         Configured logger instance
     """
     logger = logging.getLogger(name)
     formatter = logging.Formatter(LOG_FORMAT)
+
+    # Set logger to DEBUG to capture everything - handlers will filter
     logger.setLevel(logging.DEBUG)
+
     if not logger.handlers:
-        handler = logging.StreamHandler(stream=sys.stdout)
-        handler.setLevel(logging.DEBUG)
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
+        # Console handler: INFO level (reduce Cloud Logging memory pressure)
+        console_level_str = os.getenv("LOG_LEVEL_CONSOLE", console_level or "INFO").upper()
+        console_log_level = getattr(logging, console_level_str, logging.INFO)
+
+        console_handler = logging.StreamHandler(stream=sys.stdout)
+        console_handler.setLevel(console_log_level)
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+
+        # File handler: DEBUG level (detailed local logs)
         if logfile_path:
+            file_level_str = os.getenv("LOG_LEVEL_FILE", file_level or "DEBUG").upper()
+            file_log_level = getattr(logging, file_level_str, logging.DEBUG)
+
             # Convert string path to Path object if necessary
             if isinstance(logfile_path, str):
                 logfile_path = Path(logfile_path)
 
             # Create log directory if it doesn't exist
             logfile_path.parent.mkdir(parents=True, exist_ok=True)
-            handler = RotatingFileHandler(
+
+            file_handler = RotatingFileHandler(
                 filename=str(logfile_path),
                 maxBytes=max_bytes,
                 backupCount=backup_count
             )
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
+            file_handler.setLevel(file_log_level)
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
+
     return logger
 
 
