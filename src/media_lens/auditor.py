@@ -308,11 +308,9 @@ async def _repair_extraction(needs_extraction: List[tuple], audit_data: dict) ->
         try:
             logger.info(f"Repairing extraction for {len(sites)} sites in {timestamp_dir}")
 
-            # Create a Path object for the extractor (it expects this)
-            # Since we're using storage adapter, we'll create a mock path
-            working_dir = Path(storage.get_absolute_path(timestamp_dir))
-
-            extractor = ContextExtractor(agent=agent, working_dir=working_dir)
+            # Pass the relative path string directly to the extractor
+            # The extractor will handle it via storage adapter
+            extractor = ContextExtractor(agent=agent, working_dir=timestamp_dir)
 
             # Run extraction with a delay to avoid rate limiting
             await extractor.run(delay_between_sites_secs=30)

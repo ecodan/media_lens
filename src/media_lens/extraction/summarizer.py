@@ -104,14 +104,11 @@ class DailySummarizer:
         logger.info(f"Generating summary from job directory: {job_dir_str}")
 
         # Get all the article files using storage adapter
-        article_files = shared_storage.get_files_by_pattern(job_dir_str, "*clean-article-*.json")
+        article_file_paths = shared_storage.get_files_by_pattern(job_dir_str, "*clean-article-*.json")
 
-        if not article_files:
+        if not article_file_paths:
             logger.warning(f"No article files found in {job_dir_str}")
         else:
-            # Convert to absolute paths for reading
-            article_file_paths = [shared_storage.get_absolute_path(f) for f in article_files]
-
             # Generate summary from the article files
             summary: str = self.generate_summary(article_file_paths)
 

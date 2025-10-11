@@ -53,12 +53,9 @@ async def interpret(job_dir, sites):
 
             # Use storage adapter to get files instead of Path.glob
             file_pattern = f"{site}-clean-article-*.json"
-            files = storage.get_files_by_pattern(job_dir, file_pattern)
+            file_paths = storage.get_files_by_pattern(job_dir, file_pattern)
 
-            # Convert to full paths if needed for the interpreter
-            file_paths = [storage.get_absolute_path(f) for f in files]
-
-            if not files:
+            if not file_paths:
                 logger.warning(f"No clean article files found for site {site} in {job_dir}")
                 # Create an empty interpretation to avoid FileNotFoundError later
                 interpretation = [{
