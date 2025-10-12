@@ -256,6 +256,11 @@ curl -X POST http://localhost:8080/run \
 curl -X POST http://localhost:8080/run \
   -H "Content-Type: application/json" \
   -d '{"steps": ["harvest"], "run_id": "my-custom-run"}'
+  
+# Previous job
+curl -X POST http://localhost:8080/run \
+    -H "Content-Type: application/json" \
+    -d '{"steps": ["extract"], "job_dir": "jobs/2025/10/11/160001"}'
 ```
 
 #### Weekly Processing

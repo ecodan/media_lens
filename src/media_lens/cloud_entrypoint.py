@@ -43,7 +43,7 @@ def index():
         "status": "online",
         "app": "Media Lens",
         "endpoints": [
-            {"path": "/run", "method": "POST", "description": "Run the daily media lens pipeline (supports rewind_days parameter)"},
+            {"path": "/run", "method": "POST", "description": "Run the daily media lens pipeline (supports job_dir, rewind_days, sites parameters)"},
             {"path": "/weekly", "method": "POST", "description": "Process weekly content analysis"},
             {"path": "/summarize", "method": "POST", "description": "Generate daily summaries"},
             {"path": "/stop/{run_id}", "method": "POST", "description": "Stop a running pipeline by ID"},
@@ -72,11 +72,15 @@ def run_task_async(steps, run_id, data=None):
         # Get sites from data or use default
         sites = data.get('sites') if data else None
 
+        # Get job_dir from data or use default ('latest')
+        job_dir = data.get('job_dir', 'latest') if data else 'latest'
+
         # Run the pipeline
         result = asyncio.run(run(
             steps=steps,
             sites=sites,
-            run_id=run_id
+            run_id=run_id,
+            job_dir=job_dir
         ))
 
         # Update status when done
