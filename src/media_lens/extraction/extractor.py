@@ -122,11 +122,19 @@ class ContextExtractor:
             except ValueError:
                 dir_name = self.working_dir
         else:
-            # Path object
-            dir_name = self.working_dir.name
+            # Path object - convert full path to string
+            dir_name = str(self.working_dir)
+
+        logger.info(f"Looking for clean HTML files in: {dir_name}")
 
         # Get clean HTML files using the storage adapter
         clean_html_files = self.storage.get_files_by_pattern(dir_name, "*-clean.html")
+
+        if not clean_html_files:
+            logger.warning(f"No clean HTML files found in {dir_name} - skipping extraction")
+            return
+
+        logger.info(f"Found {len(clean_html_files)} clean HTML files to process")
 
         for file_path in clean_html_files:
             logger.info(f"Processing {file_path}")
