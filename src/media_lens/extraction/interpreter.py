@@ -181,8 +181,8 @@ class LLMWebsiteInterpreter:
                 # LLM wrapped the response in an object - try to extract the array
                 logger.warning(f"Response is wrapped in a dict with keys: {list(content.keys())}")
 
-                # Common wrapper keys: "analysis", "response", "result", "questions"
-                for key in ["analysis", "response", "result", "questions", "answers"]:
+                # Common wrapper keys: "content", "analysis", "response", "result", "questions"
+                for key in ["content", "analysis", "response", "result", "questions", "answers"]:
                     if key in content:
                         extracted = content[key]
                         if isinstance(extracted, list):
