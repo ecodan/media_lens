@@ -9,7 +9,7 @@ from typing import List, Dict
 from anthropic import APIError, APIConnectionError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from src.media_lens.common import LOGGER_NAME, get_utc_datetime_from_timestamp, get_week_key
+from src.media_lens.common import LOGGER_NAME, get_utc_datetime_from_timestamp, get_week_key, get_model_metadata
 from src.media_lens.extraction.agent import Agent, ResponseFormat
 from src.media_lens.job_dir import JobDir
 from src.media_lens.storage import shared_storage
@@ -627,42 +627,33 @@ class LLMWebsiteInterpreter:
                 try:
                     rolling_interpretation = rolling_result.get("interpretation", [])
 
-                    week_record = {
-                        "week": week_key,
-                        "file_path": weekly_file_path,
-                        "included_days": rolling_result.get("included_days", []),
-                        "days_count": rolling_result.get("days_count", 0),
-                        "calendar_days_span": rolling_result.get("calendar_days_span", 0),
-                        "date_range": rolling_result.get("date_range", ""),
-                        "period_type": "rolling_7_days",
-                        "interpretation": rolling_interpretation
-                    }
-
                     # Save to storage with metadata
-                    interpretation_with_metadata = {
-                        "week": week_key,
+                    model_metadata = get_model_metadata(self.agent)
+                    model_metadata.update({
                         "period_type": "rolling_7_days",
                         "start_date": rolling_result.get("start_date"),
                         "end_date": rolling_result.get("end_date"),
-                        "reference_date": rolling_result.get("reference_date"),
+                        "reference_date": rolling_result.get("reference_date")
+                    })
+                    week_record = {
+                        "metadata": model_metadata,
+                        "week": week_key,
                         "included_days": rolling_result.get("included_days", []),
                         "days_count": rolling_result.get("days_count", 0),
                         "calendar_days_span": rolling_result.get("calendar_days_span", 0),
                         "date_range": rolling_result.get("date_range", ""),
-                        "generated_at": rolling_result.get("generated_at"),
                         "interpretation": rolling_interpretation
                     }
-                    self.storage.write_json(weekly_file_path, interpretation_with_metadata)
+                    self.storage.write_json(weekly_file_path, week_record)
                     ret.append(week_record)
 
                 except Exception as e:
                     logger.error(f"Failed to save rolling 7-day interpretation for {week_key}: {str(e)}")
                     fallback = {
+                        "metadata": {"period_type": "rolling_7_days"},
                         "week": week_key,
-                        "file_path": weekly_file_path,
                         "included_days": rolling_result.get("included_days", []),
                         "days_count": rolling_result.get("days_count", 0),
-                        "period_type": "rolling_7_days",
                         "interpretation": [{
                             "question": "Rolling 7-day analysis unavailable",
                             "answer": "The rolling 7-day analysis could not be generated due to technical limitations."
@@ -710,29 +701,20 @@ class LLMWebsiteInterpreter:
                             time.sleep(30)
 
                     # Save weekly interpretation with metadata
+                    model_metadata = get_model_metadata(self.agent)
+                    model_metadata.update({
+                        "period_type": "iso_week"
+                    })
                     week_record = {
+                        "metadata": model_metadata,
                         "week": week_key,
-                        "file_path": weekly_file_path,
                         "included_days": included_days,
                         "days_count": data_days_count,
                         "calendar_days_span": calendar_days_span,
                         "date_range": date_range,
-                        "period_type": "iso_week",
                         "interpretation": weekly_interpretation
                     }
-
-                    # Also save the weekly interpretation to storage with metadata
-                    interpretation_with_metadata = {
-                        "week": week_key,
-                        "period_type": "iso_week",
-                        "included_days": included_days,
-                        "days_count": data_days_count,
-                        "calendar_days_span": calendar_days_span,
-                        "date_range": date_range,
-                        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                        "interpretation": weekly_interpretation
-                    }
-                    self.storage.write_json(weekly_file_path, interpretation_with_metadata)
+                    self.storage.write_json(weekly_file_path, week_record)
 
                     ret.append(week_record)
 
@@ -740,11 +722,10 @@ class LLMWebsiteInterpreter:
                     logger.error(f"Failed to complete weekly interpretation for {week_key}: {str(e)}")
                     # Create a fallback interpretation with metadata
                     fallback = {
+                        "metadata": {"period_type": "iso_week"},
                         "week": week_key,
-                        "file_path": weekly_file_path,
                         "included_days": included_days,
                         "days_count": len(included_days),
-                        "period_type": "iso_week",
                         "interpretation": [{
                             "question": "Weekly analysis unavailable",
                             "answer": "The weekly analysis could not be generated due to technical limitations."

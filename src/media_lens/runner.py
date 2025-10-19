@@ -163,19 +163,6 @@ async def interpret_weekly(use_rolling_daily=True, specific_weeks=None, sites: l
             else:
                 logger.info(f"Weekly interpretation for {result['week']} covers {calendar_days_span} calendar days with data from {data_days_count} actual days")
 
-        # Write results to files using storage adapter
-        for result in weekly_results:
-            file_path = result['file_path']
-            interpretation_data = {
-                'interpretation': result['interpretation'],
-                'included_days': result.get('included_days', []),
-                'days_count': result.get('days_count', 0),
-                'calendar_days_span': result.get('calendar_days_span', 0),
-                'date_range': result.get('date_range', ''),
-                'week_key': result['week']
-            }
-            logger.info(f"Writing weekly interpretation for {result['week']} to {file_path}")
-            storage.write_json(file_path, interpretation_data)
     else:
         logger.info("No weeks to process.")
 

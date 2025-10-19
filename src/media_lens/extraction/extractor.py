@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 import dotenv
 
-from src.media_lens.common import LOGGER_NAME
+from src.media_lens.common import LOGGER_NAME, get_model_metadata
 from src.media_lens.extraction.agent import Agent, create_agent_from_env
 from src.media_lens.extraction.collector import ArticleCollector
 from src.media_lens.extraction.exceptions import ArticleExtractionError
@@ -150,6 +150,9 @@ class ContextExtractor:
                     logger.warning(f"error in extraction: {results['error']}")
                     continue
 
+                # Get model metadata for tracking
+                model_metadata = get_model_metadata(self.headline_extractor.agent)
+
                 # summarize stories
                 for idx, result in enumerate(results.get("stories", [])):
                     url: str = result.get("url")
@@ -158,16 +161,27 @@ class ContextExtractor:
                         try:
                             article: dict = await self.article_collector.extract_article(self._process_relative_url(url, file_name))
                             if article is not None:
+                                # Add metadata to article
+                                article_with_metadata = {
+                                    "metadata": model_metadata,
+                                    **article
+                                }
                                 # Use storage adapter to write article
                                 article_file_path = f"{dir_name}/{file_stem}-article-{idx}.json"
                                 result['article_text'] = article_file_path
-                                self.storage.write_json(article_file_path, article)
+                                self.storage.write_json(article_file_path, article_with_metadata)
                         except Exception as e:
                             logger.error(f"Failed to extract article: {url} - {str(e)}")
 
+                # Add metadata to extracted headlines
+                results_with_metadata = {
+                    "metadata": model_metadata,
+                    **results
+                }
+
                 # Use storage adapter to write extracted data
                 extracted_file_path = f"{dir_name}/{file_stem}-extracted.json"
-                self.storage.write_json(extracted_file_path, results)
+                self.storage.write_json(extracted_file_path, results_with_metadata)
 
             except Exception as e:
                 logger.error(f"Failed to extract headlines from {file_path}: {str(e)}")

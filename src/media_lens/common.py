@@ -268,9 +268,67 @@ def create_logger(
     return logger
 
 
+def get_model_metadata(llm_agent) -> dict:
+    """
+    Extract model metadata from an LLM agent instance.
+
+    This function extracts the model configuration (name, provider, parameters)
+    from an LLM agent and combines it with current timestamp for JSON file tracking.
+
+    Args:
+        llm_agent: The LLM agent instance (e.g., Agent or LLMHeadlineExtractor)
+
+    Returns:
+        dict: Metadata structure with model info and timestamp
+        {
+            "model": {
+                "name": "model-version-string",
+                "provider": "anthropic", "vertex", or "ollama",
+                "temperature": 0.7,
+                "max_tokens": 4096
+            },
+            "generated_at": "ISO-8601 timestamp"
+        }
+    """
+    # Extract provider and model name from the model string
+    # Format: "anthropic/claude-sonnet-4-5" or "vertex_ai/gemini-2.5-flash"
+    model_str = getattr(llm_agent, 'model', 'unknown')
+    provider = 'unknown'
+    model_name = model_str
+
+    if isinstance(model_str, str) and '/' in model_str:
+        provider_part, model_part = model_str.split('/', 1)
+        # Normalize provider names
+        if provider_part == 'anthropic':
+            provider = 'anthropic'
+        elif provider_part == 'vertex_ai':
+            provider = 'vertex'
+        elif provider_part == 'ollama':
+            provider = 'ollama'
+        else:
+            provider = provider_part
+        model_name = model_part
+
+    metadata: dict = {
+        "model": {
+            "name": model_name,
+            "provider": provider,
+        },
+        "generated_at": utc_timestamp()
+    }
+
+    # Add model parameters if available
+    if hasattr(llm_agent, 'temperature'):
+        metadata["model"]["temperature"] = llm_agent.temperature
+    if hasattr(llm_agent, 'max_tokens'):
+        metadata["model"]["max_tokens"] = llm_agent.max_tokens
+
+    return metadata
+
+
 def ensure_secrets_loaded():
     """Ensure that secrets are loaded from Google Cloud Secret Manager if available.
-    
+
     This function should be called at application startup to load secrets
     before they are needed by other components.
     """
