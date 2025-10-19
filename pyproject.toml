@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "media-lens"
-version = "0.1.0"
+version = "1.6.1"
 description = "Comparative analysis of media worldviews through automated headline and content analysis"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -37,7 +37,7 @@ dependencies = [
     "grpcio-status==1.62.3",
     "gunicorn==23.0.0",
     "itsdangerous==2.2.0",
-    "Jinja2==3.1.5",
+    "Jinja2==3.1.6",
     "litellm>=1.0.0",
     "packaging==25.0",
     "paramiko==3.5.1",
@@ -46,14 +46,14 @@ dependencies = [
     "playwright==1.40.0",
     "playwright-stealth==1.0.6",
     "proto-plus==1.26.1",
-    "protobuf==4.25.6",
+    "protobuf>=4.25.8",
     "pyasn1==0.6.1",
     "pyasn1_modules==0.4.2",
     "python-dotenv==1.0.1",
     "pytz==2025.1",
     "regex==2024.11.6",
     "requirements-parser==0.13.0",
-    "requests==2.31.0",
+    "requests>=2.32.4",
     "rsa==4.9",
     "schedule==1.2.2",
     "setuptools==80.9.0",
