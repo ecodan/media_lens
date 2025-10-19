@@ -3,15 +3,19 @@ import json
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import List, Dict, Any, Union, Optional
+from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
 
 import dotenv
 from jinja2 import Environment, FileSystemLoader
 
 from src.media_lens.common import (
-    LOGGER_NAME, SITES, get_project_root,
-    timestamp_as_long_date, timestamp_bw_compat_str_as_long_date, get_week_display
+    LOGGER_NAME,
+    SITES,
+    get_project_root,
+    get_week_display,
+    timestamp_as_long_date,
+    timestamp_bw_compat_str_as_long_date,
 )
 from src.media_lens.job_dir import JobDir
 from src.media_lens.storage import shared_storage
@@ -34,8 +38,8 @@ def convert_relative_url(url: str, site: str) -> str:
         return url
 
     # Append https:// and domain to the relative URL
-    url_path = url[1:] if url.startswith('/') else url
-    return f'https://{site}/{url_path}'
+    url_path = url[1:] if url.startswith("/") else url
+    return f"https://{site}/{url_path}"
 
 
 def generate_html_with_template(template_dir_path: Path, template_name: str, content: dict) -> str:
@@ -49,15 +53,17 @@ def generate_html_with_template(template_dir_path: Path, template_name: str, con
     return html_output
 
 
-def organize_runs_by_week(job_dirs: List[Union[Path, str, JobDir]], sites: List[str]) -> Dict[str, Any]:
+def organize_runs_by_week(
+    job_dirs: List[Union[Path, str, JobDir]], sites: List[str]
+) -> Dict[str, Any]:
     """
     Organize job runs by calendar week.
-    
+
     :param job_dirs: List of job directories (strings, Paths, or JobDir objects)
     :param sites: List of media sites
     :return: Dictionary with weeks as keys and runs as values
     """
-    logger.info(f'Organizing {len(job_dirs)} jobs by week')
+    logger.info(f"Organizing {len(job_dirs)} jobs by week")
 
     # Dictionary to store runs by week
     weeks_data = defaultdict(list)
@@ -104,31 +110,25 @@ def organize_runs_by_week(job_dirs: List[Union[Path, str, JobDir]], sites: List[
                 continue
 
             extracted = storage.read_json(extracted_path)
-            stories = extracted.get('stories', [])
+            stories = extracted.get("stories", [])
 
             # Clean story URLs
             for story in stories:
-                story['url'] = convert_relative_url(story['url'], site)
+                story["url"] = convert_relative_url(story["url"], site)
 
-            run_data['extracted'].append({
-                'site': site,
-                'stories': stories
-            })
+            run_data["extracted"].append({"site": site, "stories": stories})
 
             # Load news summary
             news_summary_path = f"{job_dir.storage_path}/daily_news.txt"
             if storage.file_exists(news_summary_path):
                 news_summary = storage.read_text(news_summary_path)
-                run_data['news_summary'] = news_summary.replace("\n", "<br>")
+                run_data["news_summary"] = news_summary.replace("\n", "<br>")
 
             # Load interpreted data
             interpreted_path = f"{job_dir.storage_path}/{site}-interpreted.json"
             if storage.file_exists(interpreted_path):
                 interpreted = storage.read_json(interpreted_path)
-                run_data['interpreted'].append({
-                    'site': site,
-                    'qa': interpreted
-                })
+                run_data["interpreted"].append({"site": site, "qa": interpreted})
 
         # Add this run to the appropriate week
         weeks_data[job_dir.week_key].append(run_data)
@@ -136,24 +136,21 @@ def organize_runs_by_week(job_dirs: List[Union[Path, str, JobDir]], sites: List[
     # Sort runs within each week by datetime (newest first)
     for week_key in weeks_data:
         weeks_data[week_key] = sorted(
-            weeks_data[week_key],
-            key=lambda x: x["run_datetime"],
-            reverse=True
+            weeks_data[week_key], key=lambda x: x["run_datetime"], reverse=True
         )
 
     # Create the final structure
-    result = {
-        "report_timestamp": timestamp_as_long_date(),
-        "weeks": []
-    }
+    result = {"report_timestamp": timestamp_as_long_date(), "weeks": []}
 
     # Convert defaultdict to sorted list of weeks
     for week_key in sorted(weeks_data.keys(), reverse=True):
-        result["weeks"].append({
-            "week_key": week_key,
-            "week_display": get_week_display(week_key),
-            "runs": weeks_data[week_key]
-        })
+        result["weeks"].append(
+            {
+                "week_key": week_key,
+                "week_display": get_week_display(week_key),
+                "runs": weeks_data[week_key],
+            }
+        )
 
     return result
 
@@ -161,7 +158,7 @@ def organize_runs_by_week(job_dirs: List[Union[Path, str, JobDir]], sites: List[
 def generate_weekly_content(week_data: Dict, sites: List[str]) -> Dict:
     """
     Process all runs in a week to create a weekly summary.
-    
+
     :param week_data: Dictionary containing all runs for a week
     :param sites: List of media sites
     :return: Processed weekly content
@@ -182,11 +179,7 @@ def generate_weekly_content(week_data: Dict, sites: List[str]) -> Dict:
 
     # Sort content for each site by datetime (newest first)
     for site in site_content:
-        site_content[site] = sorted(
-            site_content[site],
-            key=lambda x: x["datetime"],
-            reverse=True
-        )
+        site_content[site] = sorted(site_content[site], key=lambda x: x["datetime"], reverse=True)
 
     # Format for template (without the weekly interpretation section)
     return {
@@ -194,14 +187,16 @@ def generate_weekly_content(week_data: Dict, sites: List[str]) -> Dict:
         "week_display": week_data["week_display"],
         "sites": sites,
         "site_content": site_content,
-        "runs": week_data["runs"]
+        "runs": week_data["runs"],
     }
 
 
-def generate_weekly_reports(weeks_data: Dict, sites: List[str], template_dir_path: Path) -> Dict[str, str]:
+def generate_weekly_reports(
+    weeks_data: Dict, sites: List[str], template_dir_path: Path
+) -> Dict[str, str]:
     """
     Generate HTML reports for each week.
-    
+
     :param weeks_data: Dictionary containing data organized by week
     :param sites: List of media sites
     :param template_dir_path: Path to templates directory
@@ -213,9 +208,7 @@ def generate_weekly_reports(weeks_data: Dict, sites: List[str], template_dir_pat
     for week in weeks_data["weeks"]:
         week_content = generate_weekly_content(week, sites)
         weekly_html[week["week_key"]] = generate_html_with_template(
-            template_dir_path,
-            "weekly_template.j2",
-            week_content
+            template_dir_path, "weekly_template.j2", week_content
         )
 
     return weekly_html
@@ -249,7 +242,9 @@ def _load_weekly_interpretation_data(weekly_file_path: str) -> Optional[Dict[str
             interpretation_data = weekly_data.get("interpretation", [])
             included_days = weekly_data.get("included_days", [])
             days_count = weekly_data.get("days_count", 0)
-            logger.info(f"Found new format weekly interpretation with {days_count} days: {', '.join(included_days) if included_days else 'none'}")
+            logger.info(
+                f"Found new format weekly interpretation with {days_count} days: {', '.join(included_days) if included_days else 'none'}"
+            )
         elif isinstance(weekly_data, list):
             # Old format (just interpretation data)
             interpretation_data = weekly_data
@@ -263,16 +258,18 @@ def _load_weekly_interpretation_data(weekly_file_path: str) -> Optional[Dict[str
 
         # Add the processed interpretation data back to weekly_data for consistency
         weekly_data_copy = weekly_data.copy() if isinstance(weekly_data, dict) else {}
-        weekly_data_copy.update({
-            "interpretation": interpretation_data,
-            "included_days": included_days,
-            "days_count": days_count
-        })
+        weekly_data_copy.update(
+            {
+                "interpretation": interpretation_data,
+                "included_days": included_days,
+                "days_count": days_count,
+            }
+        )
 
         return weekly_data_copy
 
-    except (json.JSONDecodeError) as e:
-        logger.warning(f"Could not load weekly interpretation from {weekly_file_path}: {str(e)}")
+    except json.JSONDecodeError as e:
+        logger.warning(f"Could not load weekly interpretation from {weekly_file_path}: {e!s}")
         return None
 
 
@@ -367,7 +364,9 @@ def _add_weekly_summary_to_content(weeks: List[Dict], index_content: Dict) -> bo
         if "has_weekly_summary" in week and not week.get("has_weekly_summary", False):
             continue
 
-        weekly_file_path = f"{storage.get_intermediate_directory()}/weekly-{week_key}-interpreted.json"
+        weekly_file_path = (
+            f"{storage.get_intermediate_directory()}/weekly-{week_key}-interpreted.json"
+        )
 
         weekly_data = _load_weekly_interpretation_data(weekly_file_path)
         if not weekly_data:
@@ -382,7 +381,9 @@ def _add_weekly_summary_to_content(weeks: List[Dict], index_content: Dict) -> bo
 
         # Add weekly summary to index content with enhanced metadata
         index_content["weekly_summary"] = weekly_summary
-        index_content["weekly_summary_date"] = _create_date_display(weekly_data, week.get("week_display", ""))
+        index_content["weekly_summary_date"] = _create_date_display(
+            weekly_data, week.get("week_display", "")
+        )
         index_content["included_days"] = weekly_data.get("included_days")
         index_content["days_count"] = weekly_data.get("days_count")
         index_content["period_type"] = weekly_data.get("period_type")
@@ -406,24 +407,20 @@ def generate_index_page(weeks_data: Dict, template_dir_path: Path) -> str:
     # Create base content dictionary
     index_content = {
         "report_timestamp": weeks_data["report_timestamp"],
-        "weeks": weeks_data["weeks"]
+        "weeks": weeks_data["weeks"],
     }
 
     # Try to load the weekly summary for the latest week with fallback
     if weeks_data["weeks"]:
         _add_weekly_summary_to_content(weeks_data["weeks"], index_content)
 
-    return generate_html_with_template(
-        template_dir_path,
-        "index_template.j2",
-        index_content
-    )
+    return generate_html_with_template(template_dir_path, "index_template.j2", index_content)
 
 
 def get_index_metadata() -> Dict[str, Any]:
     """
     Get cached index metadata or create empty structure.
-    
+
     Returns:
         Dict containing weeks metadata and last_updated timestamp
     """
@@ -438,19 +435,16 @@ def get_index_metadata() -> Dict[str, Any]:
             logger.warning(f"Could not load index metadata: {e}")
 
     # Return empty metadata structure
-    return {
-        "weeks": [],
-        "last_updated": None
-    }
+    return {"weeks": [], "last_updated": None}
 
 
 def update_index_metadata(affected_weeks_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Update index metadata for affected weeks only.
-    
+
     Args:
         affected_weeks_data: Week data for weeks that changed
-        
+
     Returns:
         Complete updated metadata
     """
@@ -469,8 +463,10 @@ def update_index_metadata(affected_weeks_data: Dict[str, Any]) -> Dict[str, Any]
             "week_key": week_key,
             "week_display": week["week_display"],
             "job_count": len(week["runs"]),
-            "latest_job": max(run["run_datetime"].isoformat() for run in week["runs"]) if week["runs"] else None,
-            "has_weekly_summary": _check_weekly_summary_exists(week_key)
+            "latest_job": max(run["run_datetime"].isoformat() for run in week["runs"])
+            if week["runs"]
+            else None,
+            "has_weekly_summary": _check_weekly_summary_exists(week_key),
         }
 
         existing_weeks[week_key] = week_metadata
@@ -503,7 +499,7 @@ def get_lightweight_weeks_data() -> Dict[str, Any]:
     """
     Get lightweight weeks data for index page without processing job content.
     Only extracts week keys, display names, and job counts.
-    
+
     Returns:
         Dict with weeks data optimized for index page
     """
@@ -521,18 +517,20 @@ def get_lightweight_weeks_data() -> Dict[str, Any]:
         # Get week display from week_key
         week_display = get_week_display(week_key)
 
-        weeks_list.append({
-            "week_key": week_key,
-            "week_display": week_display,
-            "runs": [{}] * len(job_dirs)  # Template expects runs|length, create empty objects
-        })
+        weeks_list.append(
+            {
+                "week_key": week_key,
+                "week_display": week_display,
+                "runs": [{}] * len(job_dirs),  # Template expects runs|length, create empty objects
+            }
+        )
 
     # Sort by week key (newest first)
     weeks_list.sort(key=lambda x: x["week_key"], reverse=True)
 
     return {
         "report_timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "weeks": weeks_list
+        "weeks": weeks_list,
     }
 
 
@@ -549,25 +547,23 @@ def generate_index_page_from_metadata(metadata: Dict[str, Any], template_dir_pat
     """
     # Create base content dictionary
     index_content = {
-        "report_timestamp": metadata.get("last_updated", datetime.datetime.now(datetime.timezone.utc).isoformat()),
-        "weeks": metadata["weeks"]
+        "report_timestamp": metadata.get(
+            "last_updated", datetime.datetime.now(datetime.timezone.utc).isoformat()
+        ),
+        "weeks": metadata["weeks"],
     }
 
     # Try to load the weekly summary for the latest week with fallback
     if metadata["weeks"]:
         _add_weekly_summary_to_content(metadata["weeks"], index_content)
 
-    return generate_html_with_template(
-        template_dir_path,
-        "index_template.j2",
-        index_content
-    )
+    return generate_html_with_template(template_dir_path, "index_template.j2", index_content)
 
 
 def get_format_cursor() -> Optional[datetime.datetime]:
     """
     Get the last format cursor timestamp from storage.
-    
+
     Returns:
         Last processed timestamp or None if no cursor exists
     """
@@ -587,7 +583,7 @@ def get_format_cursor() -> Optional[datetime.datetime]:
 def update_format_cursor(timestamp: datetime.datetime) -> None:
     """
     Update the format cursor with the latest processed timestamp.
-    
+
     Args:
         timestamp: The timestamp to set as the new cursor
     """
@@ -604,7 +600,7 @@ def update_format_cursor(timestamp: datetime.datetime) -> None:
 def rewind_format_cursor(days: int) -> None:
     """
     Rewind the format cursor by a specified number of days.
-    
+
     Args:
         days: Number of days to rewind the cursor
     """
@@ -612,8 +608,12 @@ def rewind_format_cursor(days: int) -> None:
     if current_cursor:
         new_cursor = current_cursor - datetime.timedelta(days=days)
         update_format_cursor(new_cursor)
-        logger.info(f"Format cursor rewound by {days} days: {current_cursor.isoformat()} → {new_cursor.isoformat()}")
-        print(f"Format cursor rewound by {days} days: {current_cursor.isoformat()} → {new_cursor.isoformat()}")
+        logger.info(
+            f"Format cursor rewound by {days} days: {current_cursor.isoformat()} → {new_cursor.isoformat()}"
+        )
+        print(
+            f"Format cursor rewound by {days} days: {current_cursor.isoformat()} → {new_cursor.isoformat()}"
+        )
     else:
         logger.warning("No format cursor found - cannot rewind")
         print("No format cursor found - cannot rewind")
@@ -634,14 +634,16 @@ def reset_format_cursor() -> None:
         logger.error(f"Failed to reset format cursor: {e}")
 
 
-def get_jobs_since_cursor(sites: list[str], cursor: Optional[datetime.datetime] = None) -> tuple[List[JobDir], List[str]]:
+def get_jobs_since_cursor(
+    sites: list[str], cursor: Optional[datetime.datetime] = None
+) -> tuple[List[JobDir], List[str]]:
     """
     Get job directories that need processing since the cursor timestamp.
-    
+
     Args:
         sites: List of media sites
         cursor: Cursor timestamp (None means process all)
-        
+
     Returns:
         Tuple of (job_dirs_to_process, affected_week_keys)
     """
@@ -653,10 +655,7 @@ def get_jobs_since_cursor(sites: list[str], cursor: Optional[datetime.datetime] 
         job_dirs_to_process = all_job_dirs
     else:
         logger.info(f"Processing jobs since cursor: {cursor.isoformat()}")
-        job_dirs_to_process = [
-            job_dir for job_dir in all_job_dirs
-            if job_dir.datetime > cursor
-        ]
+        job_dirs_to_process = [job_dir for job_dir in all_job_dirs if job_dir.datetime > cursor]
         logger.info(f"Found {len(job_dirs_to_process)} new jobs since cursor")
 
     # Determine which weeks are affected
@@ -670,10 +669,12 @@ def get_jobs_since_cursor(sites: list[str], cursor: Optional[datetime.datetime] 
     return job_dirs_to_process, affected_week_keys
 
 
-def generate_html_from_path(sites: list[str], template_dir_path: Path, force_full: bool = False) -> str:
+def generate_html_from_path(
+    sites: list[str], template_dir_path: Path, force_full: bool = False
+) -> str:
     """
     Generate HTML from job directories with incremental processing support.
-    
+
     :param sites: list of media sites that will be covered
     :param template_dir_path: full path to location of Jinja2 templates
     :param force_full: if True, ignore cursor and regenerate everything
@@ -703,15 +704,18 @@ def generate_html_from_path(sites: list[str], template_dir_path: Path, force_ful
     if force_full or cursor is None:
         # Get all job directories for full regeneration
         job_dirs_for_organizing = JobDir.list_all(storage)
-        logger.info(f"Full regeneration mode: organizing {len(job_dirs_for_organizing)} job directories")
+        logger.info(
+            f"Full regeneration mode: organizing {len(job_dirs_for_organizing)} job directories"
+        )
     else:
         # For incremental mode, we need all jobs from affected weeks for complete week context
         all_job_dirs = JobDir.list_all(storage)
         job_dirs_for_organizing = [
-            job_dir for job_dir in all_job_dirs
-            if job_dir.week_key in affected_week_keys
+            job_dir for job_dir in all_job_dirs if job_dir.week_key in affected_week_keys
         ]
-        logger.info(f"Incremental mode: organizing {len(job_dirs_for_organizing)} job directories from affected weeks {affected_week_keys}")
+        logger.info(
+            f"Incremental mode: organizing {len(job_dirs_for_organizing)} job directories from affected weeks {affected_week_keys}"
+        )
 
     # Organize runs by week
     weeks_data = organize_runs_by_week(job_dirs_for_organizing, sites)
@@ -726,7 +730,7 @@ def generate_html_from_path(sites: list[str], template_dir_path: Path, force_ful
         # Generate HTML only for affected weeks
         affected_weeks_data = {
             "report_timestamp": weeks_data["report_timestamp"],
-            "weeks": [w for w in weeks_data["weeks"] if w["week_key"] in affected_week_keys]
+            "weeks": [w for w in weeks_data["weeks"] if w["week_key"] in affected_week_keys],
         }
         weekly_html = generate_weekly_reports(affected_weeks_data, sites, template_dir_path)
         weeks_to_write = affected_week_keys
@@ -762,11 +766,11 @@ def generate_html_from_path(sites: list[str], template_dir_path: Path, force_ful
 # TEST
 def main():
     template_dir_path: Path = Path(get_project_root() / "config/templates")
-    html: str = generate_html_from_path(SITES, template_dir_path)
+    generate_html_from_path(SITES, template_dir_path)
     # Weekly HTML files and index file are written inside generate_html_from_path
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     dotenv.load_dotenv()
     logging.basicConfig(level=logging.INFO)
     main()

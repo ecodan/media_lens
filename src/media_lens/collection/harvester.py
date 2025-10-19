@@ -9,13 +9,13 @@ import psutil
 
 from src.media_lens.collection.cleaning import WebpageCleaner, cleaner_for_site
 from src.media_lens.collection.scraper import WebpageScraper
-from src.media_lens.common import LOGGER_NAME, get_project_root, SITES
+from src.media_lens.common import LOGGER_NAME, SITES, get_project_root
 from src.media_lens.storage import shared_storage
 
 logger = logging.getLogger(LOGGER_NAME)
 
 
-class Harvester(object):
+class Harvester:
     """
     Orchestrates the harvesting of web pages and their cleaning.
     """
@@ -45,7 +45,11 @@ class Harvester(object):
                 logger.error(f"Failed to re-harvest {site}: {e}")
                 traceback.print_exc()
 
-    async def harvest(self, sites: list[str], browser_type: WebpageScraper.BrowserType = WebpageScraper.BrowserType.MOBILE) -> str:
+    async def harvest(
+        self,
+        sites: list[str],
+        browser_type: WebpageScraper.BrowserType = WebpageScraper.BrowserType.MOBILE,
+    ) -> str:
         """
         Harvest the sites and save the raw and cleaned content to the outdir.
         Sequential workflow: scrape then clean.
@@ -63,7 +67,11 @@ class Harvester(object):
 
         return job_dir
 
-    async def scrape_sites(self, sites: list[str], browser_type: WebpageScraper.BrowserType = WebpageScraper.BrowserType.MOBILE) -> str:
+    async def scrape_sites(
+        self,
+        sites: list[str],
+        browser_type: WebpageScraper.BrowserType = WebpageScraper.BrowserType.MOBILE,
+    ) -> str:
         """
         Scrape sites and save raw content only.
         :param sites: media sites to scrape
@@ -80,7 +88,9 @@ class Harvester(object):
         async def scrape_site(site):
             try:
                 logger.info(f"Scraping {site}")
-                content: str = await scraper.get_page_content(url="https://" + site, browser_type=browser_type)
+                content: str = await scraper.get_page_content(
+                    url="https://" + site, browser_type=browser_type
+                )
 
                 if content is None:
                     logger.error(f"Failed to get content for {site}, skipping...")
@@ -148,7 +158,9 @@ class Harvester(object):
                         mem_after_mb = process.memory_info().rss / 1024 / 1024
                         mem_reclaimed_mb = mem_before_mb - mem_after_mb
 
-                        logger.info(f"Memory for {site}: {mem_before_mb:.1f}MB → {mem_after_mb:.1f}MB (reclaimed: {mem_reclaimed_mb:+.1f}MB)")
+                        logger.info(
+                            f"Memory for {site}: {mem_before_mb:.1f}MB → {mem_after_mb:.1f}MB (reclaimed: {mem_reclaimed_mb:+.1f}MB)"
+                        )
                     except Exception as e:
                         logger.error(f"Failed to clean {site}: {e}")
                         traceback.print_exc()
@@ -191,7 +203,7 @@ async def main(sites: list[str], outdir: Path):
     await harvester.harvest(sites=sites)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     dotenv.load_dotenv()
     logging.basicConfig(level=logging.DEBUG)
     outdir: Path = Path(get_project_root() / "working/out")

@@ -6,6 +6,7 @@ Provides centralized directory path generation and date handling for:
 2. Intermediate data: intermediate/ for processed data files
 3. Staging: staging/ for website-ready files
 """
+
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,7 +23,7 @@ class DirectoryManager:
     def __init__(self, base_path: Union[str, Path] = ""):
         """
         Initialize the directory manager.
-        
+
         Args:
             base_path: Base path for all directories (e.g., 'working' or cloud storage prefix)
         """
@@ -31,10 +32,10 @@ class DirectoryManager:
     def get_job_dir(self, timestamp: Optional[str] = None) -> str:
         """
         Get a job directory path in YYYY/MM/DD/HHmmss format.
-        
+
         Args:
             timestamp: Optional timestamp string. If None, uses current time.
-            
+
         Returns:
             Job directory path relative to base_path
         """
@@ -58,10 +59,10 @@ class DirectoryManager:
     def get_intermediate_dir(self, subdir: str = "") -> str:
         """
         Get intermediate data directory path.
-        
+
         Args:
             subdir: Optional subdirectory within intermediate
-            
+
         Returns:
             Intermediate directory path relative to base_path
         """
@@ -74,10 +75,10 @@ class DirectoryManager:
     def get_staging_dir(self, subdir: str = "") -> str:
         """
         Get staging directory path for website-ready files.
-        
+
         Args:
             subdir: Optional subdirectory within staging
-            
+
         Returns:
             Staging directory path relative to base_path
         """
@@ -90,10 +91,10 @@ class DirectoryManager:
     def parse_job_timestamp(self, job_dir: str) -> str:
         """
         Extract timestamp from job directory path.
-        
+
         Args:
             job_dir: Job directory path
-            
+
         Returns:
             Timestamp string in UTC_DATE_PATTERN_BW_COMPAT format
         """
@@ -118,17 +119,19 @@ class DirectoryManager:
     def get_jobs_in_date_range(self, start_date: str, end_date: str, storage_adapter) -> List[str]:
         """
         Get all job directories within a date range.
-        
+
         Args:
             start_date: Start date in YYYY-MM-DD format
-            end_date: End date in YYYY-MM-DD format  
+            end_date: End date in YYYY-MM-DD format
             storage_adapter: Storage adapter to list directories
-            
+
         Returns:
             List of job directory paths within the date range
         """
         start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc)
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+            hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc
+        )
 
         job_dirs = []
         jobs_base = str(self.base_path / "jobs")
@@ -154,14 +157,16 @@ class DirectoryManager:
 
         return sorted(job_dirs)
 
-    def get_date_range_boundaries(self, start_date: str, end_date: str) -> Tuple[datetime, datetime]:
+    def get_date_range_boundaries(
+        self, start_date: str, end_date: str
+    ) -> Tuple[datetime, datetime]:
         """
         Parse date range strings and handle month/year boundaries properly.
-        
+
         Args:
             start_date: Start date string in YYYY-MM-DD format
             end_date: End date string in YYYY-MM-DD format
-            
+
         Returns:
             Tuple of (start_datetime, end_datetime) in UTC
         """
@@ -177,11 +182,11 @@ class DirectoryManager:
     def get_jobs_by_pattern(self, pattern: str, storage_adapter) -> List[str]:
         """
         Get job directories matching a pattern.
-        
+
         Args:
             pattern: Pattern to match (e.g., "2025/01/*" for January 2025)
             storage_adapter: Storage adapter to search
-            
+
         Returns:
             List of matching job directory paths
         """

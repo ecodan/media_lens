@@ -3,12 +3,12 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import List, Any, Optional, Union
+from typing import Any, List, Optional, Union
 
 from google.auth import default
 
 # Import cloud storage conditionally
-if os.getenv('USE_CLOUD_STORAGE', 'false').lower() == 'true':
+if os.getenv("USE_CLOUD_STORAGE", "false").lower() == "true":
     from google.cloud import storage
 
 from src.media_lens.common import LOGGER_NAME
@@ -20,14 +20,15 @@ class StorageAdapter:
     """
     Storage adapter that abstracts file operations to work with either
     local file system or cloud storage.
-    
+
     This adapter maintains the same directory structure and file naming
     conventions as the original application, but allows for switching
     between local and cloud storage backends.
-    
+
     This class implements the singleton pattern to prevent multiple instances
     from being created, which can cause issues in cloud deployments.
     """
+
     _instance = None
     _initialized = False
 
@@ -40,18 +41,22 @@ class StorageAdapter:
         # Prevent multiple initializations
         if self._initialized:
             import traceback
-            logger.warning(f"StorageAdapter.__init__() called on already initialized singleton. "
-                           f"This is harmless but inefficient. Consider using StorageAdapter.get_instance() "
-                           f"or the shared_storage from storage.py instead. Call stack:\n{traceback.format_stack()}")
+
+            logger.warning(
+                f"StorageAdapter.__init__() called on already initialized singleton. "
+                f"This is harmless but inefficient. Consider using StorageAdapter.get_instance() "
+                f"or the shared_storage from storage.py instead. Call stack:\n{traceback.format_stack()}"
+            )
             return
 
         self.bucket_name = os.getenv("GCP_STORAGE_BUCKET")
-        self.use_cloud = os.getenv('USE_CLOUD_STORAGE', 'false').lower() == 'true'
-        local_path = os.getenv('LOCAL_STORAGE_PATH', './working')
+        self.use_cloud = os.getenv("USE_CLOUD_STORAGE", "false").lower() == "true"
+        local_path = os.getenv("LOCAL_STORAGE_PATH", "./working")
         self.local_root = Path(local_path)
 
         # Initialize directory manager
         from src.media_lens.directory_manager import DirectoryManager
+
         self.directory_manager = DirectoryManager(base_path="")
 
         logger.info(f"Using cloud storage: {self.use_cloud}")
@@ -64,9 +69,11 @@ class StorageAdapter:
         if self.use_cloud:
             try:
                 # Determine authentication method
-                creds_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-                use_workload_identity = os.getenv('USE_WORKLOAD_IDENTITY', 'false').lower() == 'true'
-                project_id = os.getenv('GOOGLE_CLOUD_PROJECT')
+                creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+                use_workload_identity = (
+                    os.getenv("USE_WORKLOAD_IDENTITY", "false").lower() == "true"
+                )
+                project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
 
                 # First try to use explicit service account file from the keys directory
                 try:
@@ -74,25 +81,34 @@ class StorageAdapter:
                     if creds_path and os.path.isfile(creds_path):
                         logger.info(f"Using explicit credentials from {creds_path}")
                         from google.oauth2 import service_account
-                        credentials = service_account.Credentials.from_service_account_file(creds_path)
+
+                        credentials = service_account.Credentials.from_service_account_file(
+                            creds_path
+                        )
                         self.client = storage.Client(credentials=credentials, project=project_id)
                     # If workload identity is enabled and no explicit credential file
                     elif use_workload_identity:
                         logger.info("Using workload identity (VM's service account)")
-                        logger.info(f"Creating storage client with default credentials and project ID: {project_id}")
+                        logger.info(
+                            f"Creating storage client with default credentials and project ID: {project_id}"
+                        )
 
                         # Add explicit environment variable for Google Application Default Credentials discovery
-                        if 'GOOGLE_APPLICATION_CREDENTIALS' not in os.environ:
-                            logger.info("GOOGLE_APPLICATION_CREDENTIALS not set, checking VM credential paths")
+                        if "GOOGLE_APPLICATION_CREDENTIALS" not in os.environ:
+                            logger.info(
+                                "GOOGLE_APPLICATION_CREDENTIALS not set, checking VM credential paths"
+                            )
                             # Check common VM credential paths
                             for cred_path in [
                                 "/var/run/secrets/cloud.google.com/service-account.json",
                                 "/var/run/secrets/cloud.google.com/key.json",
                                 "/var/google-cloud/auth/application_default_credentials.json",
-                                "/etc/google/auth/application_default_credentials.json"
+                                "/etc/google/auth/application_default_credentials.json",
                             ]:
                                 if os.path.exists(cred_path):
-                                    logger.info(f"Found credentials at {cred_path}, setting GOOGLE_APPLICATION_CREDENTIALS")
+                                    logger.info(
+                                        f"Found credentials at {cred_path}, setting GOOGLE_APPLICATION_CREDENTIALS"
+                                    )
                                     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
                                     break
 
@@ -103,30 +119,39 @@ class StorageAdapter:
                         logger.info("No explicit credentials found, trying default client")
                         self.client = storage.Client()
                 except Exception as e:
-                    logger.warning(f"Failed to create storage client: {str(e)}")
+                    logger.warning(f"Failed to create storage client: {e!s}")
                     logger.warning("Searching for credential files in /app/keys directory")
 
                     # Search for any JSON credential files in the keys directory
                     found_key = False
-                    keys_dir = '/app/keys'
+                    keys_dir = "/app/keys"
                     if os.path.isdir(keys_dir):
                         for filename in os.listdir(keys_dir):
-                            if filename.endswith('.json'):
+                            if filename.endswith(".json"):
                                 key_file = os.path.join(keys_dir, filename)
                                 logger.info(f"Trying service account key file: {key_file}")
                                 try:
                                     from google.oauth2 import service_account
-                                    credentials = service_account.Credentials.from_service_account_file(key_file)
-                                    self.client = storage.Client(credentials=credentials, project=project_id)
+
+                                    credentials = (
+                                        service_account.Credentials.from_service_account_file(
+                                            key_file
+                                        )
+                                    )
+                                    self.client = storage.Client(
+                                        credentials=credentials, project=project_id
+                                    )
                                     found_key = True
                                     logger.info(f"Successfully authenticated with {key_file}")
                                     break
                                 except Exception as key_error:
-                                    logger.warning(f"Failed to use {key_file}: {str(key_error)}")
+                                    logger.warning(f"Failed to use {key_file}: {key_error!s}")
 
                     if not found_key:
                         # Fall back to anonymous client as last resort
-                        logger.warning("No valid service account keys found, falling back to anonymous client")
+                        logger.warning(
+                            "No valid service account keys found, falling back to anonymous client"
+                        )
                         self.client = storage.Client(project="anonymous")
 
                 # Create bucket if it doesn't exist (for emulator)
@@ -134,11 +159,11 @@ class StorageAdapter:
                     self.bucket = self.client.get_bucket(self.bucket_name)
                     logger.info(f"Using existing bucket: {self.bucket_name}")
                 except Exception as e:
-                    logger.error(f"Unable to access bucket {self.bucket_name}: {str(e)}")
+                    logger.error(f"Unable to access bucket {self.bucket_name}: {e!s}")
                     self.bucket = self.client.create_bucket(self.bucket_name)
                     logger.info(f"Created bucket: {self.bucket_name}")
             except Exception as e:
-                logger.error(f"Error initializing storage client: {str(e)}")
+                logger.error(f"Error initializing storage client: {e!s}")
                 # Fall back to local storage if cloud fails
                 self.use_cloud = False
                 logger.info("Falling back to local storage due to error")
@@ -150,7 +175,7 @@ class StorageAdapter:
     def get_instance(cls):
         """
         Get the singleton instance of StorageAdapter.
-        
+
         This is the preferred way to get a StorageAdapter instance.
         Direct instantiation using StorageAdapter() is deprecated but still works.
         """
@@ -163,7 +188,7 @@ class StorageAdapter:
     def reset_instance(cls):
         """
         Reset the singleton instance. This is primarily for testing purposes.
-        
+
         Warning: This should only be used in tests as it can cause issues
         if multiple parts of the application hold references to the old instance.
         """
@@ -173,12 +198,12 @@ class StorageAdapter:
     def write_text(self, path: Union[str, Path], content: str, encoding: str = "utf-8") -> str:
         """
         Write text content to a file.
-        
+
         Args:
             path: Path to the file (relative to storage root)
             content: Text content to write
             encoding: Text encoding to use
-            
+
         Returns:
             Full path to the created file
         """
@@ -192,18 +217,18 @@ class StorageAdapter:
             # Local file system
             local_path = self.local_root / path_str
             os.makedirs(local_path.parent, exist_ok=True)
-            with open(local_path, 'w', encoding=encoding) as f:
+            with open(local_path, "w", encoding=encoding) as f:
                 f.write(content)
             return str(local_path)
 
     def read_text(self, path: Union[str, Path], encoding: str = "utf-8") -> str:
         """
         Read text content from a file.
-        
+
         Args:
             path: Path to the file (relative to storage root)
             encoding: Text encoding to use
-            
+
         Returns:
             Text content of the file
         """
@@ -215,18 +240,18 @@ class StorageAdapter:
         else:
             # Local file system
             local_path = self.local_root / path_str
-            with open(local_path, 'r', encoding=encoding) as f:
+            with open(local_path, encoding=encoding) as f:
                 return f.read()
 
     def write_json(self, path: Union[str, Path], data: Any, indent: int = 2) -> str:
         """
         Write JSON data to a file.
-        
+
         Args:
             path: Path to the file (relative to storage root)
             data: Data to serialize to JSON
             indent: Indentation level for pretty-printing
-            
+
         Returns:
             Full path to the created file
         """
@@ -236,10 +261,10 @@ class StorageAdapter:
     def read_json(self, path: Union[str, Path]) -> Any:
         """
         Read JSON data from a file.
-        
+
         Args:
             path: Path to the file (relative to storage root)
-            
+
         Returns:
             Parsed JSON data
         """
@@ -249,11 +274,11 @@ class StorageAdapter:
     def write_binary(self, path: Union[str, Path], content: bytes) -> str:
         """
         Write binary content to a file.
-        
+
         Args:
             path: Path to the file (relative to storage root)
             content: Binary content to write
-            
+
         Returns:
             Full path to the created file
         """
@@ -267,17 +292,17 @@ class StorageAdapter:
             # Local file system
             local_path = self.local_root / path_str
             os.makedirs(local_path.parent, exist_ok=True)
-            with open(local_path, 'wb') as f:
+            with open(local_path, "wb") as f:
                 f.write(content)
             return str(local_path)
 
     def read_binary(self, path: Union[str, Path]) -> bytes:
         """
         Read binary content from a file.
-        
+
         Args:
             path: Path to the file (relative to storage root)
-            
+
         Returns:
             Binary content of the file
         """
@@ -289,7 +314,7 @@ class StorageAdapter:
         else:
             # Local file system
             local_path = self.local_root / path_str
-            with open(local_path, 'rb') as f:
+            with open(local_path, "rb") as f:
                 return f.read()
 
     # Maintain backward compatibility with original methods
@@ -303,7 +328,7 @@ class StorageAdapter:
             # For local testing, just copy the file to the destination
             dest_path = self.local_root / remote_path
             os.makedirs(dest_path.parent, exist_ok=True)
-            with open(local_path, 'rb') as src_file, open(dest_path, 'wb') as dest_file:
+            with open(local_path, "rb") as src_file, open(dest_path, "wb") as dest_file:
                 dest_file.write(src_file.read())
             return str(dest_path)
 
@@ -317,7 +342,7 @@ class StorageAdapter:
             # For local testing, just copy from the source location
             src_path = self.local_root / remote_path
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
-            with open(src_path, 'rb') as src_file, open(local_path, 'wb') as dest_file:
+            with open(src_path, "rb") as src_file, open(local_path, "wb") as dest_file:
                 dest_file.write(src_file.read())
 
     def list_files(self, prefix: str = "") -> List[str]:
@@ -331,7 +356,7 @@ class StorageAdapter:
                 return []
 
             files = []
-            for p in Path(path).rglob('*'):
+            for p in Path(path).rglob("*"):
                 if p.is_file():
                     rel_path = p.relative_to(self.local_root)
                     files.append(str(rel_path))
@@ -344,12 +369,12 @@ class StorageAdapter:
             blobs = self.bucket.list_blobs(prefix=prefix)
             dirs = set()
             for blob in blobs:
-                parts = blob.name.split('/')
+                parts = blob.name.split("/")
                 for i in range(1, len(parts)):
-                    dir_path = '/'.join(parts[:i])
+                    dir_path = "/".join(parts[:i])
                     if dir_path.startswith(prefix):
                         dirs.add(dir_path)
-            return sorted(list(dirs))
+            return sorted(dirs)
         else:
             # For local storage
             path = self.local_root / prefix
@@ -357,7 +382,7 @@ class StorageAdapter:
                 return []
 
             dirs = []
-            for p in Path(path).rglob('*'):
+            for p in Path(path).rglob("*"):
                 if p.is_dir():
                     rel_path = p.relative_to(self.local_root)
                     dirs.append(str(rel_path))
@@ -378,10 +403,10 @@ class StorageAdapter:
     def get_file_modified_time(self, path: Union[str, Path]) -> Optional[datetime.datetime]:
         """
         Get the modification time of a file.
-        
+
         Args:
             path: Path to the file (relative to storage root)
-            
+
         Returns:
             Modification time as datetime object or None if file doesn't exist
         """
@@ -410,10 +435,10 @@ class StorageAdapter:
     def delete_file(self, path: Union[str, Path]) -> bool:
         """
         Delete a file from storage.
-        
+
         Args:
             path: Path to the file (relative to storage root)
-            
+
         Returns:
             True if file was deleted successfully, False otherwise
         """
@@ -446,11 +471,11 @@ class StorageAdapter:
     def delete_directory(self, path: Union[str, Path], recursive: bool = False) -> bool:
         """
         Delete a directory from storage.
-        
+
         Args:
             path: Path to the directory (relative to storage root)
             recursive: If True, delete directory and all contents
-            
+
         Returns:
             True if directory was deleted successfully, False otherwise
         """
@@ -460,7 +485,7 @@ class StorageAdapter:
             if self.use_cloud:
                 # For cloud storage, delete all files with this prefix
                 if recursive:
-                    prefix = path_str.rstrip('/') + '/'
+                    prefix = path_str.rstrip("/") + "/"
                     blobs = list(self.bucket.list_blobs(prefix=prefix))
                     if blobs:
                         for blob in blobs:
@@ -487,6 +512,7 @@ class StorageAdapter:
                 if local_path.exists() and local_path.is_dir():
                     if recursive:
                         import shutil
+
                         shutil.rmtree(local_path)
                         logger.debug(f"Deleted local directory recursively: {local_path}")
                     else:
@@ -506,10 +532,10 @@ class StorageAdapter:
         Create a directory in storage.
         For cloud storage, this is a no-op as directories are implicit.
         For local storage, creates the directory.
-        
+
         Args:
             path: Path to the directory (relative to storage root)
-            
+
         Returns:
             Full path to the created directory
         """
@@ -531,11 +557,11 @@ class StorageAdapter:
     def get_files_by_pattern(self, path: Union[str, Path], pattern: str) -> List[str]:
         """
         Find files matching a glob pattern.
-        
+
         Args:
             path: Base path to search in (relative to storage root)
             pattern: Glob pattern to match against
-            
+
         Returns:
             List of matching file paths
         """
@@ -548,8 +574,10 @@ class StorageAdapter:
 
             # Convert glob pattern to regex pattern for matching
             import fnmatch
+
             regex_pattern = fnmatch.translate(pattern)
             import re
+
             matcher = re.compile(regex_pattern)
 
             # Filter files that match the pattern
@@ -565,10 +593,10 @@ class StorageAdapter:
     def get_absolute_path(self, path: Union[str, Path]) -> str:
         """
         Get the absolute path or URI for a file in storage.
-        
+
         Args:
             path: Path to the file (relative to storage root)
-            
+
         Returns:
             Absolute path or URI to the file
         """
@@ -582,10 +610,10 @@ class StorageAdapter:
     def get_job_directory(self, timestamp: Optional[str] = None) -> str:
         """
         Get a job directory path in YYYY/MM/DD/HHmmss format.
-        
+
         Args:
             timestamp: Optional timestamp string. If None, uses current time.
-            
+
         Returns:
             Job directory path
         """
@@ -594,10 +622,10 @@ class StorageAdapter:
     def get_intermediate_directory(self, subdir: str = "") -> str:
         """
         Get intermediate data directory path.
-        
+
         Args:
             subdir: Optional subdirectory within intermediate
-            
+
         Returns:
             Intermediate directory path
         """
@@ -606,10 +634,10 @@ class StorageAdapter:
     def get_staging_directory(self, subdir: str = "") -> str:
         """
         Get staging directory path for website-ready files.
-        
+
         Args:
             subdir: Optional subdirectory within staging
-            
+
         Returns:
             Staging directory path
         """
@@ -618,11 +646,11 @@ class StorageAdapter:
     def get_jobs_in_date_range(self, start_date: str, end_date: str) -> List[str]:
         """
         Get all job directories within a date range.
-        
+
         Args:
             start_date: Start date in YYYY-MM-DD format
             end_date: End date in YYYY-MM-DD format
-            
+
         Returns:
             List of job directory paths within the date range
         """
@@ -631,10 +659,10 @@ class StorageAdapter:
     def get_directory_path(self, timestamp: str) -> str:
         """
         Get a timestamped directory path (deprecated - use get_job_directory).
-        
+
         Args:
             timestamp: Timestamp string to use in the directory name
-            
+
         Returns:
             Path to the directory
         """

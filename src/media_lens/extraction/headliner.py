@@ -1,31 +1,28 @@
 import datetime
-import hashlib
 import json
 import logging
 import re
 import traceback
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Dict
 
 import dotenv
-from anthropic import APIError, APIConnectionError
+from anthropic import APIConnectionError, APIError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.media_lens.common import LOGGER_NAME, get_project_root
-from src.media_lens.extraction.agent import Agent, create_agent_from_env, ResponseFormat
+from src.media_lens.extraction.agent import Agent, ResponseFormat, create_agent_from_env
 from src.media_lens.extraction.exceptions import JSONParsingError
 
 logger = logging.getLogger(LOGGER_NAME)
 
 SYSTEM_PROMPT: str = """
-You are a skilled news content analyzer. Your task is to analyze content from news websites and extract headlines, 
-paying special attention to structural hints (such as location, styles and elements) 
- 
+You are a skilled news content analyzer. Your task is to analyze content from news websites and extract headlines,
+paying special attention to structural hints (such as location, styles and elements)
+
 You only extract factual information.
-            
 """
 
 REASONING_PROMPT: str = """
@@ -108,7 +105,6 @@ class RetryStats:
 
 
 class HeadlineExtractor(metaclass=ABCMeta):
-
     @abstractmethod
     def extract(self, content: str) -> Dict:
         pass
@@ -123,14 +119,16 @@ class HeadlineExtractor(metaclass=ABCMeta):
         :return: Truncated HTML string
         """
         # Simple token estimation: split on whitespace and punctuation
-        tokens = re.findall(r'\w+|\S', html_string)
+        tokens = re.findall(r"\w+|\S", html_string)
 
         if len(tokens) <= max_tokens:
             return html_string
 
         # Join the first max_tokens tokens back together
         truncated_tokens = tokens[:max_tokens]
-        truncated_text = ''.join(t if not t.isalnum() else ' ' + t for t in truncated_tokens).strip()
+        truncated_text = "".join(
+            t if not t.isalnum() else " " + t for t in truncated_tokens
+        ).strip()
 
         return truncated_text
 
@@ -148,62 +146,23 @@ class LLMHeadlineExtractor(HeadlineExtractor):
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=30, max=120),
-        retry=lambda e: isinstance(e, (APIError, APIConnectionError))
+        retry=lambda e: isinstance(e, (APIError, APIConnectionError)),
     )
-    def _call_llm(self, user_prompt: str, system_prompt: str, response_format: ResponseFormat = ResponseFormat.TEXT) -> str:
-        return self.agent.invoke(system_prompt=system_prompt, user_prompt=user_prompt, response_format=response_format)
+    def _call_llm(
+        self,
+        user_prompt: str,
+        system_prompt: str,
+        response_format: ResponseFormat = ResponseFormat.TEXT,
+    ) -> str:
+        return self.agent.invoke(
+            system_prompt=system_prompt, user_prompt=user_prompt, response_format=response_format
+        )
 
     def _update_stats(self, retry_state):
         self.stats.attempts += 1
         self.stats.last_attempt = datetime.datetime.now()
         if retry_state.outcome.failed:
             self.stats.last_error = str(retry_state.outcome.exception())
-
-    @staticmethod
-    def _get_content_hash(content: str) -> str:
-        return hashlib.sha256(content.encode()).hexdigest()
-
-    @lru_cache(maxsize=100)
-    def _process_content(self, content_hash: str, content: str) -> Dict:
-        """Cache extraction results using content hash as key"""
-        logger.debug(f"Processing content with hash: {content_hash} and length: {len(content)} (tokens: {len(content.split())})")
-        try:
-            # Use existing CoT analysis and gathering process
-            reasoning_response = self._call_llm(
-                system_prompt=SYSTEM_PROMPT,
-                user_prompt=REASONING_PROMPT.format(
-                    task="Indentify the five primary headlines in order of appearance such that they are the most likely headlines that a human viewer would see.",
-                    data=content,
-                    rules="""
-                    * Use judgement to identify the primary headlines. 
-                    * Often there are smaller supporting stories under a single headlines; use judgement to determine if they are unique enough to be their own headlines.
-                    * Some media sites use a "catch phrase" such as "BIG WIN" or "ROLL TIDE"; these are not stand-alone headlines and should be combined with the full text of the actual headline.
-                    * The response MUST have the headlines in order of appearance.
-                    * The response MUST quote the headlines verbatim. 
-                    * The response MUST include the headline text, the publication date (if available) and the URL to the article.
-                    * The response SHOULD be in JSON but can also be in markdown.
-                    """
-                )
-            )
-
-            gathering_response = self._call_llm(
-                system_prompt=SYSTEM_PROMPT,
-                user_prompt=GATHERING_PROMPT.format(analysis=reasoning_response),
-                response_format=ResponseFormat.JSON
-            )
-
-            try:
-                return json.loads(gathering_response)
-            except json.JSONDecodeError as e:
-                logger.error(f"JSON parsing failed: {str(e)}")
-                logger.error(f"Raw LLM response (first 1000 chars): {gathering_response[:1000]}")
-                raise JSONParsingError(gathering_response, str(e))
-
-        except JSONParsingError:
-            raise  # Re-raise JSONParsingError
-        except Exception as e:
-            logger.error(f"Error processing content: {str(e)}")
-            return {"error": str(e)}
 
     def extract(self, content: str) -> Dict:
         """
@@ -213,38 +172,65 @@ class LLMHeadlineExtractor(HeadlineExtractor):
         """
         logger.debug(f"Extracting news content: {len(content)} bytes")
         try:
-            content_hash = self._get_content_hash(content)
-            res: Dict = self._process_content(content_hash, self._truncate_html(content, max_tokens=25000))
-            if "error" in res:
-                return {}  # TODO consider more robust error handling
-            return res
+            truncated_content = self._truncate_html(content, max_tokens=25000)
+            logger.debug(
+                f"Processing content with length: {len(truncated_content)} (tokens: {len(truncated_content.split())})"
+            )
 
+            # Use CoT analysis and gathering process
+            reasoning_response = self._call_llm(
+                system_prompt=SYSTEM_PROMPT,
+                user_prompt=REASONING_PROMPT.format(
+                    task="Indentify the five primary headlines in order of appearance such that they are the most likely headlines that a human viewer would see.",
+                    data=truncated_content,
+                    rules="""
+                    * Use judgement to identify the primary headlines.
+                    * Often there are smaller supporting stories under a single headlines; use judgement to determine if they are unique enough to be their own headlines.
+                    * Some media sites use a "catch phrase" such as "BIG WIN" or "ROLL TIDE"; these are not stand-alone headlines and should be combined with the full text of the actual headline.
+                    * The response MUST have the headlines in order of appearance.
+                    * The response MUST quote the headlines verbatim.
+                    * The response MUST include the headline text, the publication date (if available) and the URL to the article.
+                    * The response SHOULD be in JSON but can also be in markdown.
+                    """,
+                ),
+            )
+
+            gathering_response = self._call_llm(
+                system_prompt=SYSTEM_PROMPT,
+                user_prompt=GATHERING_PROMPT.format(analysis=reasoning_response),
+                response_format=ResponseFormat.JSON,
+            )
+
+            try:
+                res = json.loads(gathering_response)
+                return res
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON parsing failed: {e!s}")
+                logger.error(f"Raw LLM response (first 1000 chars): {gathering_response[:1000]}")
+                raise JSONParsingError(gathering_response, str(e)) from e
+
+        except JSONParsingError as e:
+            return {"error": str(e)}  # Return error dict with details
         except Exception as e:
-            logger.error(f"Error extracting news content: {str(e)}")
+            logger.error(f"Error extracting news content: {e!s}")
             print(traceback.format_exc())
-            return {
-                "headlines": [],
-                "stories": [],
-                "error": str(e)
-            }
+            return {"headlines": [], "stories": [], "error": str(e)}
 
 
 ##############################
 # TEST
 def main(working_dir: Path):
     agent = create_agent_from_env()
-    extractor: LLMHeadlineExtractor = LLMHeadlineExtractor(
-        agent=agent
-    )
+    extractor: LLMHeadlineExtractor = LLMHeadlineExtractor(agent=agent)
     for file in working_dir.glob("*-clean.html"):
-        with open(file, "r") as f:
+        with open(file) as f:
             content = f.read()
             results: dict = extractor.extract(content)
             with open(working_dir / f"{file.stem}-extracted.json", "w") as outf:
                 outf.write(json.dumps(results))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     dotenv.load_dotenv()
     logging.basicConfig(level=logging.DEBUG)
     main(working_dir=Path(get_project_root() / "working/out/test"))

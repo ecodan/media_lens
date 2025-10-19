@@ -5,25 +5,25 @@ from typing import List, Optional
 from src.media_lens.common import (
     UTC_REGEX_PATTERN_BW_COMPAT,
     get_utc_datetime_from_timestamp,
-    get_week_key
+    get_week_key,
 )
 
 
 class JobDir:
     """
     Represents a job directory with unified handling of hierarchical and legacy formats.
-    
+
     Supports:
     - Hierarchical: jobs/2025/06/07/193355
     - Legacy: 2025-06-07_193355
-    
+
     Provides chronological sorting, timestamp extraction, and storage path generation.
     """
 
     def __init__(self, storage_path: str, timestamp_str: str, is_hierarchical: bool):
         """
         Initialize a JobDir instance.
-        
+
         Args:
             storage_path: Full path for storage operations
             timestamp_str: Timestamp in YYYY-MM-DD_HHMMSS format
@@ -36,20 +36,20 @@ class JobDir:
         self._week_key = get_week_key(self._datetime)
 
     @classmethod
-    def from_path(cls, path: str) -> 'JobDir':
+    def from_path(cls, path: str) -> "JobDir":
         """
         Create a JobDir from a directory path.
-        
+
         Args:
             path: Directory path (hierarchical or legacy format)
-            
+
         Returns:
             JobDir instance
-            
+
         Raises:
             ValueError: If path doesn't match any valid format
         """
-        path = path.strip().rstrip('/')
+        path = path.strip().rstrip("/")
 
         # Check for hierarchical format: jobs/YYYY/MM/DD/HHmmss
         if path.startswith("jobs/") and len(path.split("/")) == 5:
@@ -70,13 +70,13 @@ class JobDir:
         raise ValueError(f"Invalid job directory format: {path}")
 
     @classmethod
-    def list_all(cls, storage) -> List['JobDir']:
+    def list_all(cls, storage) -> List["JobDir"]:
         """
         List all valid job directories from storage.
-        
+
         Args:
             storage: Storage adapter instance
-            
+
         Returns:
             List of JobDir instances, sorted chronologically (oldest first)
         """
@@ -96,13 +96,13 @@ class JobDir:
         return job_dirs
 
     @classmethod
-    def find_latest(cls, storage) -> Optional['JobDir']:
+    def find_latest(cls, storage) -> Optional["JobDir"]:
         """
         Find the most recent job directory.
-        
+
         Args:
             storage: Storage adapter instance
-            
+
         Returns:
             JobDir instance for latest job, or None if no jobs found
         """
@@ -110,13 +110,13 @@ class JobDir:
         return job_dirs[-1] if job_dirs else None
 
     @classmethod
-    def group_by_week(cls, job_dirs: List['JobDir']) -> dict[str, List['JobDir']]:
+    def group_by_week(cls, job_dirs: List["JobDir"]) -> dict[str, List["JobDir"]]:
         """
         Group job directories by week key.
-        
+
         Args:
             job_dirs: List of JobDir instances
-            
+
         Returns:
             Dictionary mapping week keys to lists of JobDir instances
         """

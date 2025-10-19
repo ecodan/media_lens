@@ -80,8 +80,8 @@ Currently implements a file system-based storage solution for simplicity and rap
 
 ## Requirements
 
-- Python 3.8+ (tested with Python 3.12)
-- See requirements.txt for dependencies
+- Python 3.9+ (tested with Python 3.12)
+- UV package manager for dependency management
 - AI Provider API access:
   - **Anthropic Claude** (default) - requires API key
   - **Google Vertex AI** (optional) - requires GCP service account and project setup
@@ -89,9 +89,42 @@ Currently implements a file system-based storage solution for simplicity and rap
 
 ## Development Setup
 
-### Local Development (Mac)
+### Prerequisites
 
-For local development on Mac (Apple Silicon), use the containerized environment:
+**Install UV Package Manager** (if not already installed):
+```bash
+# Using Homebrew (macOS)
+brew install uv
+
+# Or download from https://docs.astral.sh/uv/
+```
+
+### Local Development (Direct)
+
+For direct local development with all tools and pre-commit hooks:
+
+```bash
+# Sync dependencies and create virtual environment
+uv sync
+
+# Install pre-commit hooks for automated checks
+uv run pre-commit install
+
+# Run application
+uv run python -m src.media_lens.runner run -s harvest extract
+
+# Run tests
+uv run pytest
+
+# Run tests with coverage
+uv run pytest --cov=src/media_lens --cov-report=html
+```
+
+For more development commands and detailed setup, see `UV_SETUP.md`.
+
+### Local Development (Docker - Mac)
+
+For containerized local development on Mac (Apple Silicon):
 
 ```bash
 # Build and run local Docker container (Mac ARM64)
@@ -128,10 +161,10 @@ Execute workflow steps individually or in combination:
 
 ```bash
 # Run main program (basic)
-python -m src.media_lens.runner
+uv run python -m src.media_lens.runner
 
 # Run specific steps
-python -m src.media_lens.runner run -s harvest extract interpret_weekly summarize_daily format deploy
+uv run python -m src.media_lens.runner run -s harvest extract interpret_weekly summarize_daily format deploy
 
 # Available steps:
 # - harvest: Complete scraping and cleaning workflow
@@ -146,44 +179,44 @@ python -m src.media_lens.runner run -s harvest extract interpret_weekly summariz
 # - deploy: Deploy files to remote server
 
 # Override default sites
-python -m src.media_lens.runner run -s harvest --sites www.bbc.com www.cnn.com
+uv run python -m src.media_lens.runner run -s harvest --sites www.bbc.com www.cnn.com
 
 # Process specific job directory
-python -m src.media_lens.runner run -s extract interpret -j jobs/2025/06/07/120000
+uv run python -m src.media_lens.runner run -s extract interpret -j jobs/2025/06/07/120000
 
 # Process date range
-python -m src.media_lens.runner run -s format --start-date 2025-01-01 --end-date 2025-01-31
+uv run python -m src.media_lens.runner run -s format --start-date 2025-01-01 --end-date 2025-01-31
 
 # Force full processing (ignore cursors)
-python -m src.media_lens.runner run -s format --force-full-format
-python -m src.media_lens.runner run -s deploy --force-full-deploy
+uv run python -m src.media_lens.runner run -s format --force-full-format
+uv run python -m src.media_lens.runner run -s deploy --force-full-deploy
 
 # Rewind cursors before running
-python -m src.media_lens.runner run -s format deploy --rewind-days 7
+uv run python -m src.media_lens.runner run -s format deploy --rewind-days 7
 
 # Set browser mode for local development
-python -m src.media_lens.runner run -s harvest --playwright-mode local
+uv run python -m src.media_lens.runner run -s harvest --playwright-mode local
 
 # Assign custom run ID for tracking
-python -m src.media_lens.runner run -s harvest --run-id my-custom-run
+uv run python -m src.media_lens.runner run -s harvest --run-id my-custom-run
 ```
 
 #### Daily Summarization
 ```bash
 # Summarize all days
-python -m src.media_lens.runner summarize
+uv run python -m src.media_lens.runner summarize
 
 # Force re-summarization
-python -m src.media_lens.runner summarize --force
+uv run python -m src.media_lens.runner summarize --force
 ```
 
 #### Weekly Reinterpretation
 ```bash
 # Reinterpret weekly content from specific date (uses hybrid approach)
-python -m src.media_lens.runner reinterpret-weeks --date 2025-01-01
+uv run python -m src.media_lens.runner reinterpret-weeks --date 2025-01-01
 
 # Don't overwrite existing interpretations
-python -m src.media_lens.runner reinterpret-weeks --date 2025-01-01 --no-overwrite
+uv run python -m src.media_lens.runner reinterpret-weeks --date 2025-01-01 --no-overwrite
 
 # Note: Current week uses rolling 7-day analysis, historical weeks use ISO boundaries
 ```
@@ -191,30 +224,30 @@ python -m src.media_lens.runner reinterpret-weeks --date 2025-01-01 --no-overwri
 #### Cursor Management
 ```bash
 # Reset both cursors (forces full regeneration/deployment)
-python -m src.media_lens.runner reset-cursor
+uv run python -m src.media_lens.runner reset-cursor
 
 # Reset specific cursors
-python -m src.media_lens.runner reset-cursor --format
-python -m src.media_lens.runner reset-cursor --deploy
-python -m src.media_lens.runner reset-cursor --all
+uv run python -m src.media_lens.runner reset-cursor --format
+uv run python -m src.media_lens.runner reset-cursor --deploy
+uv run python -m src.media_lens.runner reset-cursor --all
 ```
 
 #### Audit Directories
 ```bash
 # Audit all directories
-python -m src.media_lens.runner audit
+uv run python -m src.media_lens.runner audit
 
 # Audit specific date range
-python -m src.media_lens.runner audit --start-date 2025-01-01 --end-date 2025-01-31
+uv run python -m src.media_lens.runner audit --start-date 2025-01-01 --end-date 2025-01-31
 
 # Skip generating audit report file
-python -m src.media_lens.runner audit --no-report
+uv run python -m src.media_lens.runner audit --no-report
 ```
 
 #### Stop Running Process
 ```bash
 # Stop current run
-python -m src.media_lens.runner stop
+uv run python -m src.media_lens.runner stop
 ```
 
 ### Web API Endpoints
@@ -223,7 +256,7 @@ The application includes a Flask web server that can be started locally or via D
 
 **Local Development:**
 ```bash
-python -m src.media_lens.cloud_entrypoint
+uv run python -m src.media_lens.cloud_entrypoint
 ```
 
 **Docker (preferred for local testing):**
@@ -346,22 +379,25 @@ export LOCAL_STORAGE_PATH=/path/to/your/working/directory
 
 ```bash
 # Full daily workflow (interpret_weekly uses hybrid approach)
-python -m src.media_lens.runner run -s harvest extract interpret_weekly summarize_daily format deploy
+uv run python -m src.media_lens.runner run -s harvest extract interpret_weekly summarize_daily format deploy
 
 # Local development with minimal browser restrictions
-python -m src.media_lens.runner run -s harvest extract --playwright-mode local
+uv run python -m src.media_lens.runner run -s harvest extract --playwright-mode local
 
 # Scrape only (for later processing)
-python -m src.media_lens.runner run -s harvest_scrape --sites www.bbc.com
+uv run python -m src.media_lens.runner run -s harvest_scrape --sites www.bbc.com
 
 # Process existing scraped content
-python -m src.media_lens.runner run -s harvest_clean extract interpret -j jobs/2025/06/07/120000
+uv run python -m src.media_lens.runner run -s harvest_clean extract interpret -j jobs/2025/06/07/120000
 
 # Incremental deployment (only new files)
-python -m src.media_lens.runner run -s format deploy
+uv run python -m src.media_lens.runner run -s format deploy
 
 # Force complete regeneration
-python -m src.media_lens.runner run -s format deploy --force-full-format --force-full-deploy
+uv run python -m src.media_lens.runner run -s format deploy --force-full-format --force-full-deploy
+
+# Run tests with coverage
+uv run pytest --cov=src/media_lens --cov-report=html
 
 # Note: Current week analysis automatically uses rolling 7-day windows,
 # while historical weeks maintain ISO week boundaries for consistency

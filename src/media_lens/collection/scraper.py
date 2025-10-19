@@ -40,28 +40,28 @@ class WebpageScraper:
 
             # Different browser args based on PLAYWRIGHT_MODE environment variable
             # Defaults to 'cloud' for backwards compatibility and cloud deployment
-            playwright_mode = os.getenv('PLAYWRIGHT_MODE', 'cloud').lower()
+            playwright_mode = os.getenv("PLAYWRIGHT_MODE", "cloud").lower()
 
-            if playwright_mode == 'local':
+            if playwright_mode == "local":
                 # Local development arguments (macOS-friendly)
                 base_args = [
-                    '--disable-blink-features=AutomationControlled',
-                    '--disable-background-timer-throttling',
-                    '--disable-backgrounding-occluded-windows',
-                    '--disable-renderer-backgrounding'
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-background-timer-throttling",
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding",
                 ]
                 logger.debug("Using local development browser args")
             else:
                 # Cloud/container-optimized arguments (default)
                 base_args = [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-accelerated-2d-canvas',
-                    '--no-first-run',
-                    '--disable-gpu',
-                    '--no-zygote',
-                    '--single-process'
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-accelerated-2d-canvas",
+                    "--no-first-run",
+                    "--disable-gpu",
+                    "--no-zygote",
+                    "--single-process",
                 ]
                 logger.debug("Using cloud/container-optimized browser args")
 
@@ -69,21 +69,21 @@ class WebpageScraper:
             browser = await playwright.chromium.launch(
                 headless=True,
                 timeout=180000,  # 3 minute timeout for browser launch
-                args=base_args
+                args=base_args,
             )
 
             if browser_type == WebpageScraper.BrowserType.DESKTOP:
                 context = await browser.new_context(
-                    viewport={'width': 1920, 'height': 1080},
-                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                    viewport={"width": 1920, "height": 1080},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
                 )
             elif browser_type == WebpageScraper.BrowserType.MOBILE:
                 context = await browser.new_context(
-                    viewport={'width': 375, 'height': 812},  # iPhone 12 dimensions
-                    user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/604.1',
+                    viewport={"width": 375, "height": 812},  # iPhone 12 dimensions
+                    user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/604.1",
                     device_scale_factor=3,
                     is_mobile=True,
-                    has_touch=True
+                    has_touch=True,
                 )
             else:
                 raise ValueError("Unknown browser type")
@@ -93,16 +93,20 @@ class WebpageScraper:
             await stealth_async(page)
 
             # Additional stealth configurations
-            await page.set_extra_http_headers({
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
-            })
+            await page.set_extra_http_headers(
+                {
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                }
+            )
 
             try:
                 logger.debug("loading page...")
                 # Navigate to the page with faster load strategy
-                await page.goto(url, wait_until='domcontentloaded', timeout=60000)  # 60 seconds timeout
+                await page.goto(
+                    url, wait_until="domcontentloaded", timeout=60000
+                )  # 60 seconds timeout
                 logger.debug("page loaded, waiting for additional content...")
 
                 # Wait for dynamic content to load (ads, lazy-loaded content, etc.)
@@ -113,22 +117,26 @@ class WebpageScraper:
                 content = await page.content()
                 logger.debug(f"Content retrieved successfully, length: {len(content)}")
             except asyncio.TimeoutError:
-                logger.warning(f"Timeout while loading page: {url}; scraping what content is available.")
+                logger.warning(
+                    f"Timeout while loading page: {url}; scraping what content is available."
+                )
                 try:
                     content = await page.content()
                 except Exception as content_error:
-                    logger.error(f"Could not get content after timeout: {str(content_error)}")
+                    logger.error(f"Could not get content after timeout: {content_error!s}")
                     content = None
             except Exception as e:
-                logger.warning(f"Error while loading page: {url}; {str(e)}; scraping what content is available.")
+                logger.warning(
+                    f"Error while loading page: {url}; {e!s}; scraping what content is available."
+                )
                 try:
                     content = await page.content()
                 except Exception as content_error:
-                    logger.error(f"Could not get content after error: {str(content_error)}")
+                    logger.error(f"Could not get content after error: {content_error!s}")
                     content = None
 
         except Exception as e:
-            logger.error(f"Error fetching page content: {str(e)}")
+            logger.error(f"Error fetching page content: {e!s}")
             traceback.print_exc()
             content = None
 
@@ -145,7 +153,7 @@ class WebpageScraper:
                         await asyncio.wait_for(page.close(), timeout=5.0)
                 except (Exception, asyncio.TimeoutError) as e:
                     if "Target page, context or browser has been closed" not in str(e):
-                        logger.warning(f"Error closing page: {str(e)}")
+                        logger.warning(f"Error closing page: {e!s}")
 
             if context:
                 try:
@@ -153,7 +161,10 @@ class WebpageScraper:
                 except (Exception, asyncio.TimeoutError) as e:
                     error_str = str(e)
                     # Suppress expected errors during cleanup
-                    if error_str and "Target page, context or browser has been closed" not in error_str:
+                    if (
+                        error_str
+                        and "Target page, context or browser has been closed" not in error_str
+                    ):
                         logger.warning(f"Error closing context: {type(e).__name__}: {error_str}")
                     elif not error_str:
                         logger.debug(f"Context close returned empty error: {type(e).__name__}")
@@ -165,7 +176,10 @@ class WebpageScraper:
                 except (Exception, asyncio.TimeoutError) as e:
                     error_str = str(e)
                     # Suppress expected errors during cleanup
-                    if error_str and "Target page, context or browser has been closed" not in error_str:
+                    if (
+                        error_str
+                        and "Target page, context or browser has been closed" not in error_str
+                    ):
                         logger.warning(f"Error closing browser: {type(e).__name__}: {error_str}")
                     elif not error_str:
                         logger.debug(f"Browser close returned empty error: {type(e).__name__}")
@@ -174,7 +188,7 @@ class WebpageScraper:
                 try:
                     await asyncio.wait_for(playwright.stop(), timeout=10.0)
                 except (Exception, asyncio.TimeoutError) as e:
-                    logger.warning(f"Error stopping playwright: {str(e)}")
+                    logger.warning(f"Error stopping playwright: {e!s}")
 
             logger.debug("Resource cleanup completed")
 
@@ -183,7 +197,11 @@ class WebpageScraper:
 
 ######################################################
 # TEST CODE
-async def main(url: str, browser_type: WebpageScraper.BrowserType = WebpageScraper.BrowserType.MOBILE, outfile: Path = None):
+async def main(
+    url: str,
+    browser_type: WebpageScraper.BrowserType = WebpageScraper.BrowserType.MOBILE,
+    outfile: Optional[Path] = None,
+):
     # test code
     scraper = WebpageScraper()
     content = await scraper.get_page_content(url, browser_type)
@@ -192,6 +210,12 @@ async def main(url: str, browser_type: WebpageScraper.BrowserType = WebpageScrap
             f.write(content)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
-    asyncio.run(main("http://www.cnn.com", WebpageScraper.BrowserType.MOBILE, outfile=Path(get_project_root() / "working/cnn-mob.html")))
+    asyncio.run(
+        main(
+            "http://www.cnn.com",
+            WebpageScraper.BrowserType.MOBILE,
+            outfile=Path(get_project_root() / "working/cnn-mob.html"),
+        )
+    )

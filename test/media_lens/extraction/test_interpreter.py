@@ -1,10 +1,5 @@
 import json
-import os
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-
-import pytest
-from anthropic import APIError
+from unittest.mock import MagicMock, patch
 
 from src.media_lens.extraction.interpreter import LLMWebsiteInterpreter
 
@@ -13,21 +8,21 @@ def test_interpret_from_files(temp_dir, mock_llm_agent, test_storage_adapter):
     """Test interpret_from_files method with sample files."""
     # Create test interpreter with mock agent
     interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent, storage=test_storage_adapter)
-    
+
     # Create test files using storage adapter
     storage = test_storage_adapter
     file_paths = []
     for i in range(3):
         file_path = f"test-article-{i}.json"
-        storage.write_json(file_path, {
-            "title": f"Test Article {i}",
-            "text": f"This is the content of article {i}."
-        })
+        storage.write_json(
+            file_path,
+            {"title": f"Test Article {i}", "text": f"This is the content of article {i}."},
+        )
         file_paths.append(f"{temp_dir}/{file_path}")
-    
+
     # Call interpret_from_files
     result = interpreter.interpret_files(file_paths)
-    
+
     # Verify results
     assert isinstance(result, list)
     assert len(result) > 0
@@ -39,22 +34,16 @@ def test_interpret(mock_llm_agent, test_storage_adapter):
     """Test interpret method with sample content."""
     # Create test interpreter with mock agent and storage adapter
     interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent, storage=test_storage_adapter)
-    
+
     # Create test content
     content = [
-        {
-            "title": "Test Article 1",
-            "text": "This is the content of article 1."
-        },
-        {
-            "title": "Test Article 2",
-            "text": "This is the content of article 2."
-        }
+        {"title": "Test Article 1", "text": "This is the content of article 1."},
+        {"title": "Test Article 2", "text": "This is the content of article 2."},
     ]
-    
+
     # Call interpret
     result = interpreter.interpret(content)
-    
+
     # Verify results
     assert isinstance(result, list)
     assert len(result) > 0
@@ -62,26 +51,21 @@ def test_interpret(mock_llm_agent, test_storage_adapter):
     assert "answer" in result[0]
 
 
-@patch('src.media_lens.extraction.interpreter.json.loads')
+@patch("src.media_lens.extraction.interpreter.json.loads")
 def test_interpret_with_json_error(mock_json_loads, mock_llm_agent, test_storage_adapter):
     """Test error handling when JSON parsing fails."""
     # Make json.loads raise an exception
     mock_json_loads.side_effect = json.JSONDecodeError("Invalid JSON", "", 0)
-    
+
     # Create test interpreter with mock agent and storage adapter
     interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent, storage=test_storage_adapter)
-    
+
     # Create test content
-    content = [
-        {
-            "title": "Test Article 1",
-            "text": "This is the content of article 1."
-        }
-    ]
-    
+    content = [{"title": "Test Article 1", "text": "This is the content of article 1."}]
+
     # Call interpret
     result = interpreter.interpret(content)
-    
+
     # Verify error handling
     assert result == []
 
@@ -90,23 +74,23 @@ def test_interpret_weeks_content(mock_llm_agent, temp_dir, test_storage_adapter)
     """Test interpret_site_content method."""
     # Create test interpreter with mock agent and storage adapter
     interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent, storage=test_storage_adapter)
-    
+
     # Create test content structure for a single site
     site = "www.test1.com"
     content = [
         [
             {"title": "Test1 Article 1", "text": "Content 1", "url": "/article1"},
-            {"title": "Test1 Article 2", "text": "Content 2", "url": "/article2"}
+            {"title": "Test1 Article 2", "text": "Content 2", "url": "/article2"},
         ],
         [
             {"title": "Test1 Article 3", "text": "Content 3", "url": "/article3"},
-            {"title": "Test1 Article 4", "text": "Content 4", "url": "/article4"}
-        ]
+            {"title": "Test1 Article 4", "text": "Content 4", "url": "/article4"},
+        ],
     ]
-    
+
     # Call interpret_site_content with correct arguments
     result = interpreter.interpret_site_content(site, content)
-    
+
     # Verify results
     assert isinstance(result, list)
     assert len(result) > 0
@@ -136,19 +120,21 @@ def test_interpret_weeks_content_error_handling(mock_llm_agent, test_storage_ada
 def test_interpret_weeks_with_specific_weeks(mock_llm_agent, test_storage_adapter, temp_dir):
     """Test interpret_weeks method with specific weeks provided."""
     import datetime
+    from unittest.mock import patch
+
     from src.media_lens.job_dir import JobDir
-    from unittest.mock import MagicMock, patch
 
     # Create test interpreter with mock agent and storage adapter
     interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent, storage=test_storage_adapter)
 
     # Create real JobDir instances (not mocks) for isinstance checks to work
-    with patch.object(JobDir, 'list_all') as mock_list_all, \
-         patch.object(JobDir, 'group_by_week') as mock_group_by_week, \
-         patch.object(test_storage_adapter, 'get_intermediate_directory', return_value="intermediate"), \
-         patch.object(test_storage_adapter, 'get_files_by_pattern', return_value=[]), \
-         patch.object(test_storage_adapter, 'write_json'):
-
+    with patch.object(JobDir, "list_all") as mock_list_all, patch.object(
+        JobDir, "group_by_week"
+    ) as mock_group_by_week, patch.object(
+        test_storage_adapter, "get_intermediate_directory", return_value="intermediate"
+    ), patch.object(test_storage_adapter, "get_files_by_pattern", return_value=[]), patch.object(
+        test_storage_adapter, "write_json"
+    ):
         # Create mock job directories for testing
         mock_job1 = MagicMock(spec=JobDir)
         mock_job1.storage_path = "jobs/2025/02/17/120000"
@@ -162,18 +148,14 @@ def test_interpret_weeks_with_specific_weeks(mock_llm_agent, test_storage_adapte
         mock_list_all.return_value = [mock_job1, mock_job2]
 
         # Mock JobDir.group_by_week to return weeks with jobs
-        mock_group_by_week.return_value = {
-            "2025-W08": [mock_job1, mock_job2]
-        }
+        mock_group_by_week.return_value = {"2025-W08": [mock_job1, mock_job2]}
 
         # Test with specific weeks
         sites = ["www.test1.com", "www.test2.com"]
         specific_weeks = ["2025-W08"]
 
         result = interpreter.interpret_weeks(
-            sites=sites,
-            specific_weeks=specific_weeks,
-            use_rolling_for_current=False
+            sites=sites, specific_weeks=specific_weeks, use_rolling_for_current=False
         )
 
         # Verify results
@@ -188,9 +170,10 @@ def test_interpret_weeks_with_specific_weeks(mock_llm_agent, test_storage_adapte
 def test_interpret_weeks_with_rolling_for_current(mock_llm_agent, test_storage_adapter, temp_dir):
     """Test interpret_weeks method with rolling 7-day analysis for current week."""
     import datetime
-    from src.media_lens.job_dir import JobDir
+    from unittest.mock import patch
+
     from src.media_lens.common import get_week_key
-    from unittest.mock import MagicMock, patch
+    from src.media_lens.job_dir import JobDir
 
     # Create test interpreter with mock agent and storage adapter
     interpreter = LLMWebsiteInterpreter(agent=mock_llm_agent, storage=test_storage_adapter)
@@ -200,12 +183,13 @@ def test_interpret_weeks_with_rolling_for_current(mock_llm_agent, test_storage_a
     current_week = get_week_key(current_datetime)
 
     # Create real JobDir instances (not mocks) for isinstance checks to work
-    with patch.object(JobDir, 'list_all') as mock_list_all, \
-         patch.object(JobDir, 'group_by_week') as mock_group_by_week, \
-         patch.object(test_storage_adapter, 'get_intermediate_directory', return_value="intermediate"), \
-         patch.object(test_storage_adapter, 'get_files_by_pattern', return_value=[]), \
-         patch.object(test_storage_adapter, 'write_json'):
-
+    with patch.object(JobDir, "list_all") as mock_list_all, patch.object(
+        JobDir, "group_by_week"
+    ) as mock_group_by_week, patch.object(
+        test_storage_adapter, "get_intermediate_directory", return_value="intermediate"
+    ), patch.object(test_storage_adapter, "get_files_by_pattern", return_value=[]), patch.object(
+        test_storage_adapter, "write_json"
+    ):
         # Create mock job directories for testing
         mock_job1 = MagicMock(spec=JobDir)
         mock_job1.storage_path = "jobs/2025/10/01/120000"
@@ -219,17 +203,13 @@ def test_interpret_weeks_with_rolling_for_current(mock_llm_agent, test_storage_a
         mock_list_all.return_value = [mock_job1, mock_job2]
 
         # Mock JobDir.group_by_week to return current week with jobs
-        mock_group_by_week.return_value = {
-            current_week: [mock_job1, mock_job2]
-        }
+        mock_group_by_week.return_value = {current_week: [mock_job1, mock_job2]}
 
         # Test with current week using rolling analysis
         sites = ["www.test1.com"]
 
         result = interpreter.interpret_weeks(
-            sites=sites,
-            specific_weeks=[current_week],
-            use_rolling_for_current=True
+            sites=sites, specific_weeks=[current_week], use_rolling_for_current=True
         )
 
         # Verify results

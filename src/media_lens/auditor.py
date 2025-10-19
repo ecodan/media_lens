@@ -2,15 +2,10 @@ import asyncio
 import logging
 import re
 from datetime import datetime
-from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from src.media_lens.collection.cleaner import WebpageCleaner, cleaner_for_site
-from src.media_lens.common import (
-    LOGGER_NAME,
-    SITES,
-    get_utc_datetime_from_timestamp
-)
+from src.media_lens.common import LOGGER_NAME, SITES, get_utc_datetime_from_timestamp
 from src.media_lens.extraction.agent import create_agent_from_env
 from src.media_lens.extraction.extractor import ContextExtractor
 from src.media_lens.storage import shared_storage
@@ -18,7 +13,11 @@ from src.media_lens.storage import shared_storage
 logger = logging.getLogger(LOGGER_NAME)
 
 
-def audit_days(start_date: datetime = None, end_date: datetime = None, audit_report: bool = True) -> None:
+def audit_days(
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    audit_report: bool = True,
+) -> None:
     """
     Visit all of the output job directories under the output root directory and ensure completeness.
     Each day should have a complete set of files for each site, including:
@@ -45,7 +44,7 @@ def audit_days(start_date: datetime = None, end_date: datetime = None, audit_rep
         "repairs_made": [],
         "total_directories": 0,
         "total_problems": 0,
-        "total_repairs": 0
+        "total_repairs": 0,
     }
 
     # Get all job directories using new hierarchical structure and legacy support
@@ -62,10 +61,8 @@ def audit_days(start_date: datetime = None, end_date: datetime = None, audit_rep
             except ValueError:
                 continue
         # Check for legacy flat directories
-        elif re.match(r'^\d{4}-\d{2}-\d{2}_\d{6}$', dir_name):
+        elif re.match(r"^\d{4}-\d{2}-\d{2}_\d{6}$", dir_name):
             job_dirs.append((dir_name, dir_name))
-
-    timestamp_dirs = set([job_dir[0] for job_dir in job_dirs])
 
     # Filter directories by date range if specified
     filtered_dirs = []
@@ -116,7 +113,7 @@ def audit_days(start_date: datetime = None, end_date: datetime = None, audit_rep
 def _audit_single_directory(timestamp_dir: str, sites: List[str], audit_data: dict) -> None:
     """
     Audit a single timestamp directory for completeness.
-    
+
     :param timestamp_dir: The timestamp directory to audit
     :param sites: List of sites to check
     :param audit_data: Dictionary to collect audit information for reporting
@@ -137,14 +134,16 @@ def _audit_single_directory(timestamp_dir: str, sites: List[str], audit_data: di
             problem = f"Missing raw HTML file: {raw_html} - nothing to do"
             logger.error(problem)
             missing_files.append(raw_html)
-            audit_data["problems_found"].append({
-                "directory": timestamp_dir,
-                "site": site,
-                "type": "missing_raw_html",
-                "file": raw_html,
-                "description": problem,
-                "repairable": False
-            })
+            audit_data["problems_found"].append(
+                {
+                    "directory": timestamp_dir,
+                    "site": site,
+                    "type": "missing_raw_html",
+                    "file": raw_html,
+                    "description": problem,
+                    "repairable": False,
+                }
+            )
             continue
 
         # Check if clean HTML exists
@@ -152,28 +151,32 @@ def _audit_single_directory(timestamp_dir: str, sites: List[str], audit_data: di
             problem = f"Missing clean HTML file: {clean_html} - will regenerate"
             logger.warning(problem)
             needs_cleaning.append((timestamp_dir, site))
-            audit_data["problems_found"].append({
-                "directory": timestamp_dir,
-                "site": site,
-                "type": "missing_clean_html",
-                "file": clean_html,
-                "description": problem,
-                "repairable": True
-            })
+            audit_data["problems_found"].append(
+                {
+                    "directory": timestamp_dir,
+                    "site": site,
+                    "type": "missing_clean_html",
+                    "file": clean_html,
+                    "description": problem,
+                    "repairable": True,
+                }
+            )
 
         # Check if extracted JSON exists
         if not storage.file_exists(extracted_json):
             problem = f"Missing extracted JSON file: {extracted_json} - will regenerate"
             logger.warning(problem)
             needs_extraction.append((timestamp_dir, site))
-            audit_data["problems_found"].append({
-                "directory": timestamp_dir,
-                "site": site,
-                "type": "missing_extracted_json",
-                "file": extracted_json,
-                "description": problem,
-                "repairable": True
-            })
+            audit_data["problems_found"].append(
+                {
+                    "directory": timestamp_dir,
+                    "site": site,
+                    "type": "missing_extracted_json",
+                    "file": extracted_json,
+                    "description": problem,
+                    "repairable": True,
+                }
+            )
         else:
             # Check for article files (typically 0-4, but we'll check what exists)
             try:
@@ -181,17 +184,21 @@ def _audit_single_directory(timestamp_dir: str, sites: List[str], audit_data: di
 
                 # Check if the JSON is empty or missing stories
                 if not extracted_data or not extracted_data.get("stories"):
-                    problem = f"Empty or invalid extracted JSON file: {extracted_json} - will regenerate"
+                    problem = (
+                        f"Empty or invalid extracted JSON file: {extracted_json} - will regenerate"
+                    )
                     logger.warning(problem)
                     needs_extraction.append((timestamp_dir, site))
-                    audit_data["problems_found"].append({
-                        "directory": timestamp_dir,
-                        "site": site,
-                        "type": "empty_extracted_json",
-                        "file": extracted_json,
-                        "description": problem,
-                        "repairable": True
-                    })
+                    audit_data["problems_found"].append(
+                        {
+                            "directory": timestamp_dir,
+                            "site": site,
+                            "type": "empty_extracted_json",
+                            "file": extracted_json,
+                            "description": problem,
+                            "repairable": True,
+                        }
+                    )
                 else:
                     stories = extracted_data.get("stories", [])
                     for idx, story in enumerate(stories):
@@ -199,27 +206,31 @@ def _audit_single_directory(timestamp_dir: str, sites: List[str], audit_data: di
                         if story.get("url") and not storage.file_exists(article_file):
                             problem = f"Missing article file: {article_file}"
                             logger.warning(problem)
-                            audit_data["problems_found"].append({
-                                "directory": timestamp_dir,
-                                "site": site,
-                                "type": "missing_article_file",
-                                "file": article_file,
-                                "description": problem,
-                                "repairable": True
-                            })
+                            audit_data["problems_found"].append(
+                                {
+                                    "directory": timestamp_dir,
+                                    "site": site,
+                                    "type": "missing_article_file",
+                                    "file": article_file,
+                                    "description": problem,
+                                    "repairable": True,
+                                }
+                            )
                             needs_extraction.append((timestamp_dir, site))
                             break  # Only need to flag once per site
             except Exception as e:
                 problem = f"Error reading extracted data from {extracted_json}: {e}"
                 logger.error(problem)
-                audit_data["problems_found"].append({
-                    "directory": timestamp_dir,
-                    "site": site,
-                    "type": "corrupted_extracted_json",
-                    "file": extracted_json,
-                    "description": problem,
-                    "repairable": True
-                })
+                audit_data["problems_found"].append(
+                    {
+                        "directory": timestamp_dir,
+                        "site": site,
+                        "type": "corrupted_extracted_json",
+                        "file": extracted_json,
+                        "description": problem,
+                        "repairable": True,
+                    }
+                )
                 needs_extraction.append((timestamp_dir, site))
 
     # Note: totals will be calculated after all directories are processed
@@ -235,7 +246,7 @@ def _audit_single_directory(timestamp_dir: str, sites: List[str], audit_data: di
 def _repair_cleaning(needs_cleaning: List[tuple], audit_data: dict) -> None:
     """
     Repair missing clean HTML files.
-    
+
     :param needs_cleaning: List of (timestamp_dir, site) tuples that need cleaning
     :param audit_data: Dictionary to collect audit information for reporting
     """
@@ -259,37 +270,39 @@ def _repair_cleaning(needs_cleaning: List[tuple], audit_data: dict) -> None:
             storage.write_text(clean_html_path, clean_content, encoding="utf-8")
 
             logger.info(f"Successfully repaired clean HTML: {clean_html_path}")
-            audit_data["repairs_made"].append({
-                "directory": timestamp_dir,
-                "site": site,
-                "type": "repair_clean_html",
-                "file": clean_html_path,
-                "description": f"Successfully regenerated clean HTML for {site}",
-                "success": True
-            })
+            audit_data["repairs_made"].append(
+                {
+                    "directory": timestamp_dir,
+                    "site": site,
+                    "type": "repair_clean_html",
+                    "file": clean_html_path,
+                    "description": f"Successfully regenerated clean HTML for {site}",
+                    "success": True,
+                }
+            )
 
         except Exception as e:
             error_msg = f"Failed to repair clean HTML for {site} in {timestamp_dir}: {e}"
             logger.error(error_msg)
-            audit_data["repairs_made"].append({
-                "directory": timestamp_dir,
-                "site": site,
-                "type": "repair_clean_html",
-                "file": clean_html_path,
-                "description": error_msg,
-                "success": False
-            })
+            audit_data["repairs_made"].append(
+                {
+                    "directory": timestamp_dir,
+                    "site": site,
+                    "type": "repair_clean_html",
+                    "file": clean_html_path,
+                    "description": error_msg,
+                    "success": False,
+                }
+            )
 
 
 async def _repair_extraction(needs_extraction: List[tuple], audit_data: dict) -> None:
     """
     Repair missing extraction files.
-    
+
     :param needs_extraction: List of (timestamp_dir, site) tuples that need extraction
     :param audit_data: Dictionary to collect audit information for reporting
     """
-    storage = shared_storage
-
     # Group by timestamp directory to process efficiently
     dirs_to_process = {}
     for timestamp_dir, site in needs_extraction:
@@ -317,42 +330,48 @@ async def _repair_extraction(needs_extraction: List[tuple], audit_data: dict) ->
 
             logger.info(f"Successfully repaired extraction for {timestamp_dir}")
             for site in sites:
-                audit_data["repairs_made"].append({
-                    "directory": timestamp_dir,
-                    "site": site,
-                    "type": "repair_extraction",
-                    "file": f"{timestamp_dir}/{site}-clean-extracted.json",
-                    "description": f"Successfully regenerated extraction files for {site}",
-                    "success": True
-                })
+                audit_data["repairs_made"].append(
+                    {
+                        "directory": timestamp_dir,
+                        "site": site,
+                        "type": "repair_extraction",
+                        "file": f"{timestamp_dir}/{site}-clean-extracted.json",
+                        "description": f"Successfully regenerated extraction files for {site}",
+                        "success": True,
+                    }
+                )
 
         except Exception as e:
             error_msg = f"LLM extraction failed for {timestamp_dir}: {e}"
             logger.error(error_msg)
             for site in sites:
-                audit_data["repairs_made"].append({
-                    "directory": timestamp_dir,
-                    "site": site,
-                    "type": "repair_extraction",
-                    "file": f"{timestamp_dir}/{site}-clean-extracted.json",
-                    "description": error_msg,
-                    "success": False
-                })
+                audit_data["repairs_made"].append(
+                    {
+                        "directory": timestamp_dir,
+                        "site": site,
+                        "type": "repair_extraction",
+                        "file": f"{timestamp_dir}/{site}-clean-extracted.json",
+                        "description": error_msg,
+                        "success": False,
+                    }
+                )
                 # Also log as a problem for audit visibility
-                audit_data["problems_found"].append({
-                    "directory": timestamp_dir,
-                    "site": site,
-                    "type": "llm_extraction_error",
-                    "file": f"{timestamp_dir}/{site}-clean-extracted.json",
-                    "description": f"LLM extraction error during repair: {e}",
-                    "repairable": False
-                })
+                audit_data["problems_found"].append(
+                    {
+                        "directory": timestamp_dir,
+                        "site": site,
+                        "type": "llm_extraction_error",
+                        "file": f"{timestamp_dir}/{site}-clean-extracted.json",
+                        "description": f"LLM extraction error during repair: {e}",
+                        "repairable": False,
+                    }
+                )
 
 
 def _generate_audit_report(audit_data: dict, storage) -> None:
     """
     Generate an audit report and save it to audit.txt.
-    
+
     :param audit_data: Dictionary containing audit information
     :param storage: Storage adapter instance
     """
@@ -375,7 +394,9 @@ def _generate_audit_report(audit_data: dict, storage) -> None:
     for directory in audit_data["directories_audited"]:
         dir_problems = [p for p in audit_data["problems_found"] if p["directory"] == directory]
         dir_repairs = [r for r in audit_data["repairs_made"] if r["directory"] == directory]
-        report_lines.append(f"  {directory}: {len(dir_problems)} problems, {len(dir_repairs)} repairs")
+        report_lines.append(
+            f"  {directory}: {len(dir_problems)} problems, {len(dir_repairs)} repairs"
+        )
     report_lines.append("")
 
     # Problems found

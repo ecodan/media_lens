@@ -3,6 +3,7 @@ import logging
 import time
 from abc import abstractmethod
 from pathlib import Path
+from typing import ClassVar
 
 from bs4 import BeautifulSoup
 
@@ -10,18 +11,16 @@ from src.media_lens.common import LOGGER_NAME, get_project_root
 
 logger = logging.getLogger(LOGGER_NAME)
 
-TEXT_ELEMENTS: set[str] = {'span', 'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'a'}
+TEXT_ELEMENTS: set[str] = {"span", "p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "header", "a"}
 
 
 class SiteSpecificCleaner:
-
     @abstractmethod
     def clean_page(self, page: BeautifulSoup) -> BeautifulSoup:
         pass
 
 
 class PatternBasedCleaner(SiteSpecificCleaner):
-
     def __init__(self, patterns: list[str]):
         super().__init__()
         self.patterns = patterns
@@ -46,9 +45,13 @@ class PatternBasedCleaner(SiteSpecificCleaner):
             matching_elements.extend(page.select(pattern))
 
         for element in page.find_all():
-            if not (element in matching_elements or
-                    any(element in match.descendants or
-                        element in match.parents for match in matching_elements)):
+            if not (
+                element in matching_elements
+                or any(
+                    element in match.descendants or element in match.parents
+                    for match in matching_elements
+                )
+            ):
                 element.decompose()
 
         # Calculate and log elapsed time
@@ -73,10 +76,10 @@ class FoxNewsCleaner(PatternBasedCleaner):
 
 
 class CleanerConfig:
-    SITE_PATTERNS = {
+    SITE_PATTERNS: ClassVar[dict] = {
         "www.cnn.com": ['[class*="headline"]', '[class*="title"]'],
         "www.bbc.com": ['h2[data-testid*="headline"]'],
-        "www.foxnews.com": ["article", "[class*='info']"]
+        "www.foxnews.com": ["article", "[class*='info']"],
     }
 
 
@@ -88,7 +91,6 @@ def cleaner_for_site(site: str) -> SiteSpecificCleaner:
 
 
 class WebpageCleaner:
-
     def __init__(self, site_cleaner: SiteSpecificCleaner):
         super().__init__()
         self.site_cleaner = site_cleaner
@@ -101,7 +103,7 @@ class WebpageCleaner:
         :return: Cleaned HTML content with preserved hierarchy
         :rtype: str
         """
-        soup = BeautifulSoup(html_content, 'html.parser')
+        soup = BeautifulSoup(html_content, "html.parser")
 
         # nuke HEAD
         if soup.head:
@@ -109,9 +111,16 @@ class WebpageCleaner:
 
         # Remove unnecessary elements while preserving structure
         elements_to_remove = [
-            'script', 'style', 'iframe', 'noscript',  # Technical elements
-            'form', 'button', 'input',  # Interactive elements
-            'svg', 'path', 'img'  # Decorative elements
+            "script",
+            "style",
+            "iframe",
+            "noscript",  # Technical elements
+            "form",
+            "button",
+            "input",  # Interactive elements
+            "svg",
+            "path",
+            "img",  # Decorative elements
         ]
         for element in soup.find_all(elements_to_remove):
             element.decompose()
@@ -129,7 +138,7 @@ class WebpageCleaner:
         :return: Filtered HTML content
         :rtype: str
         """
-        soup = BeautifulSoup(html_content, 'html.parser')
+        soup = BeautifulSoup(html_content, "html.parser")
 
         # Define text display tags
         text_tags = TEXT_ELEMENTS
@@ -142,8 +151,9 @@ class WebpageCleaner:
                 continue
 
             # Check if element has any text display descendants
-            has_text_descendant = any(descendant.name in text_tags
-                                      for descendant in element.find_all())
+            has_text_descendant = any(
+                descendant.name in text_tags for descendant in element.find_all()
+            )
 
             if not has_text_descendant:
                 elements_to_remove.append(element)
@@ -164,23 +174,21 @@ class WebpageCleaner:
         :return: List of text elements with path and URL info
         :rtype: list[dict]
         """
-        soup = BeautifulSoup(html_content, 'html.parser')
+        soup = BeautifulSoup(html_content, "html.parser")
         results = []
 
         for tag in soup.find_all(TEXT_ELEMENTS):
-            text = ' '.join(s.strip() for s in tag.strings
-                            if s.strip() and not s.strip().startswith('<!--'))
+            text = " ".join(
+                s.strip() for s in tag.strings if s.strip() and not s.strip().startswith("<!--")
+            )
             if not text:
                 continue
 
-            url = next((p.get('href') for p in tag.parents
-                        if p.name == 'a' and p.get('href')), None)
+            url = next(
+                (p.get("href") for p in tag.parents if p.name == "a" and p.get("href")), None
+            )
 
-            results.append({
-                "path": WebpageCleaner._build_xpath(tag),
-                "text": text,
-                "url": url
-            })
+            results.append({"path": WebpageCleaner._build_xpath(tag), "text": text, "url": url})
 
         return results
 
@@ -189,19 +197,19 @@ class WebpageCleaner:
         path = []
         while element and element.name:
             attr_str = element.name
-            if element.get('class'):
-                attr_str += '[@class="{}"]'.format(' '.join(element.get('class')))
-            elif element.get('id'):
-                attr_str += '[@id="{}"]'.format(element.get('id'))
+            if element.get("class"):
+                attr_str += '[@class="{}"]'.format(" ".join(element.get("class")))
+            elif element.get("id"):
+                attr_str += '[@id="{}"]'.format(element.get("id"))
             path.insert(0, attr_str)
             element = element.parent
-        return '//' + '/'.join(path)
+        return "//" + "/".join(path)
 
 
 ############################################################
 # TESTING
 def load_test_file(file_path: Path) -> str:
-    with open(file_path, "r") as file:
+    with open(file_path) as file:
         content = file.read()
     return content
 
@@ -224,7 +232,11 @@ async def main(working_dir: Path, fname: str, cleaner: SiteSpecificCleaner):
         file.write(cleaned)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     # asyncio.run(main(Path(get_project_root() / "working/out/test"), "www.bbc.com.html", BBCCleaner()))
-    asyncio.run(main(Path(get_project_root() / "working/out/test"), "www.foxnews.com.html", FoxNewsCleaner()))
+    asyncio.run(
+        main(
+            Path(get_project_root() / "working/out/test"), "www.foxnews.com.html", FoxNewsCleaner()
+        )
+    )

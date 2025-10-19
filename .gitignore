@@ -30,3 +30,11 @@ wheels/
 *.backup**/__pycache__/
 *.pyc
 /.ai/
+
+# UV package manager
+.uv/
+uv.lock
+
+# Pre-commit
+.pre-commit-framework/
+.pre-commit-hooks/

@@ -8,13 +8,21 @@ from typing import Optional
 
 import litellm
 
-from src.media_lens.common import LOGGER_NAME, DEFAULT_AI_PROVIDER, ANTHROPIC_MODEL, VERTEX_AI_PROJECT_ID, VERTEX_AI_LOCATION, VERTEX_AI_MODEL
+from src.media_lens.common import (
+    ANTHROPIC_MODEL,
+    DEFAULT_AI_PROVIDER,
+    LOGGER_NAME,
+    VERTEX_AI_LOCATION,
+    VERTEX_AI_MODEL,
+    VERTEX_AI_PROJECT_ID,
+)
 
 logger = logging.getLogger(LOGGER_NAME)
 
 
 class ResponseFormat(Enum):
     """Response format types for agent invocation."""
+
     TEXT = "text"
     JSON = "json"
 
@@ -25,7 +33,9 @@ class Agent(metaclass=ABCMeta):
     """
 
     @abstractmethod
-    def _invoke_impl(self, system_prompt: str, user_prompt: str, response_format: Optional[ResponseFormat] = None) -> str:
+    def _invoke_impl(
+        self, system_prompt: str, user_prompt: str, response_format: Optional[ResponseFormat] = None
+    ) -> str:
         """
         Implementation-specific invoke method.
         :param system_prompt: generated system prompt
@@ -35,7 +45,12 @@ class Agent(metaclass=ABCMeta):
         """
         pass
 
-    def invoke(self, system_prompt: str, user_prompt: str, response_format: ResponseFormat = ResponseFormat.TEXT) -> str:
+    def invoke(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        response_format: ResponseFormat = ResponseFormat.TEXT,
+    ) -> str:
         """
         Send the prompts to the LLM and return the response.
         :param system_prompt: generated system prompt
@@ -88,11 +103,11 @@ class Agent(metaclass=ABCMeta):
         response = response.strip()
 
         # If response still doesn't start with { or [, try to extract JSON
-        if not response.startswith('{') and not response.startswith('['):
+        if not response.startswith("{") and not response.startswith("["):
             # Look for first occurrence of { or [
             json_start = min(
-                (response.find('{') if response.find('{') != -1 else len(response)),
-                (response.find('[') if response.find('[') != -1 else len(response))
+                (response.find("{") if response.find("{") != -1 else len(response)),
+                (response.find("[") if response.find("[") != -1 else len(response)),
             )
             if json_start < len(response):
                 response = response[json_start:]
@@ -145,7 +160,12 @@ class LiteLLMAgent(Agent):
         self._model = model
         self._kwargs = kwargs
 
-    def _invoke_impl(self, system_prompt: str, user_prompt: str, response_format: Optional['ResponseFormat'] = None) -> str:
+    def _invoke_impl(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        response_format: Optional["ResponseFormat"] = None,
+    ) -> str:
         """
         Invoke LiteLLM completion API.
 
@@ -157,7 +177,7 @@ class LiteLLMAgent(Agent):
         try:
             messages = [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
+                {"role": "user", "content": user_prompt},
             ]
 
             # Build completion kwargs
@@ -166,7 +186,7 @@ class LiteLLMAgent(Agent):
                 "messages": messages,
                 "temperature": 0,
                 "max_tokens": 4096,
-                **self._kwargs
+                **self._kwargs,
             }
 
             # Add native JSON mode if requested
@@ -177,12 +197,14 @@ class LiteLLMAgent(Agent):
 
             response_text = response.choices[0].message.content
             logger.debug(f"LiteLLM raw response: {response_text}")
-            logger.debug(f".. response: {len(response_text)} bytes / {len(response_text.split())} words")
+            logger.debug(
+                f".. response: {len(response_text)} bytes / {len(response_text.split())} words"
+            )
 
             return response_text
 
         except Exception as e:
-            logger.error(f"LiteLLM API error: {str(e)}")
+            logger.error(f"LiteLLM API error: {e!s}")
             raise
 
     @property
@@ -214,9 +236,7 @@ def create_agent(provider: str = "claude", **kwargs) -> Agent:
 
         litellm_model = f"vertex_ai/{model}"
         return LiteLLMAgent(
-            model=litellm_model,
-            vertex_project=project_id,
-            vertex_location=location
+            model=litellm_model, vertex_project=project_id, vertex_location=location
         )
 
     elif provider.lower() == "ollama":
@@ -225,7 +245,9 @@ def create_agent(provider: str = "claude", **kwargs) -> Agent:
         return LiteLLMAgent(model=litellm_model)
 
     else:
-        raise ValueError(f"Unsupported provider: {provider}. Supported providers: claude, vertex, ollama")
+        raise ValueError(
+            f"Unsupported provider: {provider}. Supported providers: claude, vertex, ollama"
+        )
 
 
 def create_agent_from_env() -> Agent:
@@ -236,6 +258,7 @@ def create_agent_from_env() -> Agent:
     """
     # Ensure secrets are loaded before creating the agent
     from src.media_lens.secret_manager import load_secrets_from_gcp
+
     loaded_secrets = load_secrets_from_gcp()
 
     provider = os.getenv("AI_PROVIDER", DEFAULT_AI_PROVIDER).lower()
@@ -244,10 +267,12 @@ def create_agent_from_env() -> Agent:
         # Try environment variable first, then fall back to loaded secrets
         api_key = os.getenv("ANTHROPIC_API_KEY") or loaded_secrets.get("ANTHROPIC_API_KEY")
         if not api_key:
-            logger.error(f"ANTHROPIC_API_KEY not found in environment or loaded secrets")
-            logger.error(f"Environment keys: {list(k for k in os.environ.keys() if 'ANTHROPIC' in k)}")
+            logger.error("ANTHROPIC_API_KEY not found in environment or loaded secrets")
+            logger.error(f"Environment keys: {[k for k in os.environ.keys() if 'ANTHROPIC' in k]}")
             logger.error(f"Loaded secrets: {list(loaded_secrets.keys())}")
-            raise ValueError("ANTHROPIC_API_KEY environment variable is required for Claude provider")
+            raise ValueError(
+                "ANTHROPIC_API_KEY environment variable is required for Claude provider"
+            )
 
         # Set API key for LiteLLM
         os.environ["ANTHROPIC_API_KEY"] = api_key
@@ -258,15 +283,21 @@ def create_agent_from_env() -> Agent:
     elif provider == "vertex":
         project_id = os.getenv("VERTEX_AI_PROJECT_ID", VERTEX_AI_PROJECT_ID)
         if not project_id:
-            raise ValueError("VERTEX_AI_PROJECT_ID environment variable is required for Vertex AI provider")
+            raise ValueError(
+                "VERTEX_AI_PROJECT_ID environment variable is required for Vertex AI provider"
+            )
 
         location = os.getenv("VERTEX_AI_LOCATION", VERTEX_AI_LOCATION)
         model = os.getenv("VERTEX_AI_MODEL", VERTEX_AI_MODEL)
-        return create_agent(provider="vertex", project_id=project_id, location=location, model=model)
+        return create_agent(
+            provider="vertex", project_id=project_id, location=location, model=model
+        )
 
     elif provider == "ollama":
         model = os.getenv("OLLAMA_MODEL_VERSION", "qwen")
         return create_agent(provider="ollama", model=model)
 
     else:
-        raise ValueError(f"Unsupported provider: {provider}. Supported providers: claude, vertex, ollama")
+        raise ValueError(
+            f"Unsupported provider: {provider}. Supported providers: claude, vertex, ollama"
+        )

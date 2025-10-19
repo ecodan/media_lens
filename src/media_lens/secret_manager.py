@@ -6,11 +6,11 @@ with proper error handling and fallback mechanisms.
 
 import logging
 import os
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 try:
-    from google.cloud import secretmanager
     from google.api_core import exceptions as gcp_exceptions
+    from google.cloud import secretmanager
 
     SECRET_MANAGER_AVAILABLE = True
 except ImportError:
@@ -24,24 +24,30 @@ class SecretManagerClient:
 
     def __init__(self, project_id: Optional[str] = None):
         """Initialize the Secret Manager client.
-        
+
         Args:
             project_id: Google Cloud project ID. If None, will use GOOGLE_CLOUD_PROJECT
                        or SECRET_MANAGER_PROJECT_ID environment variables.
         """
-        self.project_id = project_id or os.getenv('SECRET_MANAGER_PROJECT_ID') or os.getenv('GOOGLE_CLOUD_PROJECT')
+        self.project_id = (
+            project_id
+            or os.getenv("SECRET_MANAGER_PROJECT_ID")
+            or os.getenv("GOOGLE_CLOUD_PROJECT")
+        )
         self.client = None
         self.logger = logging.getLogger(__name__)
 
         # Check if Secret Manager should be used
-        self.use_secret_manager = os.getenv('USE_SECRET_MANAGER', 'true').lower() == 'true'
+        self.use_secret_manager = os.getenv("USE_SECRET_MANAGER", "true").lower() == "true"
 
         if not self.use_secret_manager:
             self.logger.info("Secret Manager disabled via USE_SECRET_MANAGER environment variable")
             return
 
         if not SECRET_MANAGER_AVAILABLE:
-            self.logger.warning("google-cloud-secret-manager not available, falling back to environment variables")
+            self.logger.warning(
+                "google-cloud-secret-manager not available, falling back to environment variables"
+            )
             return
 
         if not self.project_id:
@@ -61,11 +67,11 @@ class SecretManagerClient:
 
     def get_secret(self, secret_name: str, version: str = "latest") -> Optional[str]:
         """Retrieve a secret from Google Secret Manager.
-        
+
         Args:
             secret_name: Name of the secret to retrieve
             version: Version of the secret to retrieve (default: "latest")
-            
+
         Returns:
             Secret value as string, or None if not found or error occurred
         """
@@ -92,11 +98,11 @@ class SecretManagerClient:
 
     def get_secrets_batch(self, secret_names: Dict[str, str]) -> Dict[str, Optional[str]]:
         """Retrieve multiple secrets in batch.
-        
+
         Args:
             secret_names: Dictionary mapping environment variable names to secret names
                          e.g., {"ANTHROPIC_API_KEY": "anthropic-api-key"}
-            
+
         Returns:
             Dictionary mapping environment variable names to secret values
         """
@@ -104,7 +110,7 @@ class SecretManagerClient:
 
         if not self.is_available():
             self.logger.debug("Secret Manager not available, returning empty results")
-            return {key: None for key in secret_names.keys()}
+            return dict.fromkeys(secret_names.keys())
 
         for env_var, secret_name in secret_names.items():
             results[env_var] = self.get_secret(secret_name)
@@ -119,10 +125,10 @@ _loaded_secrets_cache = {}
 
 def load_secrets_from_gcp() -> Dict[str, Optional[str]]:
     """Load secrets from Google Cloud Secret Manager and set environment variables.
-    
+
     This function retrieves commonly used secrets and sets them as environment variables
     if they're not already set. It's idempotent - subsequent calls will return cached results.
-    
+
     Returns:
         Dictionary of loaded secrets
     """
@@ -184,7 +190,7 @@ def load_secrets_from_gcp() -> Dict[str, Optional[str]]:
 # Initialize secrets when module is imported (for web application)
 if __name__ != "__main__":
     # Only auto-load in production/cloud environments
-    if os.getenv('USE_SECRET_MANAGER', 'true').lower() == 'true':
+    if os.getenv("USE_SECRET_MANAGER", "true").lower() == "true":
         try:
             load_secrets_from_gcp()
         except Exception as e:

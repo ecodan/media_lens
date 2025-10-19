@@ -4,6 +4,7 @@ Shared storage adapter instance for the media lens application.
 This module provides a singleton StorageAdapter instance that should be used
 throughout the application instead of creating multiple instances.
 """
+
 import logging
 
 from src.media_lens.common import LOGGER_NAME
@@ -20,9 +21,11 @@ def get_shared_storage():
     global _shared_storage
     if _shared_storage is None:
         # Ensure .env is loaded before creating the storage adapter
-        import dotenv
         import os
-        if not os.getenv('LOCAL_STORAGE_PATH') and not os.getenv('USE_CLOUD_STORAGE'):
+
+        import dotenv
+
+        if not os.getenv("LOCAL_STORAGE_PATH") and not os.getenv("USE_CLOUD_STORAGE"):
             # Try to load .env if environment variables aren't set
             dotenv.load_dotenv()
         logger.info("Creating shared storage adapter instance")

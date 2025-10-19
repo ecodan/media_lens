@@ -16,16 +16,16 @@ You are a skilled media analyst and sociologist. You'll be given several news ar
 """
 
 REASONING_PROMPT: str = """
-First, carefully read through the following news content representing 10-15 news articles from a range of media services in 
-the order in which they were presented on the news sites. 
+First, carefully read through the following news content representing 10-15 news articles from a range of media services in
+the order in which they were presented on the news sites.
 
 The content may be biased, so be sure to read it carefully and consider the context and potential bias of the sources.
 
 {content}
 
 After reading the news content, identify the most important topics and generate an unbias summary of the most important current news.
-As you determine which are the most important topics and how to summarize without bias, wrap your thought process in <thinking> </thinking> 
-tags to break down your reasoning and ensure thorough analysis before providing your final answer. 
+As you determine which are the most important topics and how to summarize without bias, wrap your thought process in <thinking> </thinking>
+tags to break down your reasoning and ensure thorough analysis before providing your final answer.
 In analyzing the content, follow these steps:
 
 1. Give weight for articles that appear closer to the top of the list or topics that are in multiple articles.
@@ -45,7 +45,7 @@ Here's an example of the output:
 2. I noticed that several articles discussed the same topic, which indicates its importance.
 3. I considered the potential bias of the sources and made sure to include multiple perspectives.
 4. I summarized the most important topics in a clear and concise manner.
-... 
+...
 </thinking>
 There appear to be three primary news stories today.
 1. NATO representatives are meeting in Brussels to discuss the ongoing war in Ukraine. With the decrease in support from the US, EU nations have committed EUR100B in weapons and humanitarian aid to Ukraine.
@@ -76,10 +76,13 @@ class DailySummarizer:
         trimmed_articles_list: List[str] = []
         for article in articles:
             content: str = self.storage.read_text(article)
-            trimmed_articles_list.append(' '.join(content.split()[:500]))
-        trimmed_articles = 'ARTICLE:\n'.join(trimmed_articles_list)
+            trimmed_articles_list.append(" ".join(content.split()[:500]))
+        trimmed_articles = "ARTICLE:\n".join(trimmed_articles_list)
         # Use the agent to summarize the articles
-        summary = self.agent.invoke(system_prompt=SYSTEM_PROMPT, user_prompt=REASONING_PROMPT.format(content=trimmed_articles))
+        summary = self.agent.invoke(
+            system_prompt=SYSTEM_PROMPT,
+            user_prompt=REASONING_PROMPT.format(content=trimmed_articles),
+        )
 
         # extract the <thinking> tags and remove the tags and the content between the tags. Return only the content after the closing </thinking> tag
         # and remove any extraneous whitespace
@@ -104,7 +107,9 @@ class DailySummarizer:
         logger.info(f"Generating summary from job directory: {job_dir_str}")
 
         # Get all the article files using storage adapter
-        article_file_paths = shared_storage.get_files_by_pattern(job_dir_str, "*clean-article-*.json")
+        article_file_paths = shared_storage.get_files_by_pattern(
+            job_dir_str, "*clean-article-*.json"
+        )
 
         if not article_file_paths:
             logger.warning(f"No article files found in {job_dir_str}")

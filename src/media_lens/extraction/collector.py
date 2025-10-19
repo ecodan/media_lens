@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import Optional, Dict
+from typing import Dict, Optional
 from urllib.parse import urlparse
 
 import trafilatura
@@ -25,7 +25,7 @@ class ArticleCollector:
         try:
             result = urlparse(url)
             return all([result.scheme, result.netloc])
-        except:
+        except Exception:
             return False
 
     async def _fetch_content(self, url: str) -> Optional[str]:
@@ -43,19 +43,11 @@ class ArticleCollector:
         :return: The extracted article content if successful, None otherwise
         """
         if not self._validate_url(url):
-            return {
-                "title": None,
-                "text": None,
-                "error": "Invalid URL format"
-            }
+            return {"title": None, "text": None, "error": "Invalid URL format"}
 
         html_content = await self._fetch_content(url)
         if not html_content:
-            return {
-                "title": None,
-                "text": None,
-                "error": "Failed to fetch content"
-            }
+            return {"title": None, "text": None, "error": "Failed to fetch content"}
 
         try:
             # Extract the main content
@@ -64,38 +56,33 @@ class ArticleCollector:
                 include_comments=False,
                 include_tables=True,
                 include_images=False,
-                output_format='json',
-                with_metadata=True
+                output_format="json",
+                with_metadata=True,
             )
             extracted: dict = json.loads(raw_extract)
 
             if extracted:
-
                 return {
                     "title": extracted.get("title"),
                     "text": extracted.get("text"),
-                    "error": None
+                    "error": None,
                 }
             else:
-                return {
-                    "title": None,
-                    "text": None,
-                    "error": "No content could be extracted"
-                }
+                return {"title": None, "text": None, "error": "No content could be extracted"}
 
         except Exception as e:
-            return {
-                "title": None,
-                "text": None,
-                "error": f"Extraction error: {str(e)}"
-            }
+            return {"title": None, "text": None, "error": f"Extraction error: {e!s}"}
 
 
 ###############################
 async def main():
     collector = ArticleCollector()
-    print(await collector.extract_article("https://www.cnn.com/2025/02/21/politics/trump-fires-top-us-general-cq-brown/index.html"))
+    print(
+        await collector.extract_article(
+            "https://www.cnn.com/2025/02/21/politics/trump-fires-top-us-general-cq-brown/index.html"
+        )
+    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())

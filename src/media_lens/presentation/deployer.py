@@ -4,12 +4,12 @@ import os
 import socket
 import tempfile
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
 
 import dotenv
 import paramiko
 
-from src.media_lens.common import get_project_root, LOGGER_NAME
+from src.media_lens.common import LOGGER_NAME, get_project_root
 from src.media_lens.storage import shared_storage
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -18,7 +18,7 @@ logger = logging.getLogger(LOGGER_NAME)
 def get_deploy_cursor() -> Optional[datetime.datetime]:
     """
     Get the last deploy cursor timestamp from storage.
-    
+
     Returns:
         Last deployed timestamp or None if no cursor exists
     """
@@ -38,7 +38,7 @@ def get_deploy_cursor() -> Optional[datetime.datetime]:
 def update_deploy_cursor(timestamp: datetime.datetime) -> None:
     """
     Update the deploy cursor with the latest deployed timestamp.
-    
+
     Args:
         timestamp: The timestamp to set as the new cursor
     """
@@ -55,7 +55,7 @@ def update_deploy_cursor(timestamp: datetime.datetime) -> None:
 def rewind_deploy_cursor(days: int) -> None:
     """
     Rewind the deploy cursor by a specified number of days.
-    
+
     Args:
         days: Number of days to rewind the cursor
     """
@@ -63,7 +63,9 @@ def rewind_deploy_cursor(days: int) -> None:
     if current_cursor:
         new_cursor = current_cursor - datetime.timedelta(days=days)
         update_deploy_cursor(new_cursor)
-        logger.info(f"Deploy cursor rewound by {days} days: {current_cursor.isoformat()} → {new_cursor.isoformat()}")
+        logger.info(
+            f"Deploy cursor rewound by {days} days: {current_cursor.isoformat()} → {new_cursor.isoformat()}"
+        )
     else:
         logger.warning("No deploy cursor found - cannot rewind")
 
@@ -86,10 +88,10 @@ def reset_deploy_cursor() -> None:
 def get_files_to_deploy(cursor: Optional[datetime.datetime] = None) -> List[str]:
     """
     Get list of files that need to be deployed since cursor timestamp.
-    
+
     Args:
         cursor: Cursor timestamp (None means deploy all files)
-        
+
     Returns:
         List of file paths that need deployment
     """
@@ -110,7 +112,9 @@ def get_files_to_deploy(cursor: Optional[datetime.datetime] = None) -> List[str]
             file_mtime = storage.get_file_modified_time(file_path)
             if file_mtime is None:
                 # If we can't get mtime, include the file to be safe
-                logger.debug(f"Could not get modification time for {file_path}, including to be safe")
+                logger.debug(
+                    f"Could not get modification time for {file_path}, including to be safe"
+                )
                 files_to_deploy.append(file_path)
             elif file_mtime > cursor:
                 files_to_deploy.append(file_path)
@@ -126,7 +130,7 @@ def get_files_to_deploy(cursor: Optional[datetime.datetime] = None) -> List[str]
 def upload_html_content_from_storage(storage_path: str) -> bool:
     """
     Helper function to read HTML content from storage, create temp file, and upload it.
-    
+
     Args:
         storage_path: Path to the file in storage
 
@@ -152,7 +156,7 @@ def upload_html_content_from_storage(storage_path: str) -> bool:
     return success
 
 
-def upload_file(local_file: Path, target_filename: str = None):
+def upload_file(local_file: Path, target_filename: Optional[str] = None):
     """
     Uploads a file to a remote server using SFTP.
     :param local_file: full path to the local file
@@ -163,6 +167,7 @@ def upload_file(local_file: Path, target_filename: str = None):
 
     # Get FTP credentials from environment or loaded secrets
     from src.media_lens.secret_manager import load_secrets_from_gcp
+
     loaded_secrets = load_secrets_from_gcp()
 
     hostname = os.getenv("FTP_HOSTNAME") or loaded_secrets.get("FTP_HOSTNAME")
@@ -174,7 +179,8 @@ def upload_file(local_file: Path, target_filename: str = None):
 
     remote_path_from_secrets = os.getenv("FTP_REMOTE_PATH") or loaded_secrets.get("FTP_REMOTE_PATH")
     logger.info(
-        f"FTP credentials loaded: hostname: {hostname} | ip_fallback: {ip_fallback} | username: {username} | port: {port} | key_file_path: {key_file_path} | remote path {remote_path_from_secrets}")
+        f"FTP credentials loaded: hostname: {hostname} | ip_fallback: {ip_fallback} | username: {username} | port: {port} | key_file_path: {key_file_path} | remote path {remote_path_from_secrets}"
+    )
 
     try:
         connect_hostname = hostname
@@ -194,11 +200,13 @@ def upload_file(local_file: Path, target_filename: str = None):
             passphrase = os.getenv("FTP_PASSPHRASE") or loaded_secrets.get("FTP_PASSPHRASE")
 
             if passphrase:
-                private_key = paramiko.Ed25519Key.from_private_key_file(key_file_path, password=passphrase)
+                private_key = paramiko.Ed25519Key.from_private_key_file(
+                    key_file_path, password=passphrase
+                )
             else:
                 private_key = paramiko.Ed25519Key.from_private_key_file(key_file_path)
         except Exception as e:
-            logger.error(f"Error loading key: {str(e)}")
+            logger.error(f"Error loading key: {e!s}")
             raise
 
         logger.debug("Key loaded successfully; establishing connection...")
@@ -213,13 +221,15 @@ def upload_file(local_file: Path, target_filename: str = None):
                 port=port,
                 timeout=30,
                 allow_agent=False,
-                look_for_keys=False
+                look_for_keys=False,
             )
         except socket.gaierror as e:
             connection_error = e
             # If we have an IP fallback and DNS resolution failed, try with the IP
             if ip_fallback and "nodename nor servname provided, or not known" in str(e):
-                logger.warning(f"DNS resolution failed for {connect_hostname}. Trying IP fallback: {ip_fallback}")
+                logger.warning(
+                    f"DNS resolution failed for {connect_hostname}. Trying IP fallback: {ip_fallback}"
+                )
                 try:
                     ssh.connect(
                         hostname=ip_fallback,
@@ -228,12 +238,12 @@ def upload_file(local_file: Path, target_filename: str = None):
                         port=port,
                         timeout=30,
                         allow_agent=False,
-                        look_for_keys=False
+                        look_for_keys=False,
                     )
                     # If we successfully connected with IP, update connection_error to None
                     connection_error = None
                 except Exception as ip_e:
-                    logger.error(f"Failed to connect using IP fallback: {str(ip_e)}")
+                    logger.error(f"Failed to connect using IP fallback: {ip_e!s}")
                     # Keep the original error
 
         # If we still have an error, raise it
@@ -251,10 +261,10 @@ def upload_file(local_file: Path, target_filename: str = None):
         except FileNotFoundError:
             logger.info(f"Creating remote directory: {remote_path_from_secrets}")
             # Create parent directories if they don't exist
-            remote_path_parts = remote_path_from_secrets.strip('/').split('/')
-            current_path = ''
+            remote_path_parts = remote_path_from_secrets.strip("/").split("/")
+            current_path = ""
             for part in remote_path_parts:
-                current_path += '/' + part
+                current_path += "/" + part
                 try:
                     sftp.stat(current_path)
                     logger.debug(f"Directory exists: {current_path}")
@@ -265,7 +275,7 @@ def upload_file(local_file: Path, target_filename: str = None):
 
         # Construct remote file path
         filename = target_filename if target_filename else Path(local_file).name
-        remote_file = f'{remote_path_from_secrets}/{filename}'
+        remote_file = f"{remote_path_from_secrets}/{filename}"
 
         # Upload the file
         logger.info(f"Uploading {local_file} to {remote_file}...")
@@ -279,10 +289,10 @@ def upload_file(local_file: Path, target_filename: str = None):
 
     except paramiko.SSHException as e:
         logger.error(f"SSH/SFTP error: {e}")
-        logger.error(f"Full error details: {str(e)}")
+        logger.error(f"Full error details: {e!s}")
         return False
     except Exception as e:
-        logger.error(f"Error: {str(e)}")
+        logger.error(f"Error: {e!s}")
         logger.error(f"Error type: {type(e)}")
         return False
 
@@ -294,7 +304,7 @@ def main():
     upload_file(local_file=local)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     dotenv.load_dotenv()
     logging.basicConfig(level=logging.DEBUG)
     main()

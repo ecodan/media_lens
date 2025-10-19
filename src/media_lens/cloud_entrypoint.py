@@ -5,12 +5,12 @@ import time
 import uuid
 from threading import Thread
 
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify, request
 
-from src.media_lens.common import create_logger, LOGGER_NAME, RunState, ensure_secrets_loaded
+from src.media_lens.common import LOGGER_NAME, RunState, create_logger, ensure_secrets_loaded
 from src.media_lens.presentation.deployer import rewind_deploy_cursor
 from src.media_lens.presentation.html_formatter import rewind_format_cursor
-from src.media_lens.runner import run, Steps, process_weekly_content, summarize_all
+from src.media_lens.runner import Steps, process_weekly_content, run, summarize_all
 from src.media_lens.storage_adapter import StorageAdapter
 
 # Initialize Flask app
@@ -21,7 +21,7 @@ create_logger(
     LOGGER_NAME,
     logfile_path="/app/working/logs/media-lens.log",
     max_bytes=10 * 1024 * 1024,  # 10MB
-    backup_count=5  # Keep 5 backup files (total ~600MB max)
+    backup_count=5,  # Keep 5 backup files (total ~600MB max)
 )
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -36,24 +36,38 @@ storage: StorageAdapter = StorageAdapter.get_instance()
 active_runs = {}
 
 
-@app.route('/')
+@app.route("/")
 def index():
     """Root endpoint that returns the application status"""
-    return jsonify({
-        "status": "online",
-        "app": "Media Lens",
-        "endpoints": [
-            {"path": "/run", "method": "POST", "description": "Run the daily media lens pipeline (supports job_dir, rewind_days, sites parameters)"},
-            {"path": "/weekly", "method": "POST", "description": "Process weekly content analysis"},
-            {"path": "/summarize", "method": "POST", "description": "Generate daily summaries"},
-            {"path": "/stop/{run_id}", "method": "POST", "description": "Stop a running pipeline by ID"},
-            {"path": "/status", "method": "GET", "description": "Get status of active runs"},
-            {"path": "/health", "method": "GET", "description": "Health check endpoint"}
-        ]
-    })
+    return jsonify(
+        {
+            "status": "online",
+            "app": "Media Lens",
+            "endpoints": [
+                {
+                    "path": "/run",
+                    "method": "POST",
+                    "description": "Run the daily media lens pipeline (supports job_dir, rewind_days, sites parameters)",
+                },
+                {
+                    "path": "/weekly",
+                    "method": "POST",
+                    "description": "Process weekly content analysis",
+                },
+                {"path": "/summarize", "method": "POST", "description": "Generate daily summaries"},
+                {
+                    "path": "/stop/{run_id}",
+                    "method": "POST",
+                    "description": "Stop a running pipeline by ID",
+                },
+                {"path": "/status", "method": "GET", "description": "Get status of active runs"},
+                {"path": "/health", "method": "GET", "description": "Health check endpoint"},
+            ],
+        }
+    )
 
 
-@app.route('/health')
+@app.route("/health")
 def health():
     """Health check endpoint"""
     return jsonify({"status": "healthy"})
@@ -63,25 +77,20 @@ def run_task_async(steps, run_id, data=None):
     """Run a task in a separate thread and track its status"""
     try:
         # Handle cursor rewind if specified
-        if data and data.get('rewind_days'):
-            days = data.get('rewind_days')
+        if data and data.get("rewind_days"):
+            days = data.get("rewind_days")
             logger.info(f"Rewinding cursors by {days} days for run {run_id}")
             rewind_format_cursor(days)
             rewind_deploy_cursor(days)
 
         # Get sites from data or use default
-        sites = data.get('sites') if data else None
+        sites = data.get("sites") if data else None
 
         # Get job_dir from data or use default ('latest')
-        job_dir = data.get('job_dir', 'latest') if data else 'latest'
+        job_dir = data.get("job_dir", "latest") if data else "latest"
 
         # Run the pipeline
-        result = asyncio.run(run(
-            steps=steps,
-            sites=sites,
-            run_id=run_id,
-            job_dir=job_dir
-        ))
+        result = asyncio.run(run(steps=steps, sites=sites, run_id=run_id, job_dir=job_dir))
 
         # Update status when done
         active_runs[run_id]["status"] = result["status"]
@@ -89,7 +98,7 @@ def run_task_async(steps, run_id, data=None):
         if result["error"]:
             active_runs[run_id]["error"] = result["error"]
     except Exception as e:
-        logger.error(f"Error in async task {run_id}: {str(e)}", exc_info=True)
+        logger.error(f"Error in async task {run_id}: {e!s}", exc_info=True)
         active_runs[run_id]["status"] = "error"
         active_runs[run_id]["error"] = str(e)
     finally:
@@ -97,35 +106,33 @@ def run_task_async(steps, run_id, data=None):
         active_runs[run_id]["running"] = False
 
 
-@app.route('/run', methods=['POST'])
+@app.route("/run", methods=["POST"])
 def run_pipeline():
     """Endpoint to run the daily pipeline asynchronously"""
     try:
         # Parse request parameters
         data = request.get_json(silent=True) or {}
-        requested_steps = data.get('steps', ['harvest', 'extract', 'interpret', 'deploy'])
+        requested_steps = data.get("steps", ["harvest", "extract", "interpret", "deploy"])
 
         # Convert string steps to enum
         steps = [Steps(step) for step in requested_steps]
 
         # Validate rewind_days parameter
-        rewind_days = data.get('rewind_days')
+        rewind_days = data.get("rewind_days")
         if rewind_days is not None:
             if not isinstance(rewind_days, int) or rewind_days < 0:
-                return jsonify({
-                    "status": "error",
-                    "message": "rewind_days must be a non-negative integer"
-                }), 400
+                return jsonify(
+                    {"status": "error", "message": "rewind_days must be a non-negative integer"}
+                ), 400
 
         # Generate a unique run ID
-        run_id = data.get('run_id', str(uuid.uuid4())[:8])
+        run_id = data.get("run_id", str(uuid.uuid4())[:8])
 
         # Check if this run ID is already in use
         if run_id in active_runs and active_runs[run_id]["running"]:
-            return jsonify({
-                "status": "error",
-                "message": f"Run with ID {run_id} is already in progress"
-            }), 409
+            return jsonify(
+                {"status": "error", "message": f"Run with ID {run_id} is already in progress"}
+            ), 409
 
         # Create a new task entry
         active_runs[run_id] = {
@@ -135,7 +142,7 @@ def run_pipeline():
             "steps": [s.value for s in steps],
             "completed_steps": [],
             "error": None,
-            "start_time": time.time()
+            "start_time": time.time(),
         }
 
         # Start the task in a separate thread
@@ -144,83 +151,71 @@ def run_pipeline():
         thread.daemon = True
         thread.start()
 
-        return jsonify({
-            "status": "accepted",
-            "message": f"Pipeline run started with ID: {run_id}",
-            "run_id": run_id
-        })
+        return jsonify(
+            {
+                "status": "accepted",
+                "message": f"Pipeline run started with ID: {run_id}",
+                "run_id": run_id,
+            }
+        )
 
     except Exception as e:
-        logger.error(f"Error setting up pipeline run: {str(e)}", exc_info=True)
-        return jsonify({
-            "status": "error",
-            "message": f"Failed to start pipeline: {str(e)}"
-        }), 500
+        logger.error(f"Error setting up pipeline run: {e!s}", exc_info=True)
+        return jsonify({"status": "error", "message": f"Failed to start pipeline: {e!s}"}), 500
 
 
-@app.route('/stop/<run_id>', methods=['POST'])
+@app.route("/stop/<run_id>", methods=["POST"])
 def stop_run(run_id):
     """Stop a running pipeline by ID"""
     if run_id not in active_runs:
-        return jsonify({
-            "status": "error",
-            "message": f"No run found with ID: {run_id}"
-        }), 404
+        return jsonify({"status": "error", "message": f"No run found with ID: {run_id}"}), 404
 
     if not active_runs[run_id]["running"]:
-        return jsonify({
-            "status": "error",
-            "message": f"Run {run_id} is not currently running"
-        }), 400
+        return jsonify(
+            {"status": "error", "message": f"Run {run_id} is not currently running"}
+        ), 400
 
     # Request the run to stop
     RunState.request_stop()
     logger.info(f"Stop requested for run {run_id}")
 
-    return jsonify({
-        "status": "accepted",
-        "message": f"Stop requested for run {run_id}"
-    })
+    return jsonify({"status": "accepted", "message": f"Stop requested for run {run_id}"})
 
 
-@app.route('/status', methods=['GET'])
+@app.route("/status", methods=["GET"])
 def get_status():
     """Get status of all active runs"""
     # Optionally filter by run_id
-    run_id = request.args.get('run_id')
+    run_id = request.args.get("run_id")
 
     if run_id and run_id in active_runs:
-        return jsonify({
-            "status": "success",
-            "run": active_runs[run_id]
-        })
+        return jsonify({"status": "success", "run": active_runs[run_id]})
     elif run_id:
-        return jsonify({
-            "status": "error",
-            "message": f"No run found with ID: {run_id}"
-        }), 404
+        return jsonify({"status": "error", "message": f"No run found with ID: {run_id}"}), 404
 
     # Return all runs
-    return jsonify({
-        "status": "success",
-        "active_runs": len([r for r in active_runs.values() if r["running"]]),
-        "total_runs": len(active_runs),
-        "runs": active_runs
-    })
+    return jsonify(
+        {
+            "status": "success",
+            "active_runs": len([r for r in active_runs.values() if r["running"]]),
+            "total_runs": len(active_runs),
+            "runs": active_runs,
+        }
+    )
 
 
-@app.route('/weekly', methods=['POST'])
+@app.route("/weekly", methods=["POST"])
 def run_weekly():
     """Endpoint to run weekly content processing"""
     try:
         # Parse request parameters
         data = request.get_json(silent=True) or {}
-        current_week_only = data.get('current_week_only', True)
-        overwrite = data.get('overwrite', False)
-        specific_weeks = data.get('specific_weeks', None)
+        current_week_only = data.get("current_week_only", True)
+        overwrite = data.get("overwrite", False)
+        specific_weeks = data.get("specific_weeks", None)
 
         # Generate a unique run ID
-        run_id = data.get('run_id', f"weekly-{str(uuid.uuid4())[:8]}")
+        run_id = data.get("run_id", f"weekly-{str(uuid.uuid4())[:8]}")
 
         # Create a new task entry
         active_runs[run_id] = {
@@ -231,10 +226,10 @@ def run_weekly():
             "parameters": {
                 "current_week_only": current_week_only,
                 "overwrite": overwrite,
-                "specific_weeks": specific_weeks
+                "specific_weeks": specific_weeks,
             },
             "error": None,
-            "start_time": time.time()
+            "start_time": time.time(),
         }
 
         # Reset run state
@@ -244,49 +239,54 @@ def run_weekly():
         def run_weekly_async():
             try:
                 # Run weekly processing
-                asyncio.run(process_weekly_content(
-                    current_week_only=current_week_only,
-                    overwrite=overwrite,
-                    specific_weeks=specific_weeks
-                ))
+                asyncio.run(
+                    process_weekly_content(
+                        current_week_only=current_week_only,
+                        overwrite=overwrite,
+                        specific_weeks=specific_weeks,
+                    )
+                )
                 active_runs[run_id]["status"] = "success"
             except Exception as e:
-                logger.error(f"Error in weekly task {run_id}: {str(e)}", exc_info=True)
+                logger.error(f"Error in weekly task {run_id}: {e!s}", exc_info=True)
                 active_runs[run_id]["status"] = "error"
                 active_runs[run_id]["error"] = str(e)
             finally:
                 active_runs[run_id]["running"] = False
 
         # Start the task in a separate thread
-        logger.info(f"Starting weekly processing {run_id} with current_week_only={current_week_only}")
+        logger.info(
+            f"Starting weekly processing {run_id} with current_week_only={current_week_only}"
+        )
         thread = Thread(target=run_weekly_async)
         thread.daemon = True
         thread.start()
 
-        return jsonify({
-            "status": "accepted",
-            "message": f"Weekly processing started with ID: {run_id}",
-            "run_id": run_id
-        })
+        return jsonify(
+            {
+                "status": "accepted",
+                "message": f"Weekly processing started with ID: {run_id}",
+                "run_id": run_id,
+            }
+        )
 
     except Exception as e:
-        logger.error(f"Error setting up weekly processing: {str(e)}", exc_info=True)
-        return jsonify({
-            "status": "error",
-            "message": f"Failed to start weekly processing: {str(e)}"
-        }), 500
+        logger.error(f"Error setting up weekly processing: {e!s}", exc_info=True)
+        return jsonify(
+            {"status": "error", "message": f"Failed to start weekly processing: {e!s}"}
+        ), 500
 
 
-@app.route('/summarize', methods=['POST'])
+@app.route("/summarize", methods=["POST"])
 def run_summarize():
     """Endpoint to run daily summarization"""
     try:
         # Parse request parameters
         data = request.get_json(silent=True) or {}
-        force = data.get('force', False)
+        force = data.get("force", False)
 
         # Generate a unique run ID
-        run_id = data.get('run_id', f"summary-{str(uuid.uuid4())[:8]}")
+        run_id = data.get("run_id", f"summary-{str(uuid.uuid4())[:8]}")
 
         # Create a new task entry
         active_runs[run_id] = {
@@ -294,11 +294,9 @@ def run_summarize():
             "status": "running",
             "running": True,
             "type": "summarize",
-            "parameters": {
-                "force": force
-            },
+            "parameters": {"force": force},
             "error": None,
-            "start_time": time.time()
+            "start_time": time.time(),
         }
 
         # Reset run state
@@ -311,7 +309,7 @@ def run_summarize():
                 asyncio.run(summarize_all(force=force))
                 active_runs[run_id]["status"] = "success"
             except Exception as e:
-                logger.error(f"Error in summarize task {run_id}: {str(e)}", exc_info=True)
+                logger.error(f"Error in summarize task {run_id}: {e!s}", exc_info=True)
                 active_runs[run_id]["status"] = "error"
                 active_runs[run_id]["error"] = str(e)
             finally:
@@ -323,21 +321,22 @@ def run_summarize():
         thread.daemon = True
         thread.start()
 
-        return jsonify({
-            "status": "accepted",
-            "message": f"Summarization started with ID: {run_id}",
-            "run_id": run_id
-        })
+        return jsonify(
+            {
+                "status": "accepted",
+                "message": f"Summarization started with ID: {run_id}",
+                "run_id": run_id,
+            }
+        )
 
     except Exception as e:
-        logger.error(f"Error setting up summarization: {str(e)}", exc_info=True)
-        return jsonify({
-            "status": "error",
-            "message": f"Failed to start summarization: {str(e)}"
-        }), 500
+        logger.error(f"Error setting up summarization: {e!s}", exc_info=True)
+        return jsonify({"status": "error", "message": f"Failed to start summarization: {e!s}"}), 500
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # For local testing
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port, debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true')
+    port = int(os.environ.get("PORT", 8080))
+    app.run(
+        host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true"
+    )

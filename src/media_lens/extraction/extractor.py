@@ -28,9 +28,7 @@ class ContextExtractor:
         self.storage = shared_storage
         self.working_dir = working_dir
         agent: Agent = agent
-        self.headline_extractor: LLMHeadlineExtractor = LLMHeadlineExtractor(
-            agent=agent
-        )
+        self.headline_extractor: LLMHeadlineExtractor = LLMHeadlineExtractor(agent=agent)
         self.article_collector: ArticleCollector = ArticleCollector()
 
     @staticmethod
@@ -48,15 +46,15 @@ class ContextExtractor:
             return url
 
         # Extract domain from filename
-        domain_match = re.match(r'^(www\.[^-]+)', filename)
+        domain_match = re.match(r"^(www\.[^-]+)", filename)
         if not domain_match:
-            raise ValueError('Cannot extract domain from filename')
+            raise ValueError("Cannot extract domain from filename")
 
         domain = domain_match.group(1)
 
         # Append https:// and domain to the relative URL
-        url_path = url[1:] if url.startswith('/') else url
-        return f'https://{domain}/{url_path}'
+        url_path = url[1:] if url.startswith("/") else url
+        return f"https://{domain}/{url_path}"
 
     def _validate_extractions(self, dir_name: str) -> None:
         """
@@ -65,7 +63,7 @@ class ContextExtractor:
         :param dir_name: Directory containing the extracted files
         :raises ArticleExtractionError: If any site has insufficient articles
         """
-        MIN_ARTICLES = 5
+        min_articles: int = 5
         extraction_errors = []
 
         # Get all extracted files
@@ -74,7 +72,7 @@ class ContextExtractor:
         for extracted_path in extracted_files:
             # Extract site name from filename
             filename = os.path.basename(extracted_path)
-            site_match = re.match(r'^(www\.[^-]+)', filename)
+            site_match = re.match(r"^(www\.[^-]+)", filename)
             if not site_match:
                 logger.warning(f"Could not extract site name from {filename}")
                 continue
@@ -85,9 +83,9 @@ class ContextExtractor:
             extracted_data = self.storage.read_json(extracted_path)
 
             # Check story count
-            stories = extracted_data.get('stories', [])
-            if len(stories) < MIN_ARTICLES:
-                error = ArticleExtractionError(site, MIN_ARTICLES, len(stories))
+            stories = extracted_data.get("stories", [])
+            if len(stories) < min_articles:
+                error = ArticleExtractionError(site, min_articles, len(stories))
                 logger.error(str(error))
                 extraction_errors.append(error)
 
@@ -96,9 +94,9 @@ class ContextExtractor:
             error_summary = "; ".join(str(e) for e in extraction_errors)
             raise ArticleExtractionError(
                 site="multiple",
-                expected=MIN_ARTICLES,
+                expected=min_articles,
                 actual=0,
-                message=f"Extraction validation failed: {error_summary}"
+                message=f"Extraction validation failed: {error_summary}",
             )
 
     async def run(self, delay_between_sites_secs: int = 0):
@@ -159,32 +157,28 @@ class ContextExtractor:
                     if url is not None:
                         logger.info(f"Scraping article url: {url}")
                         try:
-                            article: dict = await self.article_collector.extract_article(self._process_relative_url(url, file_name))
+                            article: dict = await self.article_collector.extract_article(
+                                self._process_relative_url(url, file_name)
+                            )
                             if article is not None:
                                 # Add metadata to article
-                                article_with_metadata = {
-                                    "metadata": model_metadata,
-                                    **article
-                                }
+                                article_with_metadata = {"metadata": model_metadata, **article}
                                 # Use storage adapter to write article
                                 article_file_path = f"{dir_name}/{file_stem}-article-{idx}.json"
-                                result['article_text'] = article_file_path
+                                result["article_text"] = article_file_path
                                 self.storage.write_json(article_file_path, article_with_metadata)
                         except Exception as e:
-                            logger.error(f"Failed to extract article: {url} - {str(e)}")
+                            logger.error(f"Failed to extract article: {url} - {e!s}")
 
                 # Add metadata to extracted headlines
-                results_with_metadata = {
-                    "metadata": model_metadata,
-                    **results
-                }
+                results_with_metadata = {"metadata": model_metadata, **results}
 
                 # Use storage adapter to write extracted data
                 extracted_file_path = f"{dir_name}/{file_stem}-extracted.json"
                 self.storage.write_json(extracted_file_path, results_with_metadata)
 
             except Exception as e:
-                logger.error(f"Failed to extract headlines from {file_path}: {str(e)}")
+                logger.error(f"Failed to extract headlines from {file_path}: {e!s}")
 
             time.sleep(delay_between_sites_secs)
 
@@ -195,13 +189,11 @@ class ContextExtractor:
 ################
 async def main():
     agent = create_agent_from_env()
-    extractor: ContextExtractor = ContextExtractor(
-        agent=agent
-    )
+    extractor: ContextExtractor = ContextExtractor(agent=agent)
     await extractor.run()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     dotenv.load_dotenv()
     logging.basicConfig(level=logging.DEBUG)
     asyncio.run(main())

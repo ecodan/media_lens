@@ -1,29 +1,34 @@
 import logging
 import os
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import pytz
 
-UTC_REGEX_PATTERN: str = r'\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\+00:00'
-UTC_REGEX_PATTERN_BW_COMPAT: str = r'\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])_(?:[01]\d|2[0-3])[0-5]\d[0-5]\d'
+UTC_REGEX_PATTERN: (
+    str
+) = r"\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\+00:00"
+UTC_REGEX_PATTERN_BW_COMPAT: (
+    str
+) = r"\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])_(?:[01]\d|2[0-3])[0-5]\d[0-5]\d"
 
 LONG_DATE_PATTERN: str = "%a %d-%b-%Y %H:%M %Z"
 UTC_DATE_PATTERN: str = "%Y-%m-%dT%H:%M:%S+00:00"
 UTC_DATE_PATTERN_BW_COMPAT: str = "%Y-%m-%d_%H%M%S"
 WEEK_KEY_FORMAT: str = "%Y-W%U"  # Year-week number format (e.g., "2025-W08")
 WEEK_DISPLAY_FORMAT: str = "Week of %b %d, %Y"  # Display format (e.g., "Week of Feb 24, 2025")
-TZ_DEFAULT: str = 'America/Los_Angeles'
+TZ_DEFAULT: str = "America/Los_Angeles"
+DEFAULT_TZ: object = pytz.timezone(TZ_DEFAULT)
 
 
-def is_last_day_of_week(dt: datetime = None, tz=None) -> bool:
+def is_last_day_of_week(dt: Optional[datetime] = None, tz: Optional[object] = None) -> bool:
     """
     Check if the given datetime is the last day of the week (Sunday).
     If no datetime is provided, check the current day.
-    
+
     :param dt: Datetime to check, defaults to current datetime
     :param tz: Timezone to use - if None, uses the timezone from the provided datetime object
                or UTC for the current time
@@ -46,7 +51,7 @@ def is_last_day_of_week(dt: datetime = None, tz=None) -> bool:
     return weekday_num == 6
 
 
-def is_first_day_of_week(dt: datetime = None, tz=None) -> bool:
+def is_first_day_of_week(dt: Optional[datetime] = None, tz: Optional[object] = None) -> bool:
     """
     Check if the given datetime is the first day of the week (Monday).
     If no datetime is provided, check the current day.
@@ -75,7 +80,7 @@ def is_first_day_of_week(dt: datetime = None, tz=None) -> bool:
 
 def utc_timestamp() -> str:
     # get utc timestamp as short string
-    return datetime.now(timezone.utc).isoformat(sep='T', timespec='seconds')
+    return datetime.now(timezone.utc).isoformat(sep="T", timespec="seconds")
 
 
 def utc_bw_compat_timestamp() -> str:
@@ -83,34 +88,42 @@ def utc_bw_compat_timestamp() -> str:
     return datetime.now(timezone.utc).strftime(UTC_DATE_PATTERN_BW_COMPAT)
 
 
-def timestamp_as_long_date(tz=pytz.timezone(TZ_DEFAULT)) -> str:
+def timestamp_as_long_date(tz: Optional[object] = None) -> str:
+    if tz is None:
+        tz = DEFAULT_TZ
     dt = datetime.now(tz)
     return dt.strftime(LONG_DATE_PATTERN)
 
 
-def timestamp_bw_compat_str_as_long_date(ts: str, tz=pytz.timezone(TZ_DEFAULT)) -> str:
+def timestamp_bw_compat_str_as_long_date(ts: str, tz: Optional[object] = None) -> str:
+    if tz is None:
+        tz = DEFAULT_TZ
     dt = datetime.strptime(ts, UTC_DATE_PATTERN_BW_COMPAT)
     dt = dt.replace(tzinfo=timezone.utc)
     dt_local = dt.astimezone(tz)
     return dt_local.strftime(LONG_DATE_PATTERN)
 
 
-def get_week_key(dt: datetime, tz=pytz.timezone(TZ_DEFAULT)) -> str:
+def get_week_key(dt: datetime, tz: Optional[object] = None) -> str:
     """
     Convert a datetime to a week identifier string (YYYY-WNN format).
     This is used for grouping data by week.
     """
+    if tz is None:
+        tz = DEFAULT_TZ
     dt_local = dt.astimezone(tz)
     return dt_local.strftime(WEEK_KEY_FORMAT)
 
 
-def get_week_display(week_key: str, tz=pytz.timezone(TZ_DEFAULT)) -> str:
+def get_week_display(week_key: str, tz: Optional[object] = None) -> str:
     """
     Convert a week key (YYYY-WNN) to a display string.
     Returns the formatted date for Monday of that week.
     """
-    year = int(week_key.split('-W')[0])
-    week_num = int(week_key.split('-W')[1])
+    if tz is None:
+        tz = DEFAULT_TZ
+    year = int(week_key.split("-W")[0])
+    week_num = int(week_key.split("-W")[1])
 
     # Get the first day of the year
     first_day = datetime(year, 1, 1, tzinfo=tz)
@@ -149,11 +162,7 @@ def get_working_dir() -> Path:
         return Path(__file__).parent.parent.parent / "working"
 
 
-SITES_DEFAULT: list[str] = [
-    'www.cnn.com',
-    'www.bbc.com',
-    'www.foxnews.com'
-]
+SITES_DEFAULT: list[str] = ["www.cnn.com", "www.bbc.com", "www.foxnews.com"]
 
 SITES: list[str] = SITES_DEFAULT
 
@@ -171,7 +180,9 @@ VERTEX_AI_MODEL: str = "gemini-2.5-flash"
 
 LOGGER_NAME: str = "MEDIA_LENS"
 LOGFILE_NAME: str = "media-lens-{ts}.log"
-LOG_FORMAT: str = "%(asctime)s [%(levelname)s] <%(filename)s:%(lineno)s - %(funcName)s()> %(message)s"
+LOG_FORMAT: (
+    str
+) = "%(asctime)s [%(levelname)s] <%(filename)s:%(lineno)s - %(funcName)s()> %(message)s"
 
 
 # Global run state
@@ -192,7 +203,7 @@ class RunState:
         logger.info(f"Stop requested for run {cls._current_run_id}")
 
     @classmethod
-    def reset(cls, run_id: str = None) -> None:
+    def reset(cls, run_id: Optional[str] = None) -> None:
         """Reset the stop flag, optionally setting a new run ID"""
         cls._should_stop = False
         cls._current_run_id = run_id
@@ -205,11 +216,11 @@ class RunState:
 
 def create_logger(
     name: str,
-    logfile_path: Union[str, Path] = None,
+    logfile_path: Optional[Union[str, Path]] = None,
     max_bytes: int = 10_000_000,
     backup_count: int = 10,
-    console_level: str = None,
-    file_level: str = None
+    console_level: Optional[str] = None,
+    file_level: Optional[str] = None,
 ) -> logging.Logger:
     """
     Create a logger with dual output: console (INFO) and file (DEBUG).
@@ -254,16 +265,18 @@ def create_logger(
                 logfile_path = Path(logfile_path)
 
             # Create log directory if it doesn't exist
-            logfile_path.parent.mkdir(parents=True, exist_ok=True)
-
-            file_handler = RotatingFileHandler(
-                filename=str(logfile_path),
-                maxBytes=max_bytes,
-                backupCount=backup_count
-            )
-            file_handler.setLevel(file_log_level)
-            file_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
+            try:
+                logfile_path.parent.mkdir(parents=True, exist_ok=True)
+                file_handler = RotatingFileHandler(
+                    filename=str(logfile_path), maxBytes=max_bytes, backupCount=backup_count
+                )
+                file_handler.setLevel(file_log_level)
+                file_handler.setFormatter(formatter)
+                logger.addHandler(file_handler)
+            except (OSError, PermissionError) as e:
+                # If we can't write to the log file, just skip it
+                console_handler.setLevel(logging.DEBUG)  # Use console for detailed logging instead
+                print(f"Warning: Could not create log file at {logfile_path}: {e}", file=sys.stderr)
 
     return logger
 
@@ -292,19 +305,19 @@ def get_model_metadata(llm_agent) -> dict:
     """
     # Extract provider and model name from the model string
     # Format: "anthropic/claude-sonnet-4-5" or "vertex_ai/gemini-2.5-flash"
-    model_str = getattr(llm_agent, 'model', 'unknown')
-    provider = 'unknown'
+    model_str = getattr(llm_agent, "model", "unknown")
+    provider = "unknown"
     model_name = model_str
 
-    if isinstance(model_str, str) and '/' in model_str:
-        provider_part, model_part = model_str.split('/', 1)
+    if isinstance(model_str, str) and "/" in model_str:
+        provider_part, model_part = model_str.split("/", 1)
         # Normalize provider names
-        if provider_part == 'anthropic':
-            provider = 'anthropic'
-        elif provider_part == 'vertex_ai':
-            provider = 'vertex'
-        elif provider_part == 'ollama':
-            provider = 'ollama'
+        if provider_part == "anthropic":
+            provider = "anthropic"
+        elif provider_part == "vertex_ai":
+            provider = "vertex"
+        elif provider_part == "ollama":
+            provider = "ollama"
         else:
             provider = provider_part
         model_name = model_part
@@ -314,13 +327,13 @@ def get_model_metadata(llm_agent) -> dict:
             "name": model_name,
             "provider": provider,
         },
-        "generated_at": utc_timestamp()
+        "generated_at": utc_timestamp(),
     }
 
     # Add model parameters if available
-    if hasattr(llm_agent, 'temperature'):
+    if hasattr(llm_agent, "temperature"):
         metadata["model"]["temperature"] = llm_agent.temperature
-    if hasattr(llm_agent, 'max_tokens'):
+    if hasattr(llm_agent, "max_tokens"):
         metadata["model"]["max_tokens"] = llm_agent.max_tokens
 
     return metadata
@@ -334,6 +347,7 @@ def ensure_secrets_loaded():
     """
     try:
         from .secret_manager import load_secrets_from_gcp
+
         loaded_secrets = load_secrets_from_gcp()
 
         logger = logging.getLogger(LOGGER_NAME)

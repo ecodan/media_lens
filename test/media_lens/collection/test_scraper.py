@@ -1,5 +1,6 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
 
 from src.media_lens.collection.scraper import WebpageScraper
 
@@ -7,7 +8,7 @@ from src.media_lens.collection.scraper import WebpageScraper
 @pytest.mark.asyncio
 async def test_get_page_content_desktop():
     """Test scraping with desktop browser configuration."""
-    with patch('src.media_lens.collection.scraper.async_playwright') as mock_playwright:
+    with patch("src.media_lens.collection.scraper.async_playwright") as mock_playwright:
         # Set up mock context
         mock_context = AsyncMock()
         mock_page = AsyncMock()
@@ -35,10 +36,9 @@ async def test_get_page_content_desktop():
         mock_page.close = AsyncMock()
 
         # Call function with desktop browser type
-        with patch('src.media_lens.collection.scraper.stealth_async', new_callable=AsyncMock):
+        with patch("src.media_lens.collection.scraper.stealth_async", new_callable=AsyncMock):
             result = await WebpageScraper.get_page_content(
-                "https://example.com",
-                WebpageScraper.BrowserType.DESKTOP
+                "https://example.com", WebpageScraper.BrowserType.DESKTOP
             )
 
         # Check results
@@ -47,15 +47,15 @@ async def test_get_page_content_desktop():
         # Verify desktop configuration was used
         mock_browser.new_context.assert_called_once()
         context_args = mock_browser.new_context.call_args[1]
-        assert context_args['viewport']['width'] == 1920
-        assert 'Windows' in context_args['user_agent']
-        assert 'is_mobile' not in context_args
+        assert context_args["viewport"]["width"] == 1920
+        assert "Windows" in context_args["user_agent"]
+        assert "is_mobile" not in context_args
 
 
 @pytest.mark.asyncio
 async def test_get_page_content_mobile():
     """Test scraping with mobile browser configuration."""
-    with patch('src.media_lens.collection.scraper.async_playwright') as mock_playwright:
+    with patch("src.media_lens.collection.scraper.async_playwright") as mock_playwright:
         # Set up mock context
         mock_context = AsyncMock()
         mock_page = AsyncMock()
@@ -83,10 +83,9 @@ async def test_get_page_content_mobile():
         mock_page.close = AsyncMock()
 
         # Call function with mobile browser type
-        with patch('src.media_lens.collection.scraper.stealth_async', new_callable=AsyncMock):
+        with patch("src.media_lens.collection.scraper.stealth_async", new_callable=AsyncMock):
             result = await WebpageScraper.get_page_content(
-                "https://example.com",
-                WebpageScraper.BrowserType.MOBILE
+                "https://example.com", WebpageScraper.BrowserType.MOBILE
             )
 
         # Check results
@@ -95,16 +94,16 @@ async def test_get_page_content_mobile():
         # Verify mobile configuration was used
         mock_browser.new_context.assert_called_once()
         context_args = mock_browser.new_context.call_args[1]
-        assert context_args['viewport']['width'] == 375
-        assert 'iPhone' in context_args['user_agent']
-        assert context_args['is_mobile'] is True
-        assert context_args['has_touch'] is True
+        assert context_args["viewport"]["width"] == 375
+        assert "iPhone" in context_args["user_agent"]
+        assert context_args["is_mobile"] is True
+        assert context_args["has_touch"] is True
 
 
 @pytest.mark.asyncio
 async def test_get_page_content_error_handling():
     """Test error handling during page scraping."""
-    with patch('src.media_lens.collection.scraper.async_playwright') as mock_playwright:
+    with patch("src.media_lens.collection.scraper.async_playwright") as mock_playwright:
         # Make the browser.new_context raise an exception
         mock_browser = AsyncMock()
 
@@ -121,10 +120,9 @@ async def test_get_page_content_error_handling():
         mock_browser.close = AsyncMock()
 
         # The function catches exceptions and returns None
-        with patch('src.media_lens.collection.scraper.stealth_async', new_callable=AsyncMock):
+        with patch("src.media_lens.collection.scraper.stealth_async", new_callable=AsyncMock):
             result = await WebpageScraper.get_page_content(
-                "https://example.com",
-                WebpageScraper.BrowserType.DESKTOP
+                "https://example.com", WebpageScraper.BrowserType.DESKTOP
             )
 
         # Verify that the error was caught and None was returned
@@ -134,7 +132,7 @@ async def test_get_page_content_error_handling():
 @pytest.mark.asyncio
 async def test_unknown_browser_type():
     """Test handling of invalid browser type."""
-    with patch('src.media_lens.collection.scraper.async_playwright') as mock_playwright:
+    with patch("src.media_lens.collection.scraper.async_playwright") as mock_playwright:
         # Create an invalid browser type
         invalid_browser_type = MagicMock()
 
@@ -151,10 +149,9 @@ async def test_unknown_browser_type():
         mock_browser.close = AsyncMock()
 
         # The function catches exceptions and returns None
-        with patch('src.media_lens.collection.scraper.stealth_async', new_callable=AsyncMock):
+        with patch("src.media_lens.collection.scraper.stealth_async", new_callable=AsyncMock):
             result = await WebpageScraper.get_page_content(
-                "https://example.com",
-                invalid_browser_type
+                "https://example.com", invalid_browser_type
             )
 
         # Verify that the error was caught and None was returned

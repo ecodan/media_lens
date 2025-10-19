@@ -1,15 +1,18 @@
 """Custom exceptions for the extraction module."""
 
+from typing import Optional
+
 
 class ExtractionError(Exception):
     """Base exception for extraction-related errors."""
+
     pass
 
 
 class ArticleExtractionError(ExtractionError):
     """Raised when article extraction fails validation."""
 
-    def __init__(self, site: str, expected: int, actual: int, message: str = None):
+    def __init__(self, site: str, expected: int, actual: int, message: Optional[str] = None):
         """
         Initialize ArticleExtractionError.
 

@@ -15,6 +15,7 @@ See `DOCKER_README.md` for detailed configuration differences.
 ### Prerequisites
 - Docker and Docker Compose installed on your machine
 - Python 3.9+ (for local development outside Docker)
+- UV package manager (for local development)
 - API keys for required services (Anthropic Claude or Google Vertex AI)
 - For Mac: Apple Silicon (M1/M2/M3) or Intel-based Mac
 
@@ -95,8 +96,23 @@ See `DOCKER_README.md` for detailed configuration differences.
 
    **For dependency changes** (rebuild required):
    ```bash
-   # After modifying requirements.txt
+   # After modifying pyproject.toml or adding dependencies with uv add
    docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local up --build
+   ```
+
+   **For direct development** (no Docker):
+   ```bash
+   # Install dependencies
+   uv sync
+
+   # Install pre-commit hooks
+   uv run pre-commit install
+
+   # Run application
+   uv run python -m src.media_lens.runner run -s harvest extract
+
+   # Run tests
+   uv run pytest --cov=src/media_lens
    ```
 
    **When to rebuild vs restart:**
@@ -104,11 +120,13 @@ See `DOCKER_README.md` for detailed configuration differences.
    |-------------|--------|------|---------|
    | Python code in `src/` | Restart | ~2s | `docker compose ... restart app` |
    | Config files in `config/` | Restart | ~2s | `docker compose ... restart app` |
-   | `requirements.txt` | Rebuild | ~60s | `docker compose ... up --build` |
+   | `pyproject.toml` | Rebuild | ~60s | `docker compose ... up --build` |
    | Dockerfile changes | Rebuild | ~60s | `docker compose ... up --build` |
    | System dependencies | Rebuild | ~60s | `docker compose ... up --build` |
 
    **Note**: The cloud/production configuration does NOT mount source code as volumes, ensuring the container matches exactly what will be deployed.
+
+   For complete development setup details, see `UV_SETUP.md`.
 
 5. **Test the application**
    The application runs a web server on port 8080. You can trigger operations using HTTP API calls:
@@ -156,18 +174,30 @@ See `DOCKER_README.md` for detailed configuration differences.
    docker compose --profile cloud down
    ```
 
-### Alternative: Direct CLI Usage in Container
+### Alternative: Direct CLI Usage
 
-If you prefer to run CLI commands directly instead of using the web API:
+You can run CLI commands either inside Docker containers or directly on your machine:
 
+**Inside the container:**
 ```bash
 # Run CLI commands inside the container
-docker exec -it media-lens python -m src.media_lens.runner run -s harvest --sites www.bbc.com
+docker exec -it media-lens-local python -m src.media_lens.runner run -s harvest --sites www.bbc.com
 
 # Or access the container shell
-docker exec -it media-lens /bin/bash
+docker exec -it media-lens-local /bin/bash
 # Then run commands inside the container:
-python -m src.media_lens.runner run -s harvest extract
+uv run python -m src.media_lens.runner run -s harvest extract
+```
+
+**Directly on your machine** (requires UV):
+```bash
+# Install dependencies and hooks
+uv sync
+uv run pre-commit install
+
+# Run CLI commands
+uv run python -m src.media_lens.runner run -s harvest extract
+uv run pytest --cov=src/media_lens
 ```
 
 ### Troubleshooting Local Docker
