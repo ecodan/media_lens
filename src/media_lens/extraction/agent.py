@@ -7,6 +7,8 @@ from enum import Enum
 from typing import Optional
 
 import litellm
+from litellm.exceptions import InternalServerError, RateLimitError, ServiceUnavailableError
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from src.media_lens.common import (
     ANTHROPIC_MODEL,
@@ -45,6 +47,16 @@ class Agent(metaclass=ABCMeta):
         """
         pass
 
+    @retry(
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=1, min=4, max=60),
+        retry=retry_if_exception_type(
+            (RateLimitError, ServiceUnavailableError, InternalServerError)
+        ),
+        before_sleep=lambda retry_state: logger.warning(
+            f"Retrying LLM call (attempt {retry_state.attempt_number}) due to {retry_state.outcome.exception()}"
+        ),
+    )
     def invoke(
         self,
         system_prompt: str,

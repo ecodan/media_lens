@@ -170,14 +170,26 @@ def upload_file(local_file: Path, target_filename: Optional[str] = None):
 
     loaded_secrets = load_secrets_from_gcp()
 
-    hostname = os.getenv("FTP_HOSTNAME") or loaded_secrets.get("FTP_HOSTNAME")
+    hostname = (
+        os.getenv("FTP_HOSTNAME") or os.getenv("FTP_HOST") or loaded_secrets.get("FTP_HOSTNAME")
+    )
     ip_fallback = os.getenv("FTP_IP_FALLBACK") or loaded_secrets.get("FTP_IP_FALLBACK")
-    username = os.getenv("FTP_USERNAME") or loaded_secrets.get("FTP_USERNAME")
-    key_file_path = os.getenv("FTP_SSH_KEY_FILE")  # SSH key file path
+    username = (
+        os.getenv("FTP_USERNAME") or os.getenv("FTP_USER") or loaded_secrets.get("FTP_USERNAME")
+    )
+    key_file_path = (
+        os.getenv("FTP_SSH_KEY_FILE")
+        or os.getenv("FTP_KEY_PATH")
+        or loaded_secrets.get("FTP_SSH_KEY_FILE")
+    )
     port_str = os.getenv("FTP_PORT") or loaded_secrets.get("FTP_PORT")
     port: int = int(port_str) if port_str else 22
 
-    remote_path_from_secrets = os.getenv("FTP_REMOTE_PATH") or loaded_secrets.get("FTP_REMOTE_PATH")
+    remote_path_from_secrets = (
+        os.getenv("FTP_REMOTE_PATH")
+        or os.getenv("FTP_PATH")
+        or loaded_secrets.get("FTP_REMOTE_PATH")
+    )
     logger.info(
         f"FTP credentials loaded: hostname: {hostname} | ip_fallback: {ip_fallback} | username: {username} | port: {port} | key_file_path: {key_file_path} | remote path {remote_path_from_secrets}"
     )

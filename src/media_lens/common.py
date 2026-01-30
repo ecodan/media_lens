@@ -18,8 +18,7 @@ UTC_REGEX_PATTERN_BW_COMPAT: (
 LONG_DATE_PATTERN: str = "%a %d-%b-%Y %H:%M %Z"
 UTC_DATE_PATTERN: str = "%Y-%m-%dT%H:%M:%S+00:00"
 UTC_DATE_PATTERN_BW_COMPAT: str = "%Y-%m-%d_%H%M%S"
-WEEK_KEY_FORMAT: str = "%Y-W%U"  # Year-week number format (e.g., "2025-W08")
-WEEK_DISPLAY_FORMAT: str = "Week of %b %d, %Y"  # Display format (e.g., "Week of Feb 24, 2025")
+WEEK_DISPLAY_FORMAT: str = "Week of %b %d, %Y"  # Display format (e.g., "Week of Dec 29, 2025")
 TZ_DEFAULT: str = "America/Los_Angeles"
 DEFAULT_TZ: object = pytz.timezone(TZ_DEFAULT)
 
@@ -107,35 +106,39 @@ def timestamp_bw_compat_str_as_long_date(ts: str, tz: Optional[object] = None) -
 def get_week_key(dt: datetime, tz: Optional[object] = None) -> str:
     """
     Convert a datetime to a week identifier string (YYYY-WNN format).
+    Uses ISO 8601 week numbering (Monday as first day, Week 1 is the week with Jan 4).
     This is used for grouping data by week.
     """
     if tz is None:
         tz = DEFAULT_TZ
     dt_local = dt.astimezone(tz)
-    return dt_local.strftime(WEEK_KEY_FORMAT)
+    # Use isocalendar() for proper ISO 8601 week numbering
+    iso_cal = dt_local.isocalendar()
+    return f"{iso_cal.year}-W{iso_cal.week:02d}"
 
 
 def get_week_display(week_key: str, tz: Optional[object] = None) -> str:
     """
     Convert a week key (YYYY-WNN) to a display string.
-    Returns the formatted date for Monday of that week.
+    Returns the formatted date for Monday of that ISO 8601 week.
+    ISO week 1 is the week containing January 4th (or the first week with a Thursday in the year).
     """
     if tz is None:
         tz = DEFAULT_TZ
     year = int(week_key.split("-W")[0])
     week_num = int(week_key.split("-W")[1])
 
-    # Get the first day of the year
-    first_day = datetime(year, 1, 1, tzinfo=tz)
+    # ISO 8601 Week Date: Use Jan 4 of the year as reference (always in Week 1)
+    # Then calculate backwards/forwards to get the Monday of the target week
+    jan_4 = datetime(year, 1, 4, tzinfo=tz)
 
-    # Calculate days to add to get to the start of the desired week
-    # Week 1 is the week containing Jan 1
-    days_to_add = (week_num * 7) - first_day.weekday()
-    if days_to_add < 0:
-        days_to_add += 7
+    # Get Monday of the week containing Jan 4 (Monday of Week 1)
+    # Monday is weekday 0
+    week_1_monday = jan_4 - timedelta(days=jan_4.weekday())
 
-    # Get Monday of the target week
-    week_start = first_day + timedelta(days=days_to_add)
+    # Calculate the Monday of the target week
+    # Subtract 1 from week_num because week_1_monday is already Monday of Week 1
+    week_start = week_1_monday + timedelta(weeks=(week_num - 1))
 
     return week_start.strftime(WEEK_DISPLAY_FORMAT)
 

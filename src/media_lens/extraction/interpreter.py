@@ -6,9 +6,6 @@ import traceback
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from anthropic import APIConnectionError, APIError
-from tenacity import retry, stop_after_attempt, wait_exponential
-
 from src.media_lens.common import (
     LOGGER_NAME,
     get_model_metadata,
@@ -127,11 +124,6 @@ class LLMWebsiteInterpreter:
         else:
             self.storage = storage
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=lambda e: isinstance(e, (APIError, APIConnectionError)),
-    )
     def _call_llm_with_retry(
         self,
         user_prompt: str,

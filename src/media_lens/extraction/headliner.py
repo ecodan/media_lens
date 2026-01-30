@@ -1,7 +1,6 @@
 import datetime
 import json
 import logging
-import re
 import traceback
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
@@ -9,8 +8,6 @@ from pathlib import Path
 from typing import Dict
 
 import dotenv
-from anthropic import APIConnectionError, APIError
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.media_lens.common import LOGGER_NAME, get_project_root
 from src.media_lens.extraction.agent import Agent, ResponseFormat, create_agent_from_env
@@ -118,19 +115,12 @@ class HeadlineExtractor(metaclass=ABCMeta):
         :param max_tokens: Maximum number of tokens (default 100K)
         :return: Truncated HTML string
         """
-        # Simple token estimation: split on whitespace and punctuation
-        tokens = re.findall(r"\w+|\S", html_string)
-
-        if len(tokens) <= max_tokens:
+        if len(html_string) <= max_tokens * 4:  # rough estimate
             return html_string
 
-        # Join the first max_tokens tokens back together
-        truncated_tokens = tokens[:max_tokens]
-        truncated_text = "".join(
-            t if not t.isalnum() else " " + t for t in truncated_tokens
-        ).strip()
-
-        return truncated_text
+        # Better: just slice the string. Simple but keeps structure intact.
+        # We might cut mid-tag, but it's safer than injecting spaces everywhere.
+        return html_string[: max_tokens * 4]
 
 
 class LLMHeadlineExtractor(HeadlineExtractor):
@@ -143,11 +133,6 @@ class LLMHeadlineExtractor(HeadlineExtractor):
         self.agent: Agent = agent
         self.stats = RetryStats()
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=30, max=120),
-        retry=lambda e: isinstance(e, (APIError, APIConnectionError)),
-    )
     def _call_llm(
         self,
         user_prompt: str,

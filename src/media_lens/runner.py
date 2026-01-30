@@ -201,7 +201,7 @@ async def interpret_weekly(
 async def extract(job_dir):
     agent: Agent = create_agent_from_env()
     extractor: ContextExtractor = ContextExtractor(agent=agent, working_dir=job_dir)
-    await extractor.run(delay_between_sites_secs=60)
+    await extractor.run(delay_between_sites_secs=10)
 
 
 async def format_output(force_full: bool = False, sites: Optional[list[str]] = None) -> None:
