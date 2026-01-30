@@ -2,7 +2,6 @@ import asyncio
 import logging
 import os
 import re
-import time
 from urllib.parse import urlparse
 
 import dotenv
@@ -180,7 +179,7 @@ class ContextExtractor:
             except Exception as e:
                 logger.error(f"Failed to extract headlines from {file_path}: {e!s}")
 
-            time.sleep(delay_between_sites_secs)
+            await asyncio.sleep(delay_between_sites_secs)
 
         # Validate all sites have minimum articles
         self._validate_extractions(dir_name)

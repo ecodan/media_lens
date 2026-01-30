@@ -26,37 +26,48 @@ class PatternBasedCleaner(SiteSpecificCleaner):
         self.patterns = patterns
 
     def clean_page(self, page: BeautifulSoup) -> BeautifulSoup:
-        """Keep only elements that match or are related to any of the provided patterns.
-
-        :param page: HTML content to clean
-        :type page: BeautifulSoup
-        :return: The cleaned HTML containing only matching elements and their ancestors
-        :rtype: BeautifulSoup
-        """
-        """
-        SLOW VERSION
-        """
         # Start timer
         start_time = time.time()
 
         # Find all elements matching any of the patterns
-        matching_elements = []
+        matching_elements = set()
         for pattern in self.patterns:
-            matching_elements.extend(page.select(pattern))
+            matching_elements.update(page.select(pattern))
 
-        for element in page.find_all():
-            if not (
-                element in matching_elements
-                or any(
-                    element in match.descendants or element in match.parents
-                    for match in matching_elements
-                )
-            ):
-                element.decompose()
+        # Build a set of ancestors to keep
+        ancestors_to_keep = set()
+        for match in matching_elements:
+            for parent in match.parents:
+                if parent in ancestors_to_keep:
+                    break  # Already added this branch
+                ancestors_to_keep.add(parent)
+
+        def prune(element):
+            # If this element is a match, we keep it and all its descendants.
+            if element in matching_elements:
+                return True
+
+            # If this element is an ancestor of a match, we keep it and prune its children.
+            if element in ancestors_to_keep:
+                # Iterate over a copy of children because we might decompose some
+                for child in list(element.children):
+                    if hasattr(child, "name"):  # Only prune Tags, not NavigableStrings
+                        if not prune(child):
+                            child.decompose()
+                return True
+
+            # Otherwise, this element is not related to any match.
+            return False
+
+        # Start pruning from the soup/body
+        for child in list(page.children):
+            if hasattr(child, "name"):
+                if not prune(child):
+                    child.decompose()
 
         # Calculate and log elapsed time
         elapsed_time = time.time() - start_time
-        logger.debug(f"Pattern matching took {elapsed_time:.2f} seconds")
+        logger.info(f"Pattern matching took {elapsed_time:.2f} seconds")
         return page
 
 
