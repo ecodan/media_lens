@@ -89,8 +89,21 @@ def run_task_async(steps, run_id, data=None):
         # Get job_dir from data or use default ('latest')
         job_dir = data.get("job_dir", "latest") if data else "latest"
 
+        # Get force flags
+        force_full_format = data.get("force_full_format", False) if data else False
+        force_full_deploy = data.get("force_full_deploy", False) if data else False
+
         # Run the pipeline
-        result = asyncio.run(run(steps=steps, sites=sites, run_id=run_id, job_dir=job_dir))
+        result = asyncio.run(
+            run(
+                steps=steps,
+                sites=sites,
+                run_id=run_id,
+                job_dir=job_dir,
+                force_full_format=force_full_format,
+                force_full_deploy=force_full_deploy,
+            )
+        )
 
         # Update status when done
         active_runs[run_id]["status"] = result["status"]
@@ -113,6 +126,13 @@ def run_pipeline():
         # Parse request parameters
         data = request.get_json(silent=True) or {}
         requested_steps = data.get("steps", ["harvest", "extract", "interpret", "deploy"])
+        # Parameters supported:
+        # - steps: list of strings
+        # - job_dir: string (e.g. "jobs/2026/01/29/160003")
+        # - rewind_days: int
+        # - sites: list of strings
+        # - force_full_format: bool
+        # - force_full_deploy: bool
 
         # Convert string steps to enum
         steps = [Steps(step) for step in requested_steps]
