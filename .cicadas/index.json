@@ -1,0 +1,41 @@
+{
+  "schema_version": "2.0",
+  "entries": [
+    {
+      "timestamp": "2026-02-18T04:40:40.903785+00:00",
+      "branch": "master",
+      "summary": "Initial Canon Generation (Genesis)",
+      "decisions": "Reverse-engineered Canon from codebase",
+      "modules": [
+        "product-overview",
+        "tech-overview",
+        "ux-overview",
+        "collection",
+        "extraction",
+        "presentation",
+        "storage"
+      ]
+    },
+    {
+      "timestamp": "2026-02-18T05:33:11.097482+00:00",
+      "branch": "feat/static-reader",
+      "summary": "Completed Static Reader Core: Implemented recursive deployment, unique date-tree article storage, and weekly report links.",
+      "decisions": "",
+      "modules": []
+    },
+    {
+      "timestamp": "2026-02-18T05:34:01.320051+00:00",
+      "branch": "feat/static-reader",
+      "summary": "Final Merge: Feature partition 'static-reader' merged into initiative branch.",
+      "decisions": "",
+      "modules": []
+    },
+    {
+      "timestamp": "2026-02-18T05:35:03.187516+00:00",
+      "branch": "article-reader",
+      "summary": "Initiative Complete: Article Reader feature fully implemented, verified, and merged to master. Canon documentation synthesized.",
+      "decisions": "",
+      "modules": []
+    }
+  ]
+}

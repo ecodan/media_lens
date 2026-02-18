@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - Media Lens Reader</title>
+    <style>
+        :root {
+            --bg-color: #fafafa;
+            --text-color: #333;
+            --meta-color: #666;
+            --link-color: #0066cc;
+            --max-width: 700px;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Georgia, serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            margin: 0;
+            padding: 2rem;
+        }
+        main {
+            max-width: var(--max-width);
+            margin: 0 auto;
+        }
+        header {
+            margin-bottom: 2rem;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 1rem;
+        }
+        .nav-back {
+            display: inline-block;
+            margin-bottom: 1rem;
+            color: var(--meta-color);
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+        .nav-back:hover {
+            color: var(--link-color);
+        }
+        h1 {
+            font-size: 2rem;
+            margin: 0 0 0.5rem 0;
+            line-height: 1.2;
+        }
+        .meta {
+            color: var(--meta-color);
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+        .meta a {
+            color: var(--meta-color);
+        }
+        .meta a:hover {
+            color: var(--link-color);
+        }
+        article {
+            font-size: 1.125rem;
+        }
+        p {
+            margin-bottom: 1.5rem;
+        }
+        .original-link {
+            display: inline-block;
+            margin-top: 2rem;
+            padding-top: 1rem;
+            border-top: 1px solid #ddd;
+            font-size: 0.9rem;
+            color: var(--meta-color);
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <header>
+            <a href="../../medialens.html" class="nav-back">← Back to Report</a>
+            <h1>{{ title }}</h1>
+            <div class="meta">
+                {% if site_name %}
+                <span>{{ site_name }}</span>
+                {% endif %}
+                {% if date %}
+                <span> • {{ date }}</span>
+                {% endif %}
+            </div>
+        </header>
+
+        <article>
+            {% for paragraph in paragraphs %}
+            <p>{{ paragraph }}</p>
+            {% endfor %}
+        </article>
+
+        <footer>
+            <a href="{{ url }}" class="original-link" target="_blank" rel="noopener noreferrer">View Original Source ↗</a>
+        </footer>
+    </main>
+</body>
+</html>

@@ -53,6 +53,89 @@ def generate_html_with_template(template_dir_path: Path, template_name: str, con
     return html_output
 
 
+def generate_article_page(
+    story: Dict, site: str, job_dir_path: str, template_dir_path: Path
+) -> Optional[str]:
+    """
+    Generate a static HTML page for a single article.
+
+    :param story: Story dictionary from extracted.json
+    :param site: Site name
+    :param job_dir_path: Path to the job directory
+    :param template_dir_path: Path to templates
+    :return: Relative URL to the generated article page, or None if failed
+    """
+    try:
+        storage = shared_storage
+        article_json_path = story.get("article_text")
+
+        if not article_json_path:
+            return None
+
+        # Handle relative or absolute paths for article json
+        if not storage.file_exists(article_json_path):
+            # Try constructing path if it was stored relatively
+            # The extractor stores it as full path usually, but let's be safe
+            potential_path = f"{job_dir_path}/{Path(article_json_path).name}"
+            if storage.file_exists(potential_path):
+                article_json_path = potential_path
+            else:
+                return None
+
+        article_data = storage.read_json(article_json_path)
+        if not article_data or not article_data.get("text"):
+            return None
+
+        # Prepare content for template
+        text = article_data.get("text", "")
+        paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
+
+        # Get filename for the HTML article
+        # storage path: .../www.site.com-article-0.json -> www.site.com-article-0.html
+        article_filename = Path(article_json_path).stem + ".html"
+
+        # Determine output path: staging/articles/{site}/{year}/{month}/{day}/{time}/{filename}
+        # job_dir_path is typically something like "jobs/2025/04/13/160823"
+        # We want to extract the timestamp parts (last 4 parts)
+        job_path_parts = Path(job_dir_path).parts
+        if "jobs" in job_path_parts:
+            # Get everything after 'jobs'
+            jobs_idx = job_path_parts.index("jobs")
+            timestamp_parts = job_path_parts[jobs_idx + 1 :]
+        else:
+            # Fallback to last 4 parts if structure is different
+            timestamp_parts = job_path_parts[-4:]
+
+        timestamp_dir = "/".join(timestamp_parts)
+
+        staging_dir = storage.get_staging_directory()
+        article_output_dir = f"{staging_dir}/articles/{timestamp_dir}"
+        storage.create_directory(article_output_dir)
+
+        article_output_path = f"{article_output_dir}/{article_filename}"
+
+        content = {
+            "title": article_data.get("title") or story.get("title"),
+            "site_name": site,
+            "date": article_data.get("metadata", {}).get("generated_at"),
+            "url": story.get("url"),
+            "paragraphs": paragraphs,
+        }
+
+        html_content = generate_html_with_template(
+            template_dir_path, "article_template.j2", content
+        )
+
+        storage.write_text(article_output_path, html_content)
+
+        # Return relative URL from the weekly report (root) to the article
+        return f"articles/{timestamp_dir}/{article_filename}"
+
+    except Exception as e:
+        logger.warning(f"Failed to generate article page: {e}")
+        return None
+
+
 def organize_runs_by_week(
     job_dirs: List[Union[Path, str, JobDir]], sites: List[str]
 ) -> Dict[str, Any]:
@@ -155,12 +238,13 @@ def organize_runs_by_week(
     return result
 
 
-def generate_weekly_content(week_data: Dict, sites: List[str]) -> Dict:
+def generate_weekly_content(week_data: Dict, sites: List[str], template_dir_path: Path) -> Dict:
     """
     Process all runs in a week to create a weekly summary.
 
     :param week_data: Dictionary containing all runs for a week
     :param sites: List of media sites
+    :param template_dir_path: Path to templates directory (for article generation)
     :return: Processed weekly content
     """
     # Create site-specific content collections
@@ -175,6 +259,14 @@ def generate_weekly_content(week_data: Dict, sites: List[str]) -> Dict:
                     # Add timestamp to help with sorting/organization
                     story["timestamp"] = run["run_timestamp"]
                     story["datetime"] = run["run_datetime"]
+
+                    # Generate static article page
+                    reader_url = generate_article_page(
+                        story, site, run["job_dir"], template_dir_path
+                    )
+                    if reader_url:
+                        story["reader_url"] = reader_url
+
                     site_content[site].append(story)
 
     # Sort content for each site by datetime (newest first)
@@ -205,8 +297,9 @@ def generate_weekly_reports(
     weekly_html = {}
 
     # Generate HTML for each week
+    # Generate HTML for each week
     for week in weeks_data["weeks"]:
-        week_content = generate_weekly_content(week, sites)
+        week_content = generate_weekly_content(week, sites, template_dir_path)
         weekly_html[week["week_key"]] = generate_html_with_template(
             template_dir_path, "weekly_template.j2", week_content
         )

@@ -30,6 +30,7 @@ wheels/
 *.backup**/__pycache__/
 *.pyc
 /.ai/
+keys/
 
 # UV package manager
 .uv/

@@ -99,7 +99,8 @@ def get_files_to_deploy(cursor: Optional[datetime.datetime] = None) -> List[str]
     staging_dir = storage.get_staging_directory()
 
     # Get all HTML files in staging directory
-    all_files = storage.get_files_by_pattern(staging_dir, "*.html")
+    # Use recursive matching to find files in subdirectories (like articles/)
+    all_files = storage.get_files_by_pattern(staging_dir, "**/*.html")
 
     if cursor is None:
         logger.info("No deploy cursor found - deploying all files")
@@ -148,7 +149,16 @@ def upload_html_content_from_storage(storage_path: str) -> bool:
         f.write(content)
         local_temp_path = f.name
 
-    success = upload_file(local_file=Path(local_temp_path), target_filename=original_filename)
+    # Calculate relative path from staging directory to preserve structure
+    staging_dir = shared_storage.get_staging_directory()
+    try:
+        relative_path = Path(storage_path).relative_to(staging_dir)
+        target_filename = str(relative_path)
+    except ValueError:
+        # Fallback if file is not in staging (shouldn't happen for deployable content)
+        target_filename = original_filename
+
+    success = upload_file(local_file=Path(local_temp_path), target_filename=target_filename)
 
     # Clean up temp file
     os.unlink(local_temp_path)
@@ -266,28 +276,42 @@ def upload_file(local_file: Path, target_filename: Optional[str] = None):
         sftp = ssh.open_sftp()
         logger.info(f"Connected to {hostname}")
 
-        # Create remote directory if it doesn't exist
-        try:
-            sftp.stat(remote_path_from_secrets)
-            logger.debug("Remote directory exists")
-        except FileNotFoundError:
-            logger.info(f"Creating remote directory: {remote_path_from_secrets}")
-            # Create parent directories if they don't exist
-            remote_path_parts = remote_path_from_secrets.strip("/").split("/")
-            current_path = ""
-            for part in remote_path_parts:
-                current_path += "/" + part
+        # Create remote directory structure for the target file
+        full_remote_path = (
+            f"{remote_path_from_secrets}/{target_filename}"
+            if target_filename
+            else f"{remote_path_from_secrets}/{Path(local_file).name}"
+        )
+        remote_dir = str(Path(full_remote_path).parent)
+
+        # We need to ensure the full path to remote_dir exists
+        # remote_path_from_secrets might be /var/www/html
+        # target_filename might be articles/cnn/article.html
+        # remote_dir would be /var/www/html/articles/cnn
+
+        # Split the path into parts and iterate to create
+        # Use a more robust approach than str splitting which might fail on complex paths
+        # We assume absolute paths on remote for safety
+
+        parts = remote_dir.strip("/").split("/")
+        current_path = ""
+        for part in parts:
+            current_path += "/" + part
+            try:
+                sftp.stat(current_path)
+            except FileNotFoundError:
+                logger.info(f"Creating directory: {current_path}")
                 try:
-                    sftp.stat(current_path)
-                    logger.debug(f"Directory exists: {current_path}")
-                except FileNotFoundError:
-                    logger.info(f"Creating directory: {current_path}")
                     sftp.mkdir(current_path)
-            logger.info("Created remote directory structure")
+                except OSError:
+                    # Directory might have been created concurrently
+                    pass
+
+        logger.info("Created nested remote directory structure")
 
         # Construct remote file path
-        filename = target_filename if target_filename else Path(local_file).name
-        remote_file = f"{remote_path_from_secrets}/{filename}"
+        # We already calculated full_remote_path above
+        remote_file = full_remote_path
 
         # Upload the file
         logger.info(f"Uploading {local_file} to {remote_file}...")

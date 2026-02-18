@@ -5,7 +5,7 @@ import traceback
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 import dotenv
 
@@ -97,8 +97,8 @@ Critical requirements:
 @dataclass
 class RetryStats:
     attempts: int = 0
-    last_error: str | None = None
-    last_attempt: datetime.datetime | None = None
+    last_error: Optional[str] = None
+    last_attempt: Optional[datetime.datetime] = None
 
 
 class HeadlineExtractor(metaclass=ABCMeta):

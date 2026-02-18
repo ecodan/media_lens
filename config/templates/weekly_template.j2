@@ -123,7 +123,12 @@
                         {% for extracted in run.extracted %}
                             {% if extracted.site == site %}
                                 {% for story in extracted.stories %}
-                                    <li><a href="{{ story.url }}" target="_blank">{{ story.title }}</a></li>
+                                    <li>
+                                        <a href="{{ story.url }}" target="_blank">{{ story.title }}</a>
+                                        {% if story.reader_url %}
+                                        <a href="{{ story.reader_url }}" class="badge bg-light text-secondary text-decoration-none border ms-1" title="Read in Reader View" style="font-size: 0.7em;">📖 Read</a>
+                                        {% endif %}
+                                    </li>
                                 {% endfor %}
                             {% endif %}
                         {% endfor %}
