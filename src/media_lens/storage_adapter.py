@@ -572,16 +572,12 @@ class StorageAdapter:
             # in the path and filter them manually
             all_files = self.list_files(path_str)
 
-            # Convert glob pattern to regex pattern for matching
-            import fnmatch
-
-            regex_pattern = fnmatch.translate(pattern)
-            import re
-
-            matcher = re.compile(regex_pattern)
-
             # Filter files that match the pattern
-            return [f for f in all_files if matcher.match(os.path.basename(f))]
+            # Using Path(f).match(pattern) correctly handles glob patterns (including recursive ones)
+            # against the full path, which aligns with local filesystem behavior.
+            from pathlib import Path
+
+            return [f for f in all_files if Path(f).match(pattern)]
         else:
             # Local file system has glob support
             local_path = self.local_root / path_str
