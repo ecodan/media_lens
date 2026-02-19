@@ -7,7 +7,7 @@ name = "media-lens"
 version = "1.6.1"
 description = "Comparative analysis of media worldviews through automated headline and content analysis"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [
     { name = "Dan Cripe" }
 ]
@@ -60,6 +60,11 @@ dependencies = [
     "tenacity==9.0.0",
     "trafilatura==2.0.0",
     "Werkzeug==3.1.5",
+    "urllib3==2.6.3",
+    "cryptography==46.0.5",
+    "aiohttp==3.13.3",
+    "filelock==3.20.3",
+    "PyNaCl==1.6.2",
 ]
 
 [project.optional-dependencies]
