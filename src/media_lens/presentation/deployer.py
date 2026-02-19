@@ -294,9 +294,12 @@ def upload_file(local_file: Path, target_filename: Optional[str] = None):
         # We assume absolute paths on remote for safety
 
         parts = remote_dir.strip("/").split("/")
-        current_path = ""
+        # Start with leading slash only if the original path was absolute
+        current_path = "/" if remote_dir.startswith("/") else ""
         for part in parts:
-            current_path += "/" + part
+            if current_path and not current_path.endswith("/"):
+                current_path += "/"
+            current_path += part
             try:
                 sftp.stat(current_path)
             except FileNotFoundError:
