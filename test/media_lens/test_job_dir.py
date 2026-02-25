@@ -14,7 +14,7 @@ def test_jobdir_from_path_hierarchical():
     assert job_dir.storage_path == "jobs/2025/06/07/193355"
     assert job_dir.timestamp_str == "2025-06-07_193355"
     assert job_dir.is_hierarchical is True
-    assert job_dir.week_key == "2025-W22"  # June 7, 2025 is in week 22
+    assert job_dir.week_key == "2025-W23"  # June 7, 2025 is in week 23
     assert isinstance(job_dir.datetime, datetime.datetime)
 
 
@@ -26,7 +26,7 @@ def test_jobdir_from_path_legacy():
     assert job_dir.storage_path == "2025-06-07_193355"
     assert job_dir.timestamp_str == "2025-06-07_193355"
     assert job_dir.is_hierarchical is False
-    assert job_dir.week_key == "2025-W22"  # June 7, 2025 is in week 22
+    assert job_dir.week_key == "2025-W23"  # June 7, 2025 is in week 23
     assert isinstance(job_dir.datetime, datetime.datetime)
 
 
@@ -161,19 +161,19 @@ def test_jobdir_find_latest_empty():
 def test_jobdir_group_by_week():
     """Test grouping job directories by week."""
     job_dirs = [
-        JobDir.from_path("2025-06-02_120000"),  # Monday, Week 22
-        JobDir.from_path("2025-06-07_193355"),  # Saturday, Week 22
+        JobDir.from_path("2025-06-02_120000"),  # Monday, Week 23
+        JobDir.from_path("2025-06-07_193355"),  # Saturday, Week 23
         JobDir.from_path("2025-06-08_090000"),  # Sunday, Week 23
-        JobDir.from_path("2025-06-09_100000"),  # Monday, Week 23
+        JobDir.from_path("2025-06-09_100000"),  # Monday, Week 24
     ]
 
     weeks = JobDir.group_by_week(job_dirs)
 
     assert len(weeks) == 2
-    assert "2025-W22" in weeks
     assert "2025-W23" in weeks
-    assert len(weeks["2025-W22"]) == 2
-    assert len(weeks["2025-W23"]) == 2
+    assert "2025-W24" in weeks
+    assert len(weeks["2025-W23"]) == 3
+    assert len(weeks["2025-W24"]) == 1
 
 
 def test_jobdir_properties():
@@ -185,7 +185,7 @@ def test_jobdir_properties():
     assert job_dir.datetime == expected_datetime
 
     # Test week_key property
-    assert job_dir.week_key == "2025-W22"
+    assert job_dir.week_key == "2025-W23"
 
     # Test storage_path property
     assert job_dir.storage_path == "jobs/2025/06/07/193355"

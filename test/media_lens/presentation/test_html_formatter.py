@@ -591,7 +591,7 @@ def test_get_lightweight_weeks_data(test_storage_adapter, monkeypatch):
     # Create multiple JobDir objects with different timestamps
     job_dirs = [
         JobDir.from_path("2025-06-15_120000"),  # Week 2025-W24
-        JobDir.from_path("2025-06-14_120000"),  # Week 2025-W23
+        JobDir.from_path("2025-06-14_120000"),  # Week 2025-W24
         JobDir.from_path("2025-06-08_120000"),  # Week 2025-W23
         JobDir.from_path("2025-06-01_120000"),  # Week 2025-W22
     ]
@@ -623,13 +623,13 @@ def test_get_lightweight_weeks_data(test_storage_adapter, monkeypatch):
 
     # Check specific week counts
     w24_week = next(w for w in weeks if w["week_key"] == "2025-W24")
-    assert len(w24_week["runs"]) == 1  # 1 job in week 24
+    assert len(w24_week["runs"]) == 2  # 2 jobs in week 24 (Jun 14 and Jun 15)
 
     w23_week = next(w for w in weeks if w["week_key"] == "2025-W23")
-    assert len(w23_week["runs"]) == 2  # 2 jobs in week 23
+    assert len(w23_week["runs"]) == 1  # 1 job in week 23 (Jun 8)
 
     w22_week = next(w for w in weeks if w["week_key"] == "2025-W22")
-    assert len(w22_week["runs"]) == 1  # 1 job in week 22
+    assert len(w22_week["runs"]) == 1  # 1 job in week 22 (Jun 1)
 
 
 def test_get_lightweight_weeks_data_empty(test_storage_adapter, monkeypatch):
@@ -659,8 +659,8 @@ def test_incremental_vs_full_processing(test_storage_adapter, temp_dir, monkeypa
     )
 
     # Create JobDir objects from different weeks
-    old_job = JobDir.from_path("2025-05-01_120000")  # Week 2025-W17 (old)
-    recent_job1 = JobDir.from_path("2025-06-14_120000")  # Week 2025-W23 (recent)
+    old_job = JobDir.from_path("2025-05-01_120000")   # Week 2025-W17 (old)
+    recent_job1 = JobDir.from_path("2025-06-14_120000")  # Week 2025-W24 (recent)
     recent_job2 = JobDir.from_path("2025-06-15_120000")  # Week 2025-W24 (recent)
     all_jobs = [old_job, recent_job1, recent_job2]
 
@@ -681,9 +681,8 @@ def test_incremental_vs_full_processing(test_storage_adapter, temp_dir, monkeypa
     assert recent_job2 in job_dirs
     assert old_job not in job_dirs
 
-    # Should identify affected weeks
-    assert len(affected_weeks) == 2
-    assert "2025-W23" in affected_weeks
+    # Should identify 1 affected week (both recent jobs are in W24)
+    assert len(affected_weeks) == 1
     assert "2025-W24" in affected_weeks
     assert "2025-W17" not in affected_weeks
 
@@ -785,11 +784,11 @@ def test_full_cursor_optimization_workflow(test_storage_adapter, temp_dir, monke
 
     # Create a realistic job dataset
     all_jobs = [
-        JobDir.from_path("2025-01-15_120000"),  # Old job - Week 2025-W02
-        JobDir.from_path("2025-01-16_120000"),  # Old job - Week 2025-W02
-        JobDir.from_path("2025-06-14_120000"),  # Recent job - Week 2025-W23
+        JobDir.from_path("2025-01-15_120000"),  # Old job - Week 2025-W03
+        JobDir.from_path("2025-01-16_120000"),  # Old job - Week 2025-W03
+        JobDir.from_path("2025-06-14_120000"),  # Recent job - Week 2025-W24
         JobDir.from_path("2025-06-15_120000"),  # Recent job - Week 2025-W24
-        JobDir.from_path("2025-06-16_120000"),  # Recent job - Week 2025-W24
+        JobDir.from_path("2025-06-16_120000"),  # Recent job - Week 2025-W25
     ]
 
     # Mock JobDir.list_all to return our dataset
@@ -802,9 +801,9 @@ def test_full_cursor_optimization_workflow(test_storage_adapter, temp_dir, monke
     html1 = generate_html_from_path(sites, template_dir, force_full=False)
 
     # Should process all jobs and set cursor
-    assert "2025-W02" in html1
+    assert "2025-W03" in html1
     assert "2025-W24" in html1
-    assert "2025-W23" in html1
+    assert "2025-W25" in html1
     cursor1 = get_format_cursor()
     assert cursor1 is not None
 

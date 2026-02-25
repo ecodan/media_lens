@@ -131,7 +131,14 @@ class TestRunPipeline:
         run_task_async(steps, run_id)
 
         # Verify run was called correctly (with sites=None and job_dir='latest' as default)
-        mock_run.assert_called_once_with(steps=steps, sites=None, run_id=run_id, job_dir="latest")
+        mock_run.assert_called_once_with(
+            steps=steps,
+            sites=None,
+            run_id=run_id,
+            job_dir="latest",
+            force_full_format=False,
+            force_full_deploy=False,
+        )
 
         # Verify active_runs was updated
         assert active_runs[run_id]["status"] == "success"
