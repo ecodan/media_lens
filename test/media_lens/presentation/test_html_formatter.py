@@ -134,7 +134,7 @@ def test_generate_weekly_content(sample_job_directory, temp_dir, test_storage_ad
     storage.write_text(f"weekly-{week_data['week_key']}-interpreted.json", "[]")
 
     # Call generate_weekly_content
-    weekly_content = generate_weekly_content(week_data, sites)
+    weekly_content = generate_weekly_content(week_data, sites, temp_dir)
 
     # Check result structure
     assert weekly_content["week_key"] == week_data["week_key"]
