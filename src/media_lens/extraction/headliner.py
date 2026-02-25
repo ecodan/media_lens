@@ -166,7 +166,7 @@ class LLMHeadlineExtractor(HeadlineExtractor):
             reasoning_response = self._call_llm(
                 system_prompt=SYSTEM_PROMPT,
                 user_prompt=REASONING_PROMPT.format(
-                    task="Indentify up to twenty primary headlines in order of appearance such that they are the most likely headlines that a human viewer would see.",
+                    task="Indentify the five primary headlines in order of appearance such that they are the most likely headlines that a human viewer would see.",
                     data=truncated_content,
                     rules="""
                     * Use judgement to identify the primary headlines.
