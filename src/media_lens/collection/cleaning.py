@@ -27,36 +27,43 @@ class PatternBasedCleaner(SiteSpecificCleaner):
 
     def clean_page(self, page: BeautifulSoup) -> BeautifulSoup:
         """Keep only elements that match or are related to any of the provided patterns.
+        This is a linear-time (O(N)) implementation of the filtering logic.
 
         :param page: HTML content to clean
         :type page: BeautifulSoup
-        :return: The cleaned HTML containing only matching elements and their ancestors
+        :return: The cleaned HTML containing only matching elements and their ancestors/descendants
         :rtype: BeautifulSoup
-        """
-        """
-        SLOW VERSION
         """
         # Start timer
         start_time = time.time()
 
         # Find all elements matching any of the patterns
-        matching_elements = []
+        matching_elements = set()
         for pattern in self.patterns:
-            matching_elements.extend(page.select(pattern))
+            matching_elements.update(page.select(pattern))
 
+        # 1. Identify all nodes that must be kept (matches, ancestors, and descendants)
+        keep_set = set()
+        for element in matching_elements:
+            # Add ancestors
+            curr = element
+            while curr and curr not in keep_set:
+                keep_set.add(curr)
+                curr = curr.parent
+
+            # Add descendants
+            # BS4 descendants is an iterator. Adding to a set is O(1).
+            for desc in element.descendants:
+                keep_set.add(desc)
+
+        # 2. Decompose any element not in the keep_set
         for element in page.find_all():
-            if not (
-                element in matching_elements
-                or any(
-                    element in match.descendants or element in match.parents
-                    for match in matching_elements
-                )
-            ):
+            if element not in keep_set:
                 element.decompose()
 
         # Calculate and log elapsed time
         elapsed_time = time.time() - start_time
-        logger.debug(f"Pattern matching took {elapsed_time:.2f} seconds")
+        logger.debug(f"Pattern matching took {elapsed_time:.2f} seconds (optimized O(N))")
         return page
 
 
@@ -103,6 +110,21 @@ class WebpageCleaner:
         :return: Cleaned HTML content with preserved hierarchy
         :rtype: str
         """
+        import re
+
+        # Pre-strip non-content tags to reduce size before parsing
+        # (This drastically reduces N for the subsequent O(N^2) cleaning)
+        html_content = re.sub(r"<script.*?>.*?</script>", "", html_content, flags=re.S | re.I)
+        html_content = re.sub(r"<style.*?>.*?</style>", "", html_content, flags=re.S | re.I)
+        html_content = re.sub(r"<svg.*?>.*?</svg>", "", html_content, flags=re.S | re.I)
+
+        # Safe Cut: Truncate massive pages after stripping scripts/styles.
+        # Now that we've removed scripts, 10MB is more than enough for pure HTML.
+        # This prevents the truncation from cutting off actual content.
+        max_html_size = 10 * 1024 * 1024
+        if len(html_content) > max_html_size:
+            html_content = html_content[:max_html_size]
+
         soup = BeautifulSoup(html_content, "html.parser")
 
         # nuke HEAD
@@ -132,6 +154,7 @@ class WebpageCleaner:
     @staticmethod
     def filter_text_elements(html_content):
         """Filter HTML to keep only elements that have text display field descendants.
+        This is a linear-time (O(N)) implementation of the filtering logic.
 
         :param html_content: Input HTML content
         :type html_content: str
@@ -141,26 +164,20 @@ class WebpageCleaner:
         soup = BeautifulSoup(html_content, "html.parser")
 
         # Define text display tags
-        text_tags = TEXT_ELEMENTS
+        text_tags = set(TEXT_ELEMENTS)
 
-        # Find all elements that don't have text display descendants
-        elements_to_remove = []
+        # 1. Identify all nodes that must be kept (text tags and their ancestors)
+        keep_set = set()
+        for element in soup.find_all(text_tags):
+            curr = element
+            while curr and curr not in keep_set:
+                keep_set.add(curr)
+                curr = curr.parent
+
+        # 2. Decompose any element not in the keep_set
+        # We must collect them first to avoid modifying the tree while iterating
         for element in soup.find_all():
-            # Skip if element itself is a text display tag
-            if element.name in text_tags:
-                continue
-
-            # Check if element has any text display descendants
-            has_text_descendant = any(
-                descendant.name in text_tags for descendant in element.find_all()
-            )
-
-            if not has_text_descendant:
-                elements_to_remove.append(element)
-
-        # Remove elements that don't have text display descendants
-        for element in elements_to_remove:
-            if element.parent:  # Check if element hasn't already been removed
+            if element not in keep_set:
                 element.decompose()
 
         return str(soup)

@@ -157,7 +157,7 @@ class LLMHeadlineExtractor(HeadlineExtractor):
         """
         logger.debug(f"Extracting news content: {len(content)} bytes")
         try:
-            truncated_content = self._truncate_html(content, max_tokens=25000)
+            truncated_content = self._truncate_html(content, max_tokens=100000)
             logger.debug(
                 f"Processing content with length: {len(truncated_content)} (tokens: {len(truncated_content.split())})"
             )
@@ -166,7 +166,7 @@ class LLMHeadlineExtractor(HeadlineExtractor):
             reasoning_response = self._call_llm(
                 system_prompt=SYSTEM_PROMPT,
                 user_prompt=REASONING_PROMPT.format(
-                    task="Indentify the five primary headlines in order of appearance such that they are the most likely headlines that a human viewer would see.",
+                    task="Indentify up to twenty primary headlines in order of appearance such that they are the most likely headlines that a human viewer would see.",
                     data=truncated_content,
                     rules="""
                     * Use judgement to identify the primary headlines.

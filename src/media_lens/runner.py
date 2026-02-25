@@ -524,7 +524,9 @@ async def run(steps: list[Steps], sites: Optional[list[str]] = None, **kwargs) -
         if Steps.INTERPRET_WEEKLY in steps and not RunState.stop_requested():
             # Interpret weekly content
             logger.info(f"[Run {run_id}] Starting weekly interpretation step")
-            await interpret_weekly(use_rolling_daily=True)
+            await interpret_weekly(
+                use_rolling_daily=True, specific_weeks=kwargs.get("weeks"), sites=sites
+            )
             result["completed_steps"].append(Steps.INTERPRET_WEEKLY.value)
 
         if Steps.SUMMARIZE_DAILY in steps and not RunState.stop_requested():
@@ -597,6 +599,9 @@ def main():
     run_parser.add_argument(
         "--sites", nargs="+", help="List of sites to include"
     )  # Accepts multiple sites
+    run_parser.add_argument(
+        "-w", "--weeks", nargs="+", help="Specific weeks to process (YYYY-WNN format)"
+    )
     run_parser.add_argument(
         "--playwright-mode",
         choices=["local", "cloud"],

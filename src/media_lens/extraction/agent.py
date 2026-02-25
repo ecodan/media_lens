@@ -207,6 +207,10 @@ class LiteLLMAgent(Agent):
 
             response = litellm.completion(**completion_kwargs)
 
+            if not response.choices:
+                logger.error(f"LiteLLM returned empty choices: {response}")
+                raise ValueError("LLM returned no response choices")
+
             response_text = response.choices[0].message.content
             logger.debug(f"LiteLLM raw response: {response_text}")
             logger.debug(
