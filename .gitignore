@@ -39,3 +39,6 @@ uv.lock
 # Pre-commit
 .pre-commit-framework/
 .pre-commit-hooks/
+
+.pytest_cache/
+.ruff_cache/
