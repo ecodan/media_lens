@@ -139,7 +139,15 @@ class WebpageCleaner:
 
         soup = self.site_cleaner.clean_page(soup)
 
-        return str(soup)
+        cleaned_html = str(soup)
+
+        # Enforce highly strict max length on the final cleaned output.
+        # 100KB is plenty to capture all top headline matches. This protects Vertex AI TPM quotas.
+        max_cleaned_size = 100 * 1024
+        if len(cleaned_html) > max_cleaned_size:
+            cleaned_html = cleaned_html[:max_cleaned_size]
+
+        return cleaned_html
 
     @staticmethod
     def filter_text_elements(html_content):
