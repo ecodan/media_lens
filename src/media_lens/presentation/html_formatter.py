@@ -110,7 +110,6 @@ def generate_article_page(
 
         staging_dir = storage.get_staging_directory()
         article_output_dir = f"{staging_dir}/articles/{timestamp_dir}"
-        storage.create_directory(article_output_dir)
 
         article_output_path = f"{article_output_dir}/{article_filename}"
 
