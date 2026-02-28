@@ -8,6 +8,7 @@ import dotenv
 
 from src.media_lens.common import LOGGER_NAME, get_model_metadata
 from src.media_lens.extraction.agent import Agent, create_agent_from_env
+from src.media_lens.collection.scraper import WebpageScraper
 from src.media_lens.extraction.collector import ArticleCollector
 from src.media_lens.extraction.exceptions import ArticleExtractionError
 from src.media_lens.extraction.headliner import LLMHeadlineExtractor
@@ -28,7 +29,7 @@ class ContextExtractor:
         self.working_dir = working_dir
         agent: Agent = agent
         self.headline_extractor: LLMHeadlineExtractor = LLMHeadlineExtractor(agent=agent)
-        self.article_collector: ArticleCollector = ArticleCollector()
+        self.article_collector: ArticleCollector = ArticleCollector(WebpageScraper())
 
     @staticmethod
     def _process_relative_url(url: str, filename: str) -> str:

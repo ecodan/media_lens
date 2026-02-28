@@ -7,6 +7,8 @@ from urllib.parse import urlparse
 import requests
 import trafilatura
 
+from src.media_lens.collection.scraper import WebpageScraper
+
 from src.media_lens.common import LOGGER_NAME
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -17,7 +19,8 @@ class ArticleCollector:
     Simple wrapper around trafilatura to extract article content.
     """
 
-    def __init__(self):
+    def __init__(self, scraper: Optional[WebpageScraper] = None):
+        self.scraper = scraper
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -44,7 +47,16 @@ class ArticleCollector:
         :param url: The URL to fetch
         :return: Optional[str]: The raw HTML content if successful, None otherwise
         """
-        # 1. Try Live URL
+        # 1. Try WebpageScraper if available
+        if self.scraper:
+            try:
+                content = await self.scraper.get_page_content(url, browser_type=WebpageScraper.BrowserType.DESKTOP)
+                if content:
+                    return content
+            except Exception as e:
+                logger.warning(f"WebpageScraper fetch failed for {url}: {e}")
+
+        # 2. Try Live URL
         try:
             # article scraper - usage of requests is more stable in this environment
             # use a more generic desktop UA as it's often more reliable for live sites
@@ -57,7 +69,7 @@ class ArticleCollector:
         except Exception as e:
             logger.warning(f"Live fetch failed for {url}: {e}")
 
-        # 2. Try Wayback Fallback (for historical data)
+        # 3. Try Wayback Fallback (for historical data)
         # We assume if we are running in the context of this Wayback scrape,
         # we want to try the archive if the live one fails.
         try:
