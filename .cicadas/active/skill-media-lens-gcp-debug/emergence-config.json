@@ -1,0 +1,19 @@
+{
+  "skill_name": "media-lens-gcp-debug",
+  "skill_slug": "media-lens-gcp-debug",
+  "description": "Debug and diagnose media-lens production issues on Google Cloud Platform",
+  "domain": "Media Lens GCP Infrastructure",
+  "skill_type": "Diagnostic / Operational Support",
+  "publish_dir": "/Users/dan/dev/code/projects/python/media_lens/.claude/skills",
+  "building_on_ai": false,
+  "triggers": [
+    "debug gcp",
+    "gcp debug",
+    "investigate production",
+    "check gcp status",
+    "media lens isn't running",
+    "why didn't the job run"
+  ],
+  "status": "draft",
+  "created_at": "2026-03-25T00:00:00Z"
+}
