@@ -14,379 +14,248 @@ triggers:
 
 # Media Lens GCP Debug Skill
 
-## Quick Start
+## Context
 
-This skill helps you debug media-lens production issues on Google Cloud Platform. It handles:
-- VM lifecycle (start/stop with cost awareness)
-- Container health monitoring
-- Job execution tracking
-- Log inspection
-- Cloud Scheduler verification
-
-**Key context**: The VM runs on a schedule (6 AM-9 AM UTC daily) and is normally STOPPED to save costs.
+Media Lens runs on a **scheduled GCP VM** (`media-lens-vm`, zone `us-central1-a`):
+- VM starts at ~6 AM UTC via Cloud Scheduler, runs pipeline, stops at ~9 AM UTC
+- **Normal state: VM is STOPPED** — this is expected and not an error
+- Job outputs are written to **GCS bucket** `gs://media-lens-storage/` as the canonical store
+- Published HTML is uploaded via SFTP to the web hosting server
 
 ---
 
-## Getting Started
+## Diagnostic Protocol
 
-### Check Status
+Follow these steps **in order**. Do not skip ahead. Do not start the VM. **Report findings to the user before suggesting any action.**
+
+### Step 1 — Check GCS for the date(s) in question
+
+GCS is the source of truth. This requires no VM access.
+
 ```bash
-# Is the VM running?
-gcloud compute instances describe media-lens-vm --zone=us-central1-a --format="get(status)"
+# List date directories for the current month
+gsutil ls gs://media-lens-storage/jobs/YYYY/MM/
 
-# When was the last job?
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="ls -lah /app/working/out/jobs/2026/03/ | tail -5"
-
-# Check pipeline cursors (which step last ran)
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="cat /app/working/out/format_cursor.txt && echo '---' && cat /app/working/out/deploy_cursor.txt"
+# Check if a specific date exists
+gsutil ls gs://media-lens-storage/jobs/YYYY/MM/DD/
 ```
+
+**Decision**:
+- Date directory is **missing** → Job did not run or failed before writing output. Go to **Step 4 (Logs)**.
+- Date directory **exists** → Go to **Step 2**.
 
 ---
 
-## VM Lifecycle Management
+### Step 2 — Inspect files for the date
 
-### Check VM Status
+Check that all expected artifacts are present and non-empty.
+
 ```bash
-gcloud compute instances describe media-lens-vm --zone=us-central1-a --format="get(status)"
-# Returns: RUNNING or STOPPED
+# List all files for that job run
+gsutil ls -l gs://media-lens-storage/jobs/YYYY/MM/DD/HHmmss/
+
+# Expected files per site (bbc, cnn, foxnews):
+#   www.SITE.com.html                  (raw scraped HTML)
+#   www.SITE.com-clean.html            (cleaned HTML)
+#   www.SITE.com-clean-extracted.json  (extracted headlines)
+#   www.SITE.com-clean-article-0..4.json  (article content)
+#
+# Also expected:
+#   daily_news.txt  (daily summary — written at end of interpret step)
+
+# Spot-check a file has content (size > 0)
+gsutil cat gs://media-lens-storage/jobs/YYYY/MM/DD/HHmmss/daily_news.txt | head -20
 ```
 
-### Start VM (For Diagnostics)
-⚠️ **Cost warning**: Running incurs Compute Engine charges. Ensure you stop it afterward.
+**Decision**:
+- Files are **missing or empty** → Process broke mid-run. Note which files are absent to identify the failing step. Go to **Step 4 (Logs)**.
+- All files **present and non-empty** → Data was processed. Go to **Step 3 (Deploy)**.
+
+---
+
+### Step 3 — Investigate why files weren't published (FTP/SFTP)
+
+If data is in GCS but not live on the site, the deploy step failed. Check Cloud Logging — no VM access needed.
 
 ```bash
+# View recent logs from the media-lens container on GCP Logging
+gcloud logging read \
+  'resource.type="gce_instance" AND jsonPayload.message=~"deploy|upload|sftp|SFTP"' \
+  --project=medialens \
+  --limit=50 \
+  --format="table(timestamp, jsonPayload.message)"
+
+# Broaden to all recent container output
+gcloud logging read \
+  'resource.type="gce_instance"' \
+  --project=medialens \
+  --freshness=2d \
+  --limit=100 \
+  --format="table(timestamp, jsonPayload.message)"
+```
+
+**Decision**:
+- Logs show SFTP/upload errors → credential issue, network issue, or remote permission problem. Report to user.
+- Logs show deploy step never started → format step may have failed. Check for format errors in logs.
+- No logs for the expected date → VM may not have run at all. Check Cloud Scheduler (Step 4b).
+
+---
+
+### Step 4 — Investigate why the job didn't run or broke mid-run
+
+#### 4a — Check Cloud Logging for the date in question
+
+```bash
+# Look for errors on a specific date (adjust date)
+gcloud logging read \
+  'resource.type="gce_instance" AND severity>=ERROR' \
+  --project=medialens \
+  --freshness=2d \
+  --limit=50 \
+  --format="table(timestamp, severity, jsonPayload.message)"
+
+# Check for step progression (harvest → extract → interpret → format → deploy)
+gcloud logging read \
+  'resource.type="gce_instance" AND jsonPayload.message=~"Starting.*step|Completed|Failed|ERROR"' \
+  --project=medialens \
+  --freshness=2d \
+  --limit=100 \
+  --format="table(timestamp, jsonPayload.message)"
+```
+
+#### 4b — Check Cloud Scheduler
+
+```bash
+# List all scheduler jobs and their state
+gcloud scheduler jobs list --location=us-central1 --project=medialens
+
+# Check last execution time and status for VM start job
+gcloud scheduler jobs describe start-media-lens-vm \
+  --location=us-central1 \
+  --project=medialens \
+  --format="table(name, schedule, state, lastAttemptTime, status)"
+```
+
+**Decision**:
+- Scheduler job is **DISABLED or PAUSED** → That's why the VM never started. Report to user.
+- Scheduler shows **success** but no logs → VM started but pipeline didn't run. May need VM access to investigate (ask user first).
+- Scheduler shows **failure** → Report the scheduler error to user.
+
+---
+
+### Step 5 — Report Findings
+
+Before taking any action, summarize what was found:
+
+```
+DIAGNOSIS REPORT
+================
+Date(s) checked: YYYY-MM-DD
+
+GCS status:
+  - Job directory: [present / missing]
+  - Files: [list present/missing files]
+  - daily_news.txt: [present and has data / missing / empty]
+
+Deploy status:
+  - [Files found but not deployed / Not reached / N/A]
+  - Deploy logs: [any errors found]
+
+Root cause:
+  - [e.g. "Job directory missing — job did not run on this date"]
+  - [e.g. "All files present but deploy step logged SFTP connection refused"]
+  - [e.g. "Cloud Scheduler job start-media-lens-vm is PAUSED"]
+
+Suggested next steps (awaiting your approval):
+  1. [e.g. "Enable the Cloud Scheduler job"]
+  2. [e.g. "Start VM to inspect container logs and check cron configuration"]
+  3. [e.g. "Manually trigger a pipeline run to catch up on missed dates"]
+```
+
+**Do not take any action until the user reviews this report and approves.**
+
+---
+
+## VM Access (Only If Needed and Approved)
+
+⚠️ **The VM is normally STOPPED. Do not start it without explicit user approval.**
+
+If investigation requires VM access (e.g., logs not in Cloud Logging, need to inspect cron config):
+
+```bash
+# 1. Check current VM state first
+gcloud compute instances describe media-lens-vm \
+  --zone=us-central1-a --format="get(status)"
+
+# 2. If STOPPED — present to user:
+#    "The VM is currently stopped. Starting it will incur Compute Engine charges
+#     until we stop it again. Shall I start it for diagnostics?"
+
+# 3. Only after approval:
 gcloud compute instances start media-lens-vm --zone=us-central1-a
-# Wait 30-60 seconds for VM to boot
-```
 
-### Verify VM is Running
-```bash
-gcloud compute instances describe media-lens-vm --zone=us-central1-a --format="get(status)"
-# Should return: RUNNING
-```
-
-### Stop VM (After Diagnostics)
-🛑 **Always do this** to prevent unnecessary charges.
-
-```bash
+# 4. After diagnostics — confirm with user then stop:
 gcloud compute instances stop media-lens-vm --zone=us-central1-a
 ```
 
----
+### Useful VM Commands (once running and approved)
 
-## Container Diagnostics
-
-### Container Status
 ```bash
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="docker ps -a | grep media-lens"
-```
+# Container logs
+gcloud compute ssh media-lens-vm --zone=us-central1-a \
+  --command="docker logs media-lens --tail=100"
 
-### Recent Container Logs
-```bash
-# Last 50 lines
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="docker logs media-lens --tail=50"
+# Errors only
+gcloud compute ssh media-lens-vm --zone=us-central1-a \
+  --command="docker logs media-lens 2>&1 | grep -E 'ERROR|FAILED|Exception' | tail -30"
 
-# Last 2 hours with timestamps
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="docker logs -t media-lens --since=2h"
+# Cron configuration
+gcloud compute ssh media-lens-vm --zone=us-central1-a \
+  --command="sudo crontab -l"
 
-# Search for errors
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="docker logs media-lens 2>&1 | grep -i error | tail -20"
+# Startup script logs
+gcloud compute ssh media-lens-vm --zone=us-central1-a \
+  --command="sudo journalctl -u google-startup-scripts.service -n 50"
 
-# Search for specific step
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="docker logs media-lens 2>&1 | grep 'Starting.*step' | tail -10"
-```
-
-### Restart Container
-```bash
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="docker compose --profile cloud restart"
+# Disk space
+gcloud compute ssh media-lens-vm --zone=us-central1-a \
+  --command="df -h"
 ```
 
 ---
 
-## Job Execution Tracking
+## File Structure Reference
 
-### List Recent Jobs
-```bash
-# Most recent jobs by date
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="ls -lah /app/working/out/jobs/2026/03/ | tail -20"
+### GCS Job Artifacts (`gs://media-lens-storage/jobs/YYYY/MM/DD/HHmmss/`)
+| File | Written by step | Indicates |
+|------|----------------|-----------|
+| `www.SITE.com.html` | harvest_scrape | Scrape succeeded |
+| `www.SITE.com-clean.html` | harvest_clean | Clean succeeded |
+| `www.SITE.com-clean-extracted.json` | extract | Extraction succeeded |
+| `www.SITE.com-clean-article-N.json` | extract | Article parsing succeeded |
+| `daily_news.txt` | interpret | Interpretation succeeded |
 
-# All jobs with timestamps (YYYY/MM/DD/HHmmss format)
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="find /app/working/out/jobs -type d -name '[0-9]*' | sort | tail -20"
+Missing files indicate which step failed.
+
+### GCS Staging (`gs://media-lens-storage/staging/`)
 ```
-
-### Check Job Artifacts
-```bash
-# List job contents (look for daily_news.txt, JSON files)
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="ls -la /app/working/out/jobs/2026/03/24/160000/"
-
-# Get job summary
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="cat /app/working/out/jobs/2026/03/24/160000/daily_news.txt | head -20"
-```
-
-### Check Format/Deploy Cursor
-```bash
-# Format cursor (when format step completed)
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="cat /app/working/out/format_cursor.txt"
-
-# Deploy cursor (when deploy step completed)
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="cat /app/working/out/deploy_cursor.txt"
-```
-
-**Interpretation**:
-- If `format_cursor` is recent but `deploy_cursor` is very old → format runs but deploy doesn't
-- If both are old → jobs aren't running at all
-- If format_cursor is newer than expected → recent jobs ran
-
----
-
-## Cloud Scheduler
-
-### List All Scheduler Jobs
-```bash
-gcloud scheduler jobs list --location=us-central1
-```
-
-### Check VM Start Job
-```bash
-# When does it run and what's its status?
-gcloud scheduler jobs describe start-media-lens-vm --location=us-central1 --format=json | jq '{schedule: .schedule, nextRunTime: .lastExecutionTime, state: .state}'
-```
-
-### Check VM Stop Job
-```bash
-gcloud scheduler jobs describe stop-media-lens-vm --location=us-central1 --format=json | jq '{schedule: .schedule, lastExecution: .lastExecutionTime, state: .state}'
-```
-
-### Manually Trigger Scheduler Job
-```bash
-# Start VM immediately (for testing)
-gcloud scheduler jobs run start-media-lens-vm --location=us-central1
-
-# Stop VM immediately (for testing)
-gcloud scheduler jobs run stop-media-lens-vm --location=us-central1
+staging/
+├── medialens.html          ← index page
+├── medialens-YYYY-WNN.html ← weekly report pages
+└── articles/...            ← article reader views
 ```
 
 ---
 
-## Web API Testing
+## GCP Project Reference
 
-### Get External IP
-```bash
-EXTERNAL_IP=$(gcloud compute instances describe media-lens-vm --zone=us-central1-a --format="get(networkInterfaces[0].accessConfigs[0].natIP)")
-echo "External IP: $EXTERNAL_IP"
-```
-
-### Health Check
-```bash
-curl http://$EXTERNAL_IP:8080/health
-# Should return: {"status": "ok"} or similar
-```
-
-### Check Status
-```bash
-curl http://$EXTERNAL_IP:8080/status
-# Returns current run status if any
-```
-
-### Manually Trigger Pipeline
-```bash
-# Run full pipeline
-curl -X POST http://$EXTERNAL_IP:8080/run \
-  -H "Content-Type: application/json" \
-  -d '{
-    "steps": ["harvest", "extract", "interpret_weekly", "format", "deploy"]
-  }'
-
-# Run only harvest (for quick testing)
-curl -X POST http://$EXTERNAL_IP:8080/run \
-  -H "Content-Type: application/json" \
-  -d '{"steps": ["harvest"]}'
-```
-
----
-
-## VM SSH Access
-
-### SSH Into VM
-```bash
-gcloud compute ssh media-lens-vm --zone=us-central1-a
-```
-
-### Run Single Command
-```bash
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="whoami"
-```
-
-### Access Container Shell
-```bash
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="docker exec -it media-lens /bin/bash"
-```
-
-### Check Disk Space
-```bash
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="df -h"
-```
-
-### Check Persistent Disk Mount
-```bash
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="mount | grep /app/working"
-```
-
----
-
-## Cloud Storage (GCS)
-
-### List Bucket Contents
-```bash
-gsutil ls gs://media-lens-storage/
-
-# List jobs in bucket
-gsutil ls gs://media-lens-storage/jobs/2026/03/
-
-# List recent job dates
-gsutil ls -r gs://media-lens-storage/jobs/ | grep "jobs/2026" | tail -20
-```
-
-### Check Storage Usage
-```bash
-gsutil du -s gs://media-lens-storage/
-```
-
-### Download Job Output
-```bash
-# Download a specific job's daily_news.txt
-gsutil cp gs://media-lens-storage/jobs/2026/03/23/160000/daily_news.txt ./
-
-# Compare local vs cloud
-diff /app/working/out/jobs/2026/03/23/160000/daily_news.txt ./daily_news.txt
-```
-
----
-
-## Troubleshooting Flows
-
-### Issue: "No results for March 24-25"
-
-**Step 1**: Check what dates have jobs
-```bash
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="ls -1 /app/working/out/jobs/2026/03/"
-# If only "23" exists, no jobs ran on 24/25
-```
-
-**Step 2**: Check if VM is still running (might be stuck)
-```bash
-gcloud compute instances describe media-lens-vm --zone=us-central1-a --format="get(status)"
-```
-
-**Step 3**: If running, check logs for errors
-```bash
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="docker logs media-lens --tail=100 | grep -E 'ERROR|FAILED|Exception'"
-```
-
-**Step 4**: Check cursors to see where pipeline stopped
-```bash
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="cat /app/working/out/format_cursor.txt"
-# If very old, format step hasn't run
-```
-
-**Step 5**: Check Cloud Scheduler
-```bash
-gcloud scheduler jobs list --location=us-central1 | grep media-lens
-# Verify jobs exist and have "ENABLED" state
-```
-
-### Issue: "Container keeps crashing"
-
-**Check logs**:
-```bash
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="docker logs media-lens --tail=200"
-```
-
-**Common causes**:
-- Out of memory: Check `docker stats media-lens`
-- Dependency missing: Look for "ModuleNotFoundError" or "ImportError"
-- Disk full: Run `df -h`
-- API quota: Look for 429 or quota errors in logs
-
-**Restart container**:
-```bash
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="docker compose --profile cloud restart"
-```
-
-### Issue: "Deployment not working (format_cursor old but deploy_cursor older)"
-
-**Check deploy logs**:
-```bash
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="docker logs media-lens 2>&1 | grep -i 'deploy\|upload\|sftp' | tail -20"
-```
-
-**Common causes**:
-- SFTP credentials invalid
-- Remote directory permissions issue
-- Network connectivity to SFTP server
-- Rate limiting on upload
-
-**Check SFTP connectivity**:
-```bash
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="cat ~/.ssh/siteground && echo 'Key exists'"
-```
-
-### Issue: "VM won't start"
-
-**Check GCP quotas**:
-```bash
-gcloud compute project-info describe --project=medialens | grep -A 5 "QUOTA"
-```
-
-**Check startup script**:
-```bash
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="sudo journalctl -u google-startup-scripts.service -n 50"
-```
-
-**Manual startup**:
-```bash
-gcloud compute ssh media-lens-vm --zone=us-central1-a --command="cd /app && sudo bash startup-script.sh"
-```
-
----
-
-## Common Commands Reference
-
-| Task | Command |
-|------|---------|
-| VM status | `gcloud compute instances describe media-lens-vm --zone=us-central1-a --format="get(status)"` |
-| Start VM | `gcloud compute instances start media-lens-vm --zone=us-central1-a` |
-| Stop VM | `gcloud compute instances stop media-lens-vm --zone=us-central1-a` |
-| Container logs | `gcloud compute ssh media-lens-vm --zone=us-central1-a --command="docker logs media-lens --tail=50"` |
-| Last job date | `gcloud compute ssh media-lens-vm --zone=us-central1-a --command="ls -1 /app/working/out/jobs/2026/03/ \| tail -1"` |
-| Format cursor | `gcloud compute ssh media-lens-vm --zone=us-central1-a --command="cat /app/working/out/format_cursor.txt"` |
-| Scheduler jobs | `gcloud scheduler jobs list --location=us-central1` |
-| SSH to VM | `gcloud compute ssh media-lens-vm --zone=us-central1-a` |
-| Health check | `curl http://$(gcloud compute instances describe media-lens-vm --zone=us-central1-a --format="get(networkInterfaces[0].accessConfigs[0].natIP)"):8080/health` |
-
----
-
-## Cost Awareness
-
-**Running costs**: The e2-medium VM with persistent disk costs ~$0.30/day = ~$9/month continuous.
-
-**Scheduled operation** (current): Only 2-3 hours daily = ~$0.25/month (saves ~$8.75/month vs continuous).
-
-**When debugging**: Starting the VM manually incurs costs until you stop it. Always stop when done.
-
----
-
-## Safety Guardrails
-
-✅ **Always ask before starting VM** (cost implications)
-✅ **Always stop VM after diagnostics** (prevent bill surprises)
-✅ **Never auto-start/stop without explicit request**
-✅ **Warn before running expensive operations**
-✅ **Verify changes before committing**
-
----
-
-**Last Updated**: 2026-03-25
-**Skill Version**: 1.0
-**GCP Project**: medialens
-**VM Zone**: us-central1-a
+| Resource | Value |
+|----------|-------|
+| Project ID | `medialens` |
+| VM | `media-lens-vm` |
+| Zone | `us-central1-a` |
+| Container | `media-lens` |
+| GCS Bucket | `gs://media-lens-storage/` |
+| Scheduler Region | `us-central1` |
+| Start schedule | `0 6 * * *` (6 AM UTC) |
+| Stop schedule | `0 9 * * *` (9 AM UTC) |
