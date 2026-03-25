@@ -209,11 +209,15 @@ gcloud compute ssh media-lens-vm --zone=us-central1-a \
 gcloud compute ssh media-lens-vm --zone=us-central1-a \
   --command="docker logs media-lens 2>&1 | grep -E 'ERROR|FAILED|Exception' | tail -30"
 
-# Cron configuration
+# Cron configuration (set up by startup-script.sh, not baked into image)
 gcloud compute ssh media-lens-vm --zone=us-central1-a \
   --command="sudo crontab -l"
 
-# Startup script logs
+# Startup script log (startup-script.sh writes here on every boot)
+gcloud compute ssh media-lens-vm --zone=us-central1-a \
+  --command="sudo tail -100 /var/log/startup-script.log"
+
+# Startup script systemd journal (alternative)
 gcloud compute ssh media-lens-vm --zone=us-central1-a \
   --command="sudo journalctl -u google-startup-scripts.service -n 50"
 
@@ -244,6 +248,24 @@ staging/
 ├── medialens-YYYY-WNN.html ← weekly report pages
 └── articles/...            ← article reader views
 ```
+
+---
+
+## Additional Reference Documentation
+
+Before or during an investigation, consult these local project files for deeper context:
+
+| File | Contents |
+|------|----------|
+| `README.md` | Architecture overview, data flow, pipeline stages, analysis approach |
+| `readme-deployment.md` | Step-by-step GCP setup, VM/disk/scheduler config, troubleshooting section |
+| `startup-script.sh` | Full startup automation — what runs on VM boot, Docker install, repo clone, cron setup. Logs to `/var/log/startup-script.log` on the VM |
+
+**Key things to know from these files**:
+- `startup-script.sh` logs everything to `/var/log/startup-script.log` on the VM — check this when diagnosing VM startup failures
+- The startup script clears `/app` and re-clones the repo on every VM boot
+- Cron job (`0 16 * * * /usr/local/bin/run-container-job.sh`) is set up by the startup script, not baked into the image
+- The job script calls `http://0.0.0.0:8080/run` with the full pipeline steps
 
 ---
 
