@@ -227,7 +227,7 @@ async def format_output(
 
     # Generate HTML files (index and weekly pages) with cursor support
     generate_html_from_path(
-        sites, Path(template_dir_path), force_full=force_full, job_dir=job_dir
+        sites, Path(template_dir_path), force_full=force_full
     )
 
     logger.info("HTML files generated successfully")
@@ -570,14 +570,16 @@ async def run(steps: list[Steps], sites: Optional[list[str]] = None, **kwargs) -
             # Format output
             logger.info(f"[Run {run_id}] Starting format step")
             force_full_format = kwargs.get("force_full_format", False)
-            await format_output(force_full=force_full_format, sites=sites, job_dir=job_dir)
+            job_dir_for_format = job_dir if 'job_dir' in locals() else None
+            await format_output(force_full=force_full_format, sites=sites, job_dir=job_dir_for_format)
             result["completed_steps"].append(Steps.FORMAT.value)
 
         if Steps.DEPLOY in steps and not RunState.stop_requested():
             # Deploy output
             logger.info(f"[Run {run_id}] Starting deployment step")
             force_full_deploy = kwargs.get("force_full_deploy", False)
-            await deploy_output(force_full=force_full_deploy, job_dir=job_dir, sites=sites)
+            job_dir_for_deploy = job_dir if 'job_dir' in locals() else None
+            await deploy_output(force_full=force_full_deploy, job_dir=job_dir_for_deploy, sites=sites)
             result["completed_steps"].append(Steps.DEPLOY.value)
 
         if RunState.stop_requested():
