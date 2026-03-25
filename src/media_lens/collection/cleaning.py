@@ -41,15 +41,33 @@ class PatternBasedCleaner(SiteSpecificCleaner):
         for pattern in self.patterns:
             matching_elements.extend(page.select(pattern))
 
-        for element in page.find_all():
-            if not (
-                element in matching_elements
-                or any(
-                    element in match.descendants or element in match.parents
-                    for match in matching_elements
-                )
-            ):
+        # Build set of elements to keep (self and ancestors)
+        keep_set = set()
+        subtree_roots = set()
+        for element in matching_elements:
+            subtree_roots.add(element)
+            curr = element
+            while curr and curr not in keep_set:
+                keep_set.add(curr)
+                curr = curr.parent
+
+        # Recursive pass to decompose everything not in the keep list
+        def process(element, keeping_subtree=False):
+            is_match = element in subtree_roots
+            should_keep = keeping_subtree or is_match or (element in keep_set)
+
+            if not should_keep:
                 element.decompose()
+                return
+
+            # If we are in a matched subtree, all children are kept
+            # Otherwise, only keep if they lead to another match
+            if hasattr(element, "children"):
+                for child in list(element.children):
+                    if hasattr(child, "decompose"):
+                        process(child, keeping_subtree or is_match)
+
+        process(page)
 
         # Calculate and log elapsed time
         elapsed_time = time.time() - start_time
@@ -141,9 +159,9 @@ class WebpageCleaner:
 
         cleaned_html = str(soup)
 
-        # Enforce highly strict max length on the final cleaned output.
-        # 100KB is plenty to capture all top headline matches. This protects Vertex AI TPM quotas.
-        max_cleaned_size = 100 * 1024
+        # Enforce highly strict max length on the final cleaned output. 
+        # 500KB is plenty to capture all top headline matches. This protects Vertex AI TPM quotas while preventing truncation.
+        max_cleaned_size = 500 * 1024
         if len(cleaned_html) > max_cleaned_size:
             cleaned_html = cleaned_html[:max_cleaned_size]
 

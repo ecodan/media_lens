@@ -204,13 +204,16 @@ async def extract(job_dir):
     await extractor.run(delay_between_sites_secs=10)
 
 
-async def format_output(force_full: bool = False, sites: Optional[list[str]] = None) -> None:
+async def format_output(
+    force_full: bool = False, sites: Optional[list[str]] = None, job_dir: Optional[str] = None
+) -> None:
     """
     Generate HTML output files with incremental processing support.
 
     Args:
         force_full: If True, ignore cursor and regenerate everything
         sites: List of sites to process (defaults to SITES from common.py)
+        job_dir: Optional job directory to process only (overrides incremental mode)
 
     Returns:
         None
@@ -223,29 +226,56 @@ async def format_output(force_full: bool = False, sites: Optional[list[str]] = N
     template_dir_path: str = str(get_project_root() / "config/templates")
 
     # Generate HTML files (index and weekly pages) with cursor support
-    generate_html_from_path(sites, Path(template_dir_path), force_full=force_full)
+    generate_html_from_path(
+        sites, Path(template_dir_path), force_full=force_full, job_dir=job_dir
+    )
 
     logger.info("HTML files generated successfully")
 
 
-async def deploy_output(force_full: bool = False) -> None:
+async def deploy_output(
+    force_full: bool = False, job_dir: Optional[str] = None, sites: Optional[list[str]] = None
+) -> None:
     """
     Deploy generated HTML files to the remote server with incremental processing support.
 
     Args:
         force_full: If True, ignore cursor and deploy all files
+        job_dir: Optional job directory to filter deployment for
+        sites: Optional list of sites to filter deployment for
 
     Returns:
         None
     """
-    logger.info(f"Deploying files (force_full={force_full})")
+    logger.info(f"Deploying files (force_full={force_full}, job_dir={job_dir}, sites={sites})")
 
     # Get cursor and determine what files need deployment
-    cursor = None if force_full else get_deploy_cursor()
+    cursor = None if force_full or job_dir else get_deploy_cursor()
     files_to_deploy = get_files_to_deploy(cursor)
 
+    # If job_dir or sites provided, filter the files
+    if job_dir or sites:
+        filtered_files = []
+        for file_path in files_to_deploy:
+            # Check if file belongs to job_dir if provided
+            if job_dir and job_dir not in file_path:
+                # Still might be a weekly report or index page that needs to be uploaded
+                # But if we are in "job specific" mode, maybe we only want the articles?
+                # Actually, medialens.html and medialens-YYYY-WXX.html are global.
+                # If we just fixed a job, we probably WANT to upload the updated global files too.
+                if "medialens" not in file_path:
+                    continue
+
+            # Check if file belongs to sites if provided
+            if sites and not any(site in file_path for site in sites):
+                if "medialens" not in file_path:
+                    continue
+
+            filtered_files.append(file_path)
+        files_to_deploy = filtered_files
+
     if not files_to_deploy and cursor is not None:
-        logger.info("No files need deployment since last deploy - skipping")
+        logger.info("No files need deployment - skipping")
         return
 
     # Track deployment success and latest file timestamp
@@ -540,14 +570,14 @@ async def run(steps: list[Steps], sites: Optional[list[str]] = None, **kwargs) -
             # Format output
             logger.info(f"[Run {run_id}] Starting format step")
             force_full_format = kwargs.get("force_full_format", False)
-            await format_output(force_full=force_full_format, sites=sites)
+            await format_output(force_full=force_full_format, sites=sites, job_dir=job_dir)
             result["completed_steps"].append(Steps.FORMAT.value)
 
         if Steps.DEPLOY in steps and not RunState.stop_requested():
             # Deploy output
             logger.info(f"[Run {run_id}] Starting deployment step")
             force_full_deploy = kwargs.get("force_full_deploy", False)
-            await deploy_output(force_full=force_full_deploy)
+            await deploy_output(force_full=force_full_deploy, job_dir=job_dir, sites=sites)
             result["completed_steps"].append(Steps.DEPLOY.value)
 
         if RunState.stop_requested():
