@@ -7,6 +7,13 @@
       "summary": "Bootstrap: synthesized full canon from existing codebase \u2014 product-overview, tech-overview, ux-overview, and 5 module snapshots (collection, extraction, presentation, storage, runner) plus agent summary",
       "decisions": "",
       "modules": []
+    },
+    {
+      "timestamp": "2026-03-26T00:04:57.766423+00:00",
+      "branch": "skill/media-lens-gcp-debug",
+      "summary": "Add media-lens-gcp-debug skill: GCP diagnostic protocol checking GCS first, Cloud Logging for logs, structured report before any action, never starts VM without user approval",
+      "decisions": "",
+      "modules": []
     }
   ]
 }

@@ -1,0 +1,24 @@
+{
+  "name": "skill-media-lens-gcp-debug",
+  "type": "initiative",
+  "registry_entry": {
+    "intent": "GCP production diagnostics with lifecycle-aware VM management",
+    "owner": "unknown",
+    "signals": [],
+    "created_at": "2026-03-25T22:27:09.281919+00:00"
+  },
+  "timestamp": "20260326-000453",
+  "associated_branches": {
+    "skill/media-lens-gcp-debug": {
+      "intent": "Implement GCP diagnostic commands and validation",
+      "modules": [
+        "lifecycle",
+        "diagnostics",
+        "gcp"
+      ],
+      "owner": "unknown",
+      "created_at": "2026-03-25T22:27:18.293352+00:00",
+      "initiative": "skill-media-lens-gcp-debug"
+    }
+  }
+}
