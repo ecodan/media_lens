@@ -42,3 +42,4 @@ uv.lock
 
 .pytest_cache/
 .ruff_cache/
+.cicadas-skill/

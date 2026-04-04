@@ -258,7 +258,7 @@ async def deploy_output(
         filtered_files = []
         for file_path in files_to_deploy:
             # Check if file belongs to job_dir if provided
-            if job_dir and job_dir not in file_path:
+            if job_dir and str(job_dir) not in file_path:
                 # Still might be a weekly report or index page that needs to be uploaded
                 # But if we are in "job specific" mode, maybe we only want the articles?
                 # Actually, medialens.html and medialens-YYYY-WXX.html are global.
