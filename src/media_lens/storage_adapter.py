@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Any, List, Optional, Union
 
-from google.auth import default
+from google.auth import compute_engine, default
 
 # Import cloud storage conditionally
 if os.getenv("USE_CLOUD_STORAGE", "false").lower() == "true":
@@ -89,31 +89,11 @@ class StorageAdapter:
                     # If workload identity is enabled and no explicit credential file
                     elif use_workload_identity:
                         logger.info("Using workload identity (VM's service account)")
-                        logger.info(
-                            f"Creating storage client with default credentials and project ID: {project_id}"
-                        )
-
-                        # Add explicit environment variable for Google Application Default Credentials discovery
-                        if "GOOGLE_APPLICATION_CREDENTIALS" not in os.environ:
-                            logger.info(
-                                "GOOGLE_APPLICATION_CREDENTIALS not set, checking VM credential paths"
-                            )
-                            # Check common VM credential paths
-                            for cred_path in [
-                                "/var/run/secrets/cloud.google.com/service-account.json",
-                                "/var/run/secrets/cloud.google.com/key.json",
-                                "/var/google-cloud/auth/application_default_credentials.json",
-                                "/etc/google/auth/application_default_credentials.json",
-                            ]:
-                                if os.path.exists(cred_path):
-                                    logger.info(
-                                        f"Found credentials at {cred_path}, setting GOOGLE_APPLICATION_CREDENTIALS"
-                                    )
-                                    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
-                                    break
-
-                        credentials, _ = default()
+                        # Use compute_engine.Credentials() directly to bypass GOOGLE_APPLICATION_CREDENTIALS
+                        # env var, which docker-compose may set to a non-existent path even on stateless VMs.
+                        credentials = compute_engine.Credentials()
                         self.client = storage.Client(credentials=credentials, project=project_id)
+                        logger.info(f"GCS client created with workload identity for project: {project_id}")
                     else:
                         # If no explicit credentials and not using workload identity, try default client
                         logger.info("No explicit credentials found, trying default client")

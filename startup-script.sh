@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-STARTUP_VERSION="1.7.0"
+STARTUP_VERSION="1.8.0"
 
 # Log all commands for debugging
 exec > >(tee -a /var/log/startup-script.log) 2>&1
@@ -129,12 +129,12 @@ export PLAYWRIGHT_MODE=${PLAYWRIGHT_MODE:-cloud}
 # FTP secrets and other credentials are now loaded by the Python application at startup
 # Fetch SFTP private key from Secret Manager and write to a temp file
 echo "Fetching SFTP private key from Secret Manager..."
-if gcloud secrets versions access latest --secret=ftp-key-content --project="${GOOGLE_CLOUD_PROJECT:-medialens}" > /tmp/siteground 2>/dev/null; then
-    chmod 600 /tmp/siteground
-    export FTP_SSH_KEY_FILE="/tmp/siteground"
+if gcloud secrets versions access latest --secret=ftp-key-content --project="${GOOGLE_CLOUD_PROJECT:-medialens}" > /app/keys/siteground 2>/dev/null; then
+    chmod 600 /app/keys/siteground
+    export FTP_SSH_KEY_FILE="/app/keys/siteground"
     echo "SFTP key loaded from Secret Manager"
 else
-    echo "WARNING: Could not fetch SFTP key from Secret Manager, falling back to /app/keys/siteground"
+    echo "WARNING: Could not fetch SFTP key from Secret Manager"
     export FTP_SSH_KEY_FILE="/app/keys/siteground"
 fi
 
