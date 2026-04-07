@@ -26,7 +26,7 @@ services:
 #      - FTP_IP_FALLBACK=${FTP_IP_FALLBACK} # moved to google cloud secret manager
 #      - FTP_REMOTE_PATH=${FTP_REMOTE_PATH} # moved to google cloud secret manager
       # Path to service account credentials file, use VM environment variable with fallback
-      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-/app/keys/medialens-service-account.json}
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS-}
       # AI Provider Configuration
       - AI_PROVIDER=${AI_PROVIDER:-vertex}
       - VERTEX_AI_PROJECT_ID=${VERTEX_AI_PROJECT_ID:-medialens}
