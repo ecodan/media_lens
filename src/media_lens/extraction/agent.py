@@ -212,6 +212,9 @@ class LiteLLMAgent(Agent):
                 raise ValueError("LLM returned no response choices")
 
             response_text = response.choices[0].message.content
+            if response_text is None:
+                logger.error("LLM returned None content")
+                raise ValueError("LLM returned None content")
             logger.debug(f"LiteLLM raw response: {response_text}")
             logger.debug(
                 f".. response: {len(response_text)} bytes / {len(response_text.split())} words"
