@@ -306,6 +306,17 @@ def create_agent_from_env() -> Agent:
                 "VERTEX_AI_PROJECT_ID environment variable is required for Vertex AI provider"
             )
 
+        # LiteLLM reads GOOGLE_APPLICATION_CREDENTIALS when calling Vertex AI.
+        # On stateless VMs using workload identity, docker-compose may default this to a
+        # non-existent file path. Clear it so LiteLLM uses the GCE metadata server instead.
+        if os.getenv("USE_WORKLOAD_IDENTITY", "false").lower() == "true":
+            creds_path = os.environ.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
+            if creds_path:
+                logger.info(
+                    "Cleared GOOGLE_APPLICATION_CREDENTIALS for workload identity "
+                    f"(was: {creds_path})"
+                )
+
         location = os.getenv("VERTEX_AI_LOCATION", VERTEX_AI_LOCATION)
         model = os.getenv("VERTEX_AI_MODEL", VERTEX_AI_MODEL)
         return create_agent(
