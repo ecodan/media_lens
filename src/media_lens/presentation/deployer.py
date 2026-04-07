@@ -192,6 +192,23 @@ def upload_file(local_file: Path, target_filename: Optional[str] = None):
         or os.getenv("FTP_KEY_PATH")
         or loaded_secrets.get("FTP_SSH_KEY_FILE")
     )
+
+    # If the key file path is set but the file doesn't exist, fetch key content from Secret Manager
+    if key_file_path and not os.path.isfile(key_file_path):
+        logger.warning(f"Key file not found at {key_file_path}, fetching from Secret Manager...")
+        from src.media_lens.secret_manager import SecretManagerClient
+        sm_client = SecretManagerClient()
+        key_content = sm_client.get_secret("ftp-key-content")
+        if key_content:
+            tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".key", delete=False)
+            tmp.write(key_content)
+            tmp.close()
+            os.chmod(tmp.name, 0o600)
+            key_file_path = tmp.name
+            logger.info(f"SFTP key fetched from Secret Manager, written to {key_file_path}")
+        else:
+            logger.error("Could not fetch SFTP key from Secret Manager")
+
     port_str = os.getenv("FTP_PORT") or loaded_secrets.get("FTP_PORT")
     port: int = int(port_str) if port_str else 22
 
