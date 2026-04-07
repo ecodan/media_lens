@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-STARTUP_VERSION="1.8.0"
+STARTUP_VERSION="1.9.0"
 
 # Log all commands for debugging
 exec > >(tee -a /var/log/startup-script.log) 2>&1
@@ -106,7 +106,7 @@ if [ -n "$SERVICE_ACCOUNT_FILE" ]; then
 else 
     echo "No service account JSON files found in /app/keys. Falling back to workload identity."
     export USE_WORKLOAD_IDENTITY=true
-    export GOOGLE_APPLICATION_CREDENTIALS=""
+    unset GOOGLE_APPLICATION_CREDENTIALS
 fi
 
 # Export variables for docker-compose

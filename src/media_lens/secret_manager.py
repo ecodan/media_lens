@@ -8,6 +8,12 @@ import logging
 import os
 from typing import Dict, Optional
 
+# If GOOGLE_APPLICATION_CREDENTIALS is set to an empty string (e.g. by a startup script that
+# intends to use workload identity), remove it entirely so Google SDK clients fall through
+# to Application Default Credentials via the GCE metadata server.
+if os.getenv("GOOGLE_APPLICATION_CREDENTIALS") == "":
+    del os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
+
 try:
     from google.api_core import exceptions as gcp_exceptions
     from google.cloud import secretmanager
