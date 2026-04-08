@@ -16,10 +16,10 @@ triggers:
 
 ## Context
 
-Media Lens runs on a **scheduled GCP VM** (`media-lens-vm`, zone `us-central1-a`):
-- VM starts at ~6 AM UTC via Cloud Scheduler, runs pipeline, stops at ~9 AM UTC
-- **Normal state: VM is STOPPED** — this is expected and not an error
-- Job outputs are written to **GCS bucket** `gs://media-lens-storage/` as the canonical store
+Media Lens runs on a **scheduled GCP Managed Instance Group (MIG)** (`media-lens-mig`, region `us-west1`):
+- MIG scales to 1 at 15:00 UTC via Cloud Scheduler, scales back to 0 (terminates instance) at 18:00 UTC
+- **Normal state: MIG targetSize=0** — no running instances is expected and not an error
+- Instances are ephemeral (no persistent disk) — all storage is in **GCS bucket** `gs://media-lens-storage/`
 - Published HTML is uploaded via SFTP to the web hosting server
 
 ---
@@ -129,17 +129,18 @@ gcloud logging read \
 # List all scheduler jobs and their state
 gcloud scheduler jobs list --location=us-central1 --project=medialens
 
-# Check last execution time and status for VM start job
+# Check last execution time and status for start job
 gcloud scheduler jobs describe start-media-lens-vm \
   --location=us-central1 \
   --project=medialens \
-  --format="table(name, schedule, state, lastAttemptTime, status)"
+  --format="yaml(schedule, state, lastAttemptTime, status, httpTarget.uri)"
 ```
 
 **Decision**:
-- Scheduler job is **DISABLED or PAUSED** → That's why the VM never started. Report to user.
-- Scheduler shows **success** but no logs → VM started but pipeline didn't run. May need VM access to investigate (ask user first).
+- Scheduler job is **DISABLED or PAUSED** → That's why the MIG never scaled up. Report to user.
+- Scheduler shows **success** but no pipeline logs → MIG scaled up but pipeline didn't run (likely cron daemon issue — check startup script logs on VM).
 - Scheduler shows **failure** → Report the scheduler error to user.
+- Scheduler URI targets wrong region or resource → Update the scheduler job URI to match current MIG.
 
 ---
 
@@ -168,7 +169,7 @@ Root cause:
 
 Suggested next steps (awaiting your approval):
   1. [e.g. "Enable the Cloud Scheduler job"]
-  2. [e.g. "Start VM to inspect container logs and check cron configuration"]
+  2. [e.g. "Scale MIG to 1 to inspect container logs and verify cron is running"]
   3. [e.g. "Manually trigger a pipeline run to catch up on missed dates"]
 ```
 
@@ -176,53 +177,63 @@ Suggested next steps (awaiting your approval):
 
 ---
 
-## VM Access (Only If Needed and Approved)
+## MIG Instance Access (Only If Needed and Approved)
 
-⚠️ **The VM is normally STOPPED. Do not start it without explicit user approval.**
+⚠️ **The MIG is normally at targetSize=0 (no instances). Do not scale it up without explicit user approval.**
 
-If investigation requires VM access (e.g., logs not in Cloud Logging, need to inspect cron config):
+If investigation requires instance access (e.g., logs not in Cloud Logging, need to inspect cron config):
 
 ```bash
-# 1. Check current VM state first
-gcloud compute instances describe media-lens-vm \
-  --zone=us-central1-a --format="get(status)"
+# 1. Check current MIG state first
+gcloud compute instance-groups managed describe media-lens-mig \
+  --region=us-west1 --project=medialens --format="get(targetSize,status.isStable)"
 
-# 2. If STOPPED — present to user:
-#    "The VM is currently stopped. Starting it will incur Compute Engine charges
-#     until we stop it again. Shall I start it for diagnostics?"
+# 2. If targetSize=0 — present to user:
+#    "The MIG has no running instances. Scaling to 1 will start a new VM and incur
+#     Compute Engine charges until we scale back to 0. Shall I scale up for diagnostics?"
 
 # 3. Only after approval:
-gcloud compute instances start media-lens-vm --zone=us-central1-a
+gcloud compute instance-groups managed resize media-lens-mig \
+  --size=1 --region=us-west1 --project=medialens
 
-# 4. After diagnostics — confirm with user then stop:
-gcloud compute instances stop media-lens-vm --zone=us-central1-a
+# 4. Get instance name (wait ~2 min for it to appear):
+gcloud compute instance-groups managed list-instances media-lens-mig \
+  --region=us-west1 --project=medialens
+
+# 5. After diagnostics — confirm with user then scale back down:
+gcloud compute instance-groups managed resize media-lens-mig \
+  --size=0 --region=us-west1 --project=medialens
 ```
 
-### Useful VM Commands (once running and approved)
+### Useful Instance Commands (once running and approved)
 
 ```bash
+# Replace XXXX with actual instance suffix from list-instances above
+INSTANCE=media-lens-mig-XXXX
+ZONE=us-west1-a  # check actual zone from list-instances
+
 # Container logs
-gcloud compute ssh media-lens-vm --zone=us-central1-a \
+gcloud compute ssh $INSTANCE --zone=$ZONE \
   --command="docker logs media-lens --tail=100"
 
 # Errors only
-gcloud compute ssh media-lens-vm --zone=us-central1-a \
+gcloud compute ssh $INSTANCE --zone=$ZONE \
   --command="docker logs media-lens 2>&1 | grep -E 'ERROR|FAILED|Exception' | tail -30"
 
-# Cron configuration (set up by startup-script.sh, not baked into image)
-gcloud compute ssh media-lens-vm --zone=us-central1-a \
-  --command="sudo crontab -l"
+# Cron configuration
+gcloud compute ssh $INSTANCE --zone=$ZONE \
+  --command="sudo crontab -l && sudo systemctl status cron"
 
-# Startup script log (startup-script.sh writes here on every boot)
-gcloud compute ssh media-lens-vm --zone=us-central1-a \
+# Cron job output log
+gcloud compute ssh $INSTANCE --zone=$ZONE \
+  --command="sudo tail -100 /var/log/run-container-job.log"
+
+# Startup script log
+gcloud compute ssh $INSTANCE --zone=$ZONE \
   --command="sudo tail -100 /var/log/startup-script.log"
 
-# Startup script systemd journal (alternative)
-gcloud compute ssh media-lens-vm --zone=us-central1-a \
-  --command="sudo journalctl -u google-startup-scripts.service -n 50"
-
 # Disk space
-gcloud compute ssh media-lens-vm --zone=us-central1-a \
+gcloud compute ssh $INSTANCE --zone=$ZONE \
   --command="df -h"
 ```
 
@@ -262,10 +273,11 @@ Before or during an investigation, consult these local project files for deeper 
 | `startup-script.sh` | Full startup automation — what runs on VM boot, Docker install, repo clone, cron setup. Logs to `/var/log/startup-script.log` on the VM |
 
 **Key things to know from these files**:
-- `startup-script.sh` logs everything to `/var/log/startup-script.log` on the VM — check this when diagnosing VM startup failures
-- The startup script clears `/app` and re-clones the repo on every VM boot
-- Cron job (`0 16 * * * /usr/local/bin/run-container-job.sh`) is set up by the startup script, not baked into the image
+- `startup-script.sh` is stored in GCS (`gs://media-lens-storage/startup-script.sh`) and pulled by the instance template on each boot
+- The startup script installs Docker, clones the repo, installs/starts the `cron` daemon, and builds/starts the container
+- Cron job (`0 16 * * * /usr/local/bin/run-container-job.sh >> /var/log/run-container-job.log 2>&1`) is set up by the startup script, not baked into the image
 - The job script calls `http://0.0.0.0:8080/run` with the full pipeline steps
+- Instances are ephemeral — each boot is a fresh Debian 12 VM with no prior state
 
 ---
 
@@ -274,10 +286,12 @@ Before or during an investigation, consult these local project files for deeper 
 | Resource | Value |
 |----------|-------|
 | Project ID | `medialens` |
-| VM | `media-lens-vm` |
-| Zone | `us-central1-a` |
+| MIG | `media-lens-mig` |
+| Region | `us-west1` |
+| Instance Template | `media-lens-template-v2` |
 | Container | `media-lens` |
 | GCS Bucket | `gs://media-lens-storage/` |
+| Startup Script | `gs://media-lens-storage/startup-script.sh` |
 | Scheduler Region | `us-central1` |
-| Start schedule | `0 6 * * *` (6 AM UTC) |
-| Stop schedule | `0 9 * * *` (9 AM UTC) |
+| Start schedule | `0 15 * * *` (15:00 UTC / 7 AM PT) |
+| Stop schedule | `0 18 * * *` (18:00 UTC / 10 AM PT) |

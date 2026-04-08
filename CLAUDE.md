@@ -314,178 +314,146 @@ curl http://localhost:8080/
 ```
 
 ## Deployment Architecture
-- **Deployment Type**: Google Cloud VM (not Cloud Run) due to Playwright browser dependencies
-- Application runs as a scheduled job via cron, not a long-running service
+- **Deployment Type**: Google Cloud Managed Instance Group (MIG) in `us-west1` — not Cloud Run, due to Playwright browser dependencies
+- Application runs as a scheduled job via cron on ephemeral VM instances (no persistent disk — all storage on GCS)
 - Workers timeout: 600 seconds for long-running tasks
-- VM auto-starts daily before jobs, auto-stops after completion
+- MIG scales to 1 (start) and 0 (stop) daily via Cloud Scheduler
 - Web server runs on port 8080 for HTTP-based job triggering
+- Startup script is stored in GCS and pulled by the instance template on each boot
 
-## Google Cloud VM Deployment
+## Google Cloud MIG Deployment
+
+### Key Resources
+| Resource | Value |
+|----------|-------|
+| Project ID | `medialens` |
+| MIG | `media-lens-mig` (region: `us-west1`) |
+| Instance Template | `media-lens-template-v2` |
+| Zone distribution | `us-west1-a`, `us-west1-b`, `us-west1-c` |
+| GCS Bucket | `gs://media-lens-storage/` |
+| Startup Script (GCS) | `gs://media-lens-storage/startup-script.sh` |
+| Scheduler Region | `us-central1` |
+| Start schedule | `0 15 * * *` (15:00 UTC / 7 AM PT) |
+| Stop schedule | `0 18 * * *` (18:00 UTC / 10 AM PT) |
+| Service Account | `458497915682-compute@developer.gserviceaccount.com` |
 
 ### Initial Setup
 
 1. **Create GCP Resources**:
    ```bash
-   # Create storage bucket
-   gsutil mb -l us-central1 gs://media-lens-storage
+   # Create storage bucket in us-west1
+   gsutil mb -l us-west1 gs://media-lens-storage
 
    # Set IAM permissions
    gsutil iam ch serviceAccount:458497915682-compute@developer.gserviceaccount.com:roles/storage.objectAdmin gs://media-lens-storage
    ```
 
-2. **Create VM Instance with Persistent Storage**:
+2. **Upload Startup Script to GCS**:
    ```bash
-   # List existing instances
-   gcloud compute instances list
+   # Upload startup script (used by instance template)
+   gsutil cp startup-script.sh gs://media-lens-storage/startup-script.sh
+   # Or use the helper script:
+   bash install-new-startup-script.sh
+   ```
 
-   # Create VM instance
-   gcloud compute instances create media-lens-vm \
+3. **Create Instance Template**:
+   ```bash
+   gcloud compute instance-templates create media-lens-template-v2 \
      --machine-type=e2-medium \
-     --image-family=debian-11 \
+     --image-family=debian-12 \
      --image-project=debian-cloud \
      --boot-disk-size=20GB \
      --boot-disk-type=pd-standard \
-     --scopes=storage-full,cloud-platform
-
-   # Create and attach persistent disk
-   gcloud compute disks create media-lens-data --size=50GB --type=pd-standard
-   gcloud compute instances attach-disk media-lens-vm --disk=media-lens-data
-
-   # Confirm attachment
-   gcloud compute instances describe media-lens-vm --format="get(disks)"
+     --scopes=cloud-platform \
+     --metadata=startup-script-url=gs://media-lens-storage/startup-script.sh,\
+GIT_REPO_URL=https://github.com/ecodan/media_lens.git,\
+GIT_BRANCH=master,\
+GOOGLE_CLOUD_PROJECT=medialens,\
+GCP_STORAGE_BUCKET=media-lens-storage \
+     --project=medialens
    ```
 
-3. **Configure Startup Script**:
+4. **Create Regional MIG**:
    ```bash
-   # Upload startup script
-   gcloud compute instances add-metadata media-lens-vm \
-     --metadata-from-file startup-script=startup-script.sh
-
-   # Set environment variables
-   gcloud compute instances add-metadata media-lens-vm \
-     --metadata=ANTHROPIC_API_KEY=your_key,GIT_REPO_URL=https://github.com/your-user/media_lens.git,GIT_BRANCH=master
+   gcloud compute instance-groups managed create media-lens-mig \
+     --template=media-lens-template-v2 \
+     --size=0 \
+     --region=us-west1 \
+     --project=medialens
    ```
 
-4. **First-Time Manual Setup**:
+5. **Set Up Cloud Scheduler Jobs**:
    ```bash
-   # SSH into VM
-   gcloud compute ssh media-lens-vm
-
-   # Format persistent disk (first time only)
-   sudo mkfs.ext4 -m 0 -E lazy_itable_init=0,lazy_journal_init=0,discard /dev/sdb
-
-   # Mount disk
-   sudo mkdir -p /app/working /app/keys
-   sudo mount -o discard,defaults /dev/sdb /app/working
-   sudo chmod a+w /app/working
-
-   # Add to fstab for persistence
-   echo "/dev/sdb /app/working ext4 discard,defaults 0 2" | sudo tee -a /etc/fstab
-
-   # Copy credentials (from local machine)
-   gcloud compute scp ./keys/medialens-*.json media-lens-vm:/app/keys/
-
-   # Restart to apply startup script
-   exit
-   gcloud compute instances stop media-lens-vm
-   gcloud compute instances start media-lens-vm
-   ```
-
-5. **Monitor Deployment**:
-   ```bash
-   # SSH back in to check status
-   gcloud compute ssh media-lens-vm
-
-   # Check startup script logs
-   sudo journalctl -u google-startup-scripts.service
-
-   # List containers
-   docker ps -a
-
-   # Check container logs
-   docker logs media-lens
-
-   # Test health endpoint
-   curl http://localhost:8080/health
-   ```
-
-6. **Set Up Scheduled Jobs**:
-   ```bash
-   # VM auto-start before daily job
+   # Scale MIG to 1 (start VM) daily before jobs
    gcloud scheduler jobs create http start-media-lens-vm \
-     --schedule="0 6 * * *" \
-     --uri="https://compute.googleapis.com/compute/v1/projects/medialens/zones/us-central1-a/instances/media-lens-vm/start" \
+     --schedule="0 15 * * *" \
+     --uri="https://compute.googleapis.com/compute/v1/projects/medialens/regions/us-west1/instanceGroupManagers/media-lens-mig/resize?size=1" \
      --http-method=POST \
      --oauth-service-account-email=458497915682-compute@developer.gserviceaccount.com \
      --location="us-central1"
 
-   # VM auto-stop after job completes
+   # Scale MIG to 0 (delete VM) after jobs complete
    gcloud scheduler jobs create http stop-media-lens-vm \
-     --schedule="0 9 * * *" \
-     --uri="https://compute.googleapis.com/compute/v1/projects/medialens/zones/us-central1-a/instances/media-lens-vm/stop" \
+     --schedule="0 18 * * *" \
+     --uri="https://compute.googleapis.com/compute/v1/projects/medialens/regions/us-west1/instanceGroupManagers/media-lens-mig/resize?size=0" \
      --http-method=POST \
      --oauth-service-account-email=458497915682-compute@developer.gserviceaccount.com \
      --location="us-central1"
-   ```
-
-   **Cron Job Setup** (via startup script or manual):
-   ```bash
-   # SSH into VM and edit crontab
-   sudo crontab -e
-   # Add: 0 16 * * * /usr/local/bin/run-container-job.sh
-
-   # Create job script at /usr/local/bin/run-container-job.sh:
-   #!/bin/bash
-   curl -X POST -H "Content-Type: application/json" \
-     -d '{"steps":["harvest","extract","interpret_weekly","format","deploy"]}' \
-     http://0.0.0.0:8080/run
    ```
 
 ### Updating Deployment
 
-**Automatic Update (Recommended)**:
+**Update startup script** (most common):
 ```bash
-# Restart VM to pull latest code via startup script
-gcloud compute instances stop media-lens-vm
-gcloud compute instances start media-lens-vm
+# Upload updated script to GCS — MIG picks it up on next boot
+bash install-new-startup-script.sh
 ```
 
-**Manual Update**:
+**Force a new VM** (pulls latest code via startup script):
 ```bash
-# SSH into VM
-gcloud compute ssh media-lens-vm
-
-# Stop and remove container
-docker stop media-lens && docker rm media-lens
-
-# Pull latest code
-cd /app && git pull
-
-# Rebuild and restart
-sudo docker build -t gcr.io/medialens/media-lens .
-
-# Or run startup script
-cd /app && sudo bash startup-script.sh
+# Scale to 0, then back to 1 — new instance boots with fresh code
+gcloud compute instance-groups managed resize media-lens-mig --size=0 --region=us-west1 --project=medialens
+gcloud compute instance-groups managed resize media-lens-mig --size=1 --region=us-west1 --project=medialens
 ```
 
-### Testing and Debugging
+### Monitoring and Debugging
 
 ```bash
-# Health check (from outside VM)
-curl http://EXTERNAL_IP:8080/health
+# Check MIG status
+gcloud compute instance-groups managed describe media-lens-mig \
+  --region=us-west1 --project=medialens
 
-# Trigger manual run
-curl -X POST http://EXTERNAL_IP:8080/run \
-  -H "Content-Type: application/json" \
-  -d '{"steps":["harvest"]}'
+# List running instances
+gcloud compute instance-groups managed list-instances media-lens-mig \
+  --region=us-west1 --project=medialens
 
-# Check status
-curl http://EXTERNAL_IP:8080/status
+# View Cloud Logging (no SSH needed)
+gcloud logging read 'resource.type="gce_instance"' \
+  --project=medialens --freshness=2d --limit=100 \
+  --format="table(timestamp, jsonPayload.message)"
 
-# SSH and check logs
-gcloud compute ssh media-lens-vm
+# Check scheduler job state
+gcloud scheduler jobs list --location=us-central1 --project=medialens
+
+# SSH into running instance (get instance name from list-instances above)
+gcloud compute ssh media-lens-mig-XXXX --zone=us-west1-a --project=medialens
 docker logs media-lens
-ls -la /app/working/out
+sudo tail -f /var/log/startup-script.log
+```
+
+### Manual Pipeline Trigger
+
+```bash
+# Manually scale up MIG
+gcloud compute instance-groups managed resize media-lens-mig --size=1 --region=us-west1 --project=medialens
+
+# Wait for instance to boot (~5 min), then trigger via Cloud Logging or SSH
+# SSH in and curl the API directly:
+gcloud compute ssh media-lens-mig-XXXX --zone=us-west1-a --project=medialens \
+  --command='curl -s -X POST http://0.0.0.0:8080/run -H "Content-Type: application/json" -d "{\"steps\":[\"harvest\",\"extract\",\"interpret_weekly\",\"format\",\"deploy\"]}"'
+
+# Scale back down when done
+gcloud compute instance-groups managed resize media-lens-mig --size=0 --region=us-west1 --project=medialens
 ```
 
 ## Docker Configuration

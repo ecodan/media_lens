@@ -230,9 +230,15 @@ EOF
 chmod +x /usr/local/bin/run-container-job.sh
 echo "Cron job script created successfully"
 
+# Ensure cron daemon is installed and running (required on ephemeral MIG instances)
+echo "Installing and starting cron daemon..."
+apt-get install -y cron
+systemctl enable cron
+systemctl start cron
+
 # Set up the cron job (runs daily at 7 AM PT / 4 PM UTC)
 echo "Setting up cron job..."
-(crontab -l 2>/dev/null | grep -v '/usr/local/bin/run-container-job.sh'; echo "0 16 * * * /usr/local/bin/run-container-job.sh") | crontab -
+(crontab -l 2>/dev/null | grep -v '/usr/local/bin/run-container-job.sh'; echo "0 16 * * * /usr/local/bin/run-container-job.sh >> /var/log/run-container-job.log 2>&1") | crontab -
 echo "Cron job configured successfully"
 
 # Final disk space check
