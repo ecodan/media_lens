@@ -21,15 +21,15 @@ python prepare_dataset.py
 ```
 
 This creates three scenario JSON files in `data/`:
-- `headline-extraction-scenarios.json` (25 scenarios)
-- `interpretation-scenarios.json` (25 scenarios, ~14 with golden references)
-- `daily-summary-scenarios.json` (25 scenarios)
+- `headline-extraction-scenarios.json` (25 scenarios with golden extracted headlines)
+- `interpretation-scenarios.json` (25 scenarios, ~1-14 with golden 5-question outputs)
+- `daily-summary-scenarios.json` (25 scenarios with golden prose summaries)
 
 Each scenario has:
 - `id`: unique identifier
 - `input`: LLM input (HTML, article text, etc.)
 - `expected_behavior`: what the model should do
-- `golden_reference`: expected output (or `null` if not available)
+- `expected_output`: actual golden output for judges to compare against (JSON for headlines, array for interpretation, string for summary, or `null` if not available)
 
 ### 2. Copy Scenarios to Gavel-AI
 
