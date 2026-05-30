@@ -161,7 +161,7 @@ class LiteLLMAgent(Agent):
         :param model: Model identifier in LiteLLM format
                      Examples:
                      - "anthropic/claude-sonnet-4-5"
-                     - "vertex_ai/gemini-2.5-flash"
+                     - "vertex_ai/gemini-3.5-flash"
                      - "ollama/qwen"
         :param kwargs: Additional provider-specific parameters
                       For Vertex AI:
@@ -249,7 +249,7 @@ def create_agent(provider: str = "claude", **kwargs) -> Agent:
     elif provider.lower() == "vertex":
         project_id = kwargs.get("project_id")
         location = kwargs.get("location", "us-central1")
-        model = kwargs.get("model", "gemini-2.5-flash")
+        model = kwargs.get("model", "gemini-3.5-flash")
 
         if not project_id:
             raise ValueError("project_id is required for Vertex AI provider")

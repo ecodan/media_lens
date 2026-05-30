@@ -179,7 +179,7 @@ ANTHROPIC_MODEL: str = "claude-sonnet-4-5"
 # Google Vertex AI Configuration
 VERTEX_AI_PROJECT_ID: str = "medialens"
 VERTEX_AI_LOCATION: str = "us-central1"
-VERTEX_AI_MODEL: str = "gemini-2.5-flash"
+VERTEX_AI_MODEL: str = "gemini-3.5-flash"
 
 LOGGER_NAME: str = "MEDIA_LENS"
 LOGFILE_NAME: str = "media-lens-{ts}.log"

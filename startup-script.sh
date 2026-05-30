@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-STARTUP_VERSION="1.9.0"
+STARTUP_VERSION="2.1.0"
 
 # Log all commands for debugging
 exec > >(tee -a /var/log/startup-script.log) 2>&1
@@ -24,11 +24,10 @@ fi
 # Install Docker Compose if not installed
 if ! command -v docker-compose &> /dev/null; then
     echo "Docker Compose not found, installing..."
-    # Install Docker Compose standalone binary (more reliable across distributions)
-    COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | cut -d\" -f4)
-    echo "Installing Docker Compose version ${COMPOSE_VERSION}..."
-    curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    chmod +x /usr/local/bin/docker-compose
+    # Use docker-compose-plugin from the Docker apt repo (already configured above)
+    # Avoids fragile GitHub API calls that can fail due to rate limiting
+    apt-get install -y docker-compose-plugin
+    ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
     echo "Docker Compose installed successfully"
 fi
 
@@ -119,8 +118,8 @@ export USE_CLOUD_STORAGE=true
 # AI Provider Configuration
 export AI_PROVIDER=${AI_PROVIDER:-vertex}
 export VERTEX_AI_PROJECT_ID=${GOOGLE_CLOUD_PROJECT:-medialens}
-export VERTEX_AI_LOCATION=${VERTEX_AI_LOCATION:-us-central1}
-export VERTEX_AI_MODEL=${VERTEX_AI_MODEL:-gemini-2.5-flash}
+export VERTEX_AI_LOCATION=${VERTEX_AI_LOCATION:-global}
+export VERTEX_AI_MODEL=${VERTEX_AI_MODEL:-gemini-3.5-flash}
 
 # Storage and Browser Configuration
 export LOCAL_STORAGE_PATH=${LOCAL_STORAGE_PATH:-/app/working/out}
@@ -209,37 +208,31 @@ docker-compose --profile cloud up -d app
 # Check if app container started
 container_name=$(docker-compose ps -q app 2>/dev/null)
 
-# Create the cron job script
-echo "Creating cron job script..."
-cat > /usr/local/bin/run-container-job.sh << 'EOF'
-#!/bin/bash
-curl -X POST \
-  -H "Content-Type: application/json" \
-  -d '{
-    "steps": [
-      "harvest",
-      "extract",
-      "interpret_weekly",
-      "format",
-      "deploy"
-    ]
-  }' \
-http://0.0.0.0:8080/run
-EOF
-
-chmod +x /usr/local/bin/run-container-job.sh
-echo "Cron job script created successfully"
-
-# Ensure cron daemon is installed and running (required on ephemeral MIG instances)
-echo "Installing and starting cron daemon..."
-apt-get install -y cron
-systemctl enable cron
-systemctl start cron
-
-# Set up the cron job (runs daily at 7 AM PT / 4 PM UTC)
-echo "Setting up cron job..."
-(crontab -l 2>/dev/null | grep -v '/usr/local/bin/run-container-job.sh'; echo "0 16 * * * /usr/local/bin/run-container-job.sh >> /var/log/run-container-job.log 2>&1") | crontab -
-echo "Cron job configured successfully"
+# Trigger pipeline as soon as the container's health endpoint responds.
+# Runs in the background so the startup script can complete immediately.
+# Logs to /var/log/run-container-job.log for post-mortem if needed.
+echo "Starting pipeline auto-trigger (background)..."
+nohup bash -c '
+  echo "[trigger $(date -u)] Waiting for container health endpoint..."
+  ready=false
+  for i in $(seq 1 60); do
+    if curl -sf http://0.0.0.0:8080/health > /dev/null 2>&1; then
+      ready=true
+      echo "[trigger $(date -u)] Container ready after ${i} attempt(s). Launching pipeline..."
+      curl -s -X POST http://0.0.0.0:8080/run \
+        -H "Content-Type: application/json" \
+        -d "{\"steps\":[\"harvest\",\"extract\",\"interpret_weekly\",\"format\",\"deploy\"]}"
+      echo "[trigger $(date -u)] Pipeline launch request sent."
+      break
+    fi
+    echo "[trigger $(date -u)] Not ready (attempt ${i}/60), retrying in 10s..."
+    sleep 10
+  done
+  if [ "$ready" != "true" ]; then
+    echo "[trigger $(date -u)] ERROR: Container did not become ready after 600s. Pipeline not launched."
+  fi
+' >> /var/log/run-container-job.log 2>&1 &
+echo "Pipeline auto-trigger running (PID $!)"
 
 # Final disk space check
 echo "Final disk usage check:"
