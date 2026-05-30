@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import re
 import traceback
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
@@ -107,6 +108,30 @@ class HeadlineExtractor(metaclass=ABCMeta):
         pass
 
     @staticmethod
+    def _strip_wayback_urls(html_string: str) -> str:
+        """
+        Strip Wayback Machine URL prefixes from HTML content so the LLM sees clean URLs.
+        Handles two formats:
+          - https://web.archive.org/web/TIMESTAMP/https://original.com/...
+          - /web/TIMESTAMP/https://original.com/...
+        :param html_string: HTML content possibly containing Wayback Machine URLs
+        :return: HTML with Wayback prefixes removed, leaving the original URLs
+        """
+        # Full Wayback URL: https://web.archive.org/web/TIMESTAMP/https://...
+        html_string = re.sub(
+            r'https?://web\.archive\.org/web/\d+[^/]*/(?=https?://)',
+            '',
+            html_string,
+        )
+        # Relative Wayback path: /web/TIMESTAMP/https://...
+        html_string = re.sub(
+            r'/web/\d+[^/]*/(?=https?://)',
+            '',
+            html_string,
+        )
+        return html_string
+
+    @staticmethod
     def _truncate_html(html_string: str, max_tokens: int = 100000):
         """
         Simply truncates HTML content at approximately max_tokens.
@@ -157,7 +182,8 @@ class LLMHeadlineExtractor(HeadlineExtractor):
         """
         logger.debug(f"Extracting news content: {len(content)} bytes")
         try:
-            truncated_content = self._truncate_html(content, max_tokens=100000)
+            content = self._strip_wayback_urls(content)
+            truncated_content = self._truncate_html(content, max_tokens=50000)
             logger.debug(
                 f"Processing content with length: {len(truncated_content)} (tokens: {len(truncated_content.split())})"
             )
@@ -176,6 +202,7 @@ class LLMHeadlineExtractor(HeadlineExtractor):
                     * The response MUST quote the headlines verbatim.
                     * The response MUST include the headline text, the publication date (if available) and the URL to the article.
                     * The response SHOULD be in JSON but can also be in markdown.
+                    * CRITICAL: Only extract headlines and URLs that are explicitly present in the provided HTML content. Do NOT use prior knowledge or training data to infer, guess, or substitute any information. If a URL is in an unusual format (e.g. web.archive.org or /web/TIMESTAMP/ prefixed), use that URL exactly as it appears in the HTML.
                     """,
                 ),
             )

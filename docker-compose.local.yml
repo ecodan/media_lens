@@ -17,7 +17,7 @@ services:
       - PLAYWRIGHT_MODE=local
       - AI_PROVIDER=vertex
       - VERTEX_AI_PROJECT_ID=medialens
-      - VERTEX_AI_LOCATION=us-central1
+      - VERTEX_AI_LOCATION=global
       - VERTEX_AI_MODEL=gemini-2.5-flash
       - LOCAL_STORAGE_PATH=/app/working/out
       # Load from local .env for secrets

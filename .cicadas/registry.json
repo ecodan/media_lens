@@ -1,5 +1,32 @@
 {
   "schema_version": "2.0",
-  "initiatives": {},
-  "branches": {}
+  "initiatives": {
+    "model-upgrade-eval": {
+      "intent": "Build formal eval harness using gavel-ai to compare gemini-3-flash, claude-haiku, and gemini-3-pro against gemini-2.5-flash baseline across all 3 LLM tasks (headline extraction, interpretation, daily summary) to select a safe replacement before deprecation",
+      "owner": "unknown",
+      "signals": [],
+      "created_at": "2026-04-10T02:58:30.512323+00:00"
+    }
+  },
+  "branches": {
+    "feat/dataset-prep": {
+      "intent": "Dataset preparation script and validation for eval scenarios from working/gcs golden data",
+      "modules": [
+        "eval"
+      ],
+      "owner": "unknown",
+      "created_at": "2026-04-10T03:00:23.109117+00:00",
+      "initiative": "model-upgrade-eval"
+    },
+    "feat/run-and-select": {
+      "intent": "Run evaluations for all model candidates, fill results in eval-spec, select winning model, update common.py",
+      "modules": [
+        "extraction/agent",
+        "common"
+      ],
+      "owner": "unknown",
+      "created_at": "2026-04-10T03:16:59.437905+00:00",
+      "initiative": "model-upgrade-eval"
+    }
+  }
 }

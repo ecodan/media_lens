@@ -35,11 +35,21 @@ class ContextExtractor:
     def _process_relative_url(url: str, filename: str) -> str:
         """
         Process a potentially relative URL, adding https:// and domain if needed.
+        Strips Wayback Machine prefixes (web.archive.org/web/TIMESTAMP/) so that
+        article scraping always hits the live site, not the archive.
         :param url: The URL to process
         :param filename: Filename containing the domain (e.g., 'www.cnn.com-extracted.json')
         :returns str: Processed URL with protocol and domain if needed
         :raises ValueError: If domain cannot be extracted from filename
         """
+        # Strip Wayback Machine prefix if present
+        wayback_match = re.match(r"https?://web\.archive\.org/web/\d+[^/]*/(.+)", url)
+        if wayback_match:
+            url = wayback_match.group(1)
+            # Restore scheme if it was stripped by the archive prefix pattern
+            if not url.startswith("http"):
+                url = f"https://{url}"
+
         # Check if URL already has a protocol
         parsed_url = urlparse(url)
         if parsed_url.scheme:
