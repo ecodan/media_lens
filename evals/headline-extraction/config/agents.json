@@ -1,0 +1,67 @@
+{
+  "_models": {
+    "gemini-judge": {
+      "model_provider": "google",
+      "model_family": "gemini",
+      "model_version": "gemini-3.1-pro",
+      "model_parameters": {
+        "temperature": 0.3,
+        "max_tokens": 2048
+      },
+      "provider_auth": {
+        "project_id": "{{VERTEX_AI_PROJECT_ID}}",
+        "location": "{{VERTEX_AI_LOCATION}}"
+      }
+    },
+    "claude-sonnet": {
+      "model_provider": "anthropic",
+      "model_family": "claude",
+      "model_version": "claude-sonnet-4-5",
+      "model_parameters": {
+        "temperature": 0.3,
+        "max_tokens": 4096
+      },
+      "provider_auth": {
+        "api_key": "{{ANTHROPIC_API_KEY}}"
+      }
+    },
+    "gemini-25-flash": {
+      "model_provider": "google",
+      "model_family": "gemini",
+      "model_version": "gemini-2.5-flash",
+      "model_parameters": {
+        "temperature": 0.3,
+        "max_tokens": 4096
+      },
+      "provider_auth": {
+        "project_id": "{{VERTEX_AI_PROJECT_ID}}",
+        "location": "{{VERTEX_AI_LOCATION}}"
+      }
+    },
+    "gemini-35-flash": {
+      "model_provider": "google",
+      "model_family": "gemini",
+      "model_version": "gemini-3.5-flash",
+      "model_parameters": {
+        "temperature": 0.3,
+        "max_tokens": 4096
+      },
+      "provider_auth": {
+        "project_id": "{{VERTEX_AI_PROJECT_ID}}",
+        "location": "{{VERTEX_AI_LOCATION}}"
+      }
+    }
+  },
+  "claude_sonnet_extractor": {
+    "model_id": "claude-sonnet",
+    "prompt": "assistant:v1"
+  },
+  "gemini_25_flash_extractor": {
+    "model_id": "gemini-25-flash",
+    "prompt": "assistant:v1"
+  },
+  "gemini_35_flash_extractor": {
+    "model_id": "gemini-35-flash",
+    "prompt": "assistant:v1"
+  }
+}

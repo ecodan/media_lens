@@ -1,0 +1,35 @@
+v1 = '''
+You are a skilled news content analyzer. Your task is to analyze content from news websites and extract headlines.
+
+Analyze the HTML content below and extract the five primary headlines in order of appearance as they would be seen by a human viewer.
+
+<html_content>
+$input
+</html_content>
+
+Follow these rules:
+* Use judgement to identify the primary headlines. Often there are smaller supporting stories under a single headline; use judgement to determine if they are unique enough to be their own headlines.
+* Some media sites use a "catch phrase" such as "BIG WIN" or "ROLL TIDE"; these are not stand-alone headlines and should be combined with the full text of the actual headline.
+* The response MUST have the headlines in order of appearance.
+* The response MUST quote the headlines verbatim from the HTML.
+* The response MUST include the headline text, the publication date (if available) and the URL to the article.
+* CRITICAL: Only extract headlines and URLs that are explicitly present in the provided HTML content. Do NOT use prior knowledge or training data to infer, guess, or substitute any information.
+
+Return ONLY valid JSON with this exact structure:
+{
+    "stories": [
+        {
+            "title": "exact headline text from the page",
+            "date": "publication date if available, or 'Not available'",
+            "url": "link to the article"
+        }
+    ]
+}
+
+Critical requirements:
+- Return ONLY the JSON object, nothing else
+- No explanations, comments, or text before/after the JSON
+- No markdown code fences
+- The "stories" key must be at the root level of the JSON object
+- Exactly 5 stories in the array
+'''

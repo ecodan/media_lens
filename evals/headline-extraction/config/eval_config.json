@@ -1,0 +1,76 @@
+{
+  "eval_type": "oneshot",
+  "test_subject_type": "local",
+  "eval_name": "headline-extraction",
+  "description": "Evaluate headline extraction quality across Claude Sonnet and Gemini Flash models",
+  "test_subjects": [
+    {
+      "prompt_name": "assistant",
+      "judges": [
+        {
+          "name": "title-accuracy",
+          "type": "deepeval.geval",
+          "model": "gemini-judge",
+          "threshold": 0.7,
+          "criteria": "Do the extracted headline titles match the expected golden headlines? Are they verbatim quotes from the HTML content, in the correct order of appearance?",
+          "evaluation_steps": [
+            "Count the number of extracted titles vs expected titles (should be exactly 5)",
+            "Check if each extracted title appears verbatim in the expected headlines in the same order",
+            "Verify headlines are quoted exactly from the HTML, not paraphrased or modified",
+            "Confirm the ordering matches the order of appearance in the HTML"
+          ]
+        },
+        {
+          "name": "url-accuracy",
+          "type": "deepeval.geval",
+          "model": "gemini-judge",
+          "threshold": 0.7,
+          "criteria": "Are the extracted URLs exactly correct and match the golden URLs? Do they represent valid article links from the HTML content?",
+          "evaluation_steps": [
+            "Compare each extracted URL against the expected golden URL for the corresponding headline",
+            "Verify URLs are exact matches (case-sensitive for protocol and domain, paths as they appear)",
+            "Check that all 5 URLs are present and non-empty",
+            "Confirm URLs are plausible article links from the website (not navigation, ads, or spurious content)"
+          ]
+        },
+        {
+          "name": "schema-compliance",
+          "type": "deepeval.geval",
+          "model": "gemini-judge",
+          "threshold": 0.9,
+          "strict_mode": true,
+          "criteria": "Is the extracted output valid JSON matching the required schema with exactly 5 stories, each containing title, date, and url fields?",
+          "evaluation_steps": [
+            "Verify the output is valid JSON (parseable without errors)",
+            "Check that root-level key is 'stories' (not 'headlines' or other variants)",
+            "Verify stories is an array with exactly 5 objects",
+            "Confirm each story object has exactly the required fields: title (string), date (string), url (string)"
+          ]
+        }
+      ]
+    }
+  ],
+  "variants": [
+    "gemini_25_flash_extractor",
+    "gemini_35_flash_extractor"
+  ],
+  "scenarios": {
+    "source": "file.local",
+    "name": "scenarios.json",
+    "field_mapping": {
+      "expected_output": "expected_output"
+    }
+  },
+  "execution": {
+    "max_concurrent": 5
+  },
+  "async": {
+    "num_workers": 4,
+    "arrival_rate_per_sec": 10.0,
+    "exec_rate_per_min": 60,
+    "max_retries": 2,
+    "task_timeout_seconds": 600,
+    "stuck_timeout_seconds": 900,
+    "emit_progress_interval_sec": 10
+  }
+}
