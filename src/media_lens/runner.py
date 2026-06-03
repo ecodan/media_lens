@@ -13,6 +13,10 @@ from typing import List, Optional
 import dotenv
 from dateparser.utils.strptime import strptime
 
+from src.media_lens.deprecation_filter import suppress_gavel_ai_deprecations
+
+suppress_gavel_ai_deprecations()
+
 from src.media_lens.auditor import audit_days
 from src.media_lens.collection.harvester import Harvester
 from src.media_lens.common import (

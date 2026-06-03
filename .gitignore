@@ -43,3 +43,4 @@ uv.lock
 .pytest_cache/
 .ruff_cache/
 .cicadas-skill/
+/evals/headline-extraction/runs/

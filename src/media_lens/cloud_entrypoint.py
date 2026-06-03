@@ -5,9 +5,16 @@ import time
 import uuid
 from threading import Thread
 
+import dotenv
 from flask import Flask, jsonify, request
 
+# Load environment variables from .env file
+dotenv.load_dotenv()
+
+from src.media_lens.deprecation_filter import suppress_gavel_ai_deprecations
 from src.media_lens.common import LOGGER_NAME, RunState, create_logger, ensure_secrets_loaded
+
+suppress_gavel_ai_deprecations()
 from src.media_lens.presentation.deployer import rewind_deploy_cursor
 from src.media_lens.presentation.html_formatter import rewind_format_cursor
 from src.media_lens.runner import Steps, process_weekly_content, run, summarize_all

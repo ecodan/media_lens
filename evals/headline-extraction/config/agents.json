@@ -3,14 +3,27 @@
     "gemini-judge": {
       "model_provider": "google",
       "model_family": "gemini",
-      "model_version": "gemini-3.1-pro",
+      "model_version": "gemini-3.1-pro-preview",
       "model_parameters": {
         "temperature": 0.3,
         "max_tokens": 2048
       },
       "provider_auth": {
-        "project_id": "{{VERTEX_AI_PROJECT_ID}}",
-        "location": "{{VERTEX_AI_LOCATION}}"
+        "project_id": "medialens",
+        "location": "global"
+      }
+    },
+    "gemini-pro": {
+      "model_provider": "google",
+      "model_family": "gemini",
+      "model_version": "gemini-3.1-pro-preview",
+      "model_parameters": {
+        "temperature": 0.3,
+        "max_tokens": 2048
+      },
+      "provider_auth": {
+        "project_id": "medialens",
+        "location": "global"
       }
     },
     "claude-sonnet": {
@@ -34,8 +47,8 @@
         "max_tokens": 4096
       },
       "provider_auth": {
-        "project_id": "{{VERTEX_AI_PROJECT_ID}}",
-        "location": "{{VERTEX_AI_LOCATION}}"
+        "project_id": "medialens",
+        "location": "global"
       }
     },
     "gemini-35-flash": {
@@ -47,10 +60,14 @@
         "max_tokens": 4096
       },
       "provider_auth": {
-        "project_id": "{{VERTEX_AI_PROJECT_ID}}",
-        "location": "{{VERTEX_AI_LOCATION}}"
+        "project_id": "medialens",
+        "location": "global"
       }
     }
+  },
+  "gemini_pro_extractor": {
+    "model_id": "gemini-pro",
+    "prompt": "assistant:v1"
   },
   "claude_sonnet_extractor": {
     "model_id": "claude-sonnet",

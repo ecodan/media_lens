@@ -10,7 +10,7 @@
         {
           "name": "title-accuracy",
           "type": "deepeval.geval",
-          "model": "gemini-judge",
+          "model": "claude-sonnet",
           "threshold": 0.7,
           "criteria": "Do the extracted headline titles match the expected golden headlines? Are they verbatim quotes from the HTML content, in the correct order of appearance?",
           "evaluation_steps": [
@@ -23,7 +23,7 @@
         {
           "name": "url-accuracy",
           "type": "deepeval.geval",
-          "model": "gemini-judge",
+          "model": "claude-sonnet",
           "threshold": 0.7,
           "criteria": "Are the extracted URLs exactly correct and match the golden URLs? Do they represent valid article links from the HTML content?",
           "evaluation_steps": [
@@ -36,7 +36,7 @@
         {
           "name": "schema-compliance",
           "type": "deepeval.geval",
-          "model": "gemini-judge",
+          "model": "claude-sonnet",
           "threshold": 0.9,
           "strict_mode": true,
           "criteria": "Is the extracted output valid JSON matching the required schema with exactly 5 stories, each containing title, date, and url fields?",
@@ -51,8 +51,9 @@
     }
   ],
   "variants": [
-    "gemini_25_flash_extractor",
-    "gemini_35_flash_extractor"
+    "gemini_pro_extractor",
+    "gemini_35_flash_extractor",
+    "claude_sonnet_extractor"
   ],
   "scenarios": {
     "source": "file.local",
