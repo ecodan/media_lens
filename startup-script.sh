@@ -116,7 +116,7 @@ export GCP_STORAGE_BUCKET=${GCP_STORAGE_BUCKET:-media-lens-storage}
 export USE_CLOUD_STORAGE=true
 
 # AI Provider Configuration
-export AI_PROVIDER=${AI_PROVIDER:-vertex}
+export AI_PROVIDER=${AI_PROVIDER:-claude}
 export VERTEX_AI_PROJECT_ID=${GOOGLE_CLOUD_PROJECT:-medialens}
 export VERTEX_AI_LOCATION=${VERTEX_AI_LOCATION:-global}
 export VERTEX_AI_MODEL=${VERTEX_AI_MODEL:-gemini-3.5-flash}
