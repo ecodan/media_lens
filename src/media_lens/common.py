@@ -170,11 +170,10 @@ SITES_DEFAULT: list[str] = ["www.cnn.com", "www.bbc.com", "www.foxnews.com"]
 SITES: list[str] = SITES_DEFAULT
 
 # AI Provider Configuration
-DEFAULT_AI_PROVIDER: str = "vertex"  # Options: "claude", "vertex"
+DEFAULT_AI_PROVIDER: str = "claude"  # Options: "claude", "vertex"
 
 # Anthropic Configuration
-ANTHROPIC_MODEL: str = "claude-sonnet-4-5"
-# ANTHROPIC_MODEL: str = "claude-3-5-haiku-latest"
+ANTHROPIC_MODEL: str = "claude-haiku-4-5-20251001"
 
 # Google Vertex AI Configuration
 VERTEX_AI_PROJECT_ID: str = "medialens"
