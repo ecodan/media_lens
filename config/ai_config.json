@@ -1,0 +1,16 @@
+{
+  "default_provider": "claude",
+  "providers": {
+    "claude": {
+      "model": "claude-haiku-4-5-20251001"
+    },
+    "vertex": {
+      "model": "gemini-3.5-flash",
+      "project_id": "medialens",
+      "location": "global"
+    },
+    "ollama": {
+      "model": "qwen"
+    }
+  }
+}

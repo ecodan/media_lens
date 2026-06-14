@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import sys
@@ -169,16 +170,52 @@ SITES_DEFAULT: list[str] = ["www.cnn.com", "www.bbc.com", "www.foxnews.com"]
 
 SITES: list[str] = SITES_DEFAULT
 
+
+def load_ai_config() -> dict:
+    """
+    Load AI provider/model configuration from config/ai_config.json.
+
+    Falls back to built-in defaults if the file is missing or invalid,
+    so existing deployments without the config file keep working.
+
+    :return: dict with "default_provider" and "providers" keys
+    """
+    fallback: dict = {
+        "default_provider": "claude",
+        "providers": {
+            "claude": {"model": "claude-haiku-4-5-20251001"},
+            "vertex": {
+                "model": "gemini-3.5-flash",
+                "project_id": "medialens",
+                "location": "global",
+            },
+            "ollama": {"model": "qwen"},
+        },
+    }
+
+    config_path: Path = get_project_root() / "config" / "ai_config.json"
+    try:
+        with open(config_path) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return fallback
+
+
+_AI_CONFIG: dict = load_ai_config()
+
 # AI Provider Configuration
-DEFAULT_AI_PROVIDER: str = "claude"  # Options: "claude", "vertex"
+DEFAULT_AI_PROVIDER: str = _AI_CONFIG.get("default_provider", "claude")  # Options: "claude", "vertex", "ollama"
 
 # Anthropic Configuration
-ANTHROPIC_MODEL: str = "claude-haiku-4-5-20251001"
+ANTHROPIC_MODEL: str = _AI_CONFIG["providers"]["claude"]["model"]
 
 # Google Vertex AI Configuration
-VERTEX_AI_PROJECT_ID: str = "medialens"
-VERTEX_AI_LOCATION: str = os.getenv("VERTEX_AI_LOCATION", "global")
-VERTEX_AI_MODEL: str = "gemini-3.5-flash"
+VERTEX_AI_PROJECT_ID: str = _AI_CONFIG["providers"]["vertex"]["project_id"]
+VERTEX_AI_LOCATION: str = os.getenv("VERTEX_AI_LOCATION") or _AI_CONFIG["providers"]["vertex"]["location"]
+VERTEX_AI_MODEL: str = _AI_CONFIG["providers"]["vertex"]["model"]
+
+# Ollama Configuration
+OLLAMA_MODEL: str = _AI_CONFIG["providers"]["ollama"]["model"]
 
 LOGGER_NAME: str = "MEDIA_LENS"
 LOGFILE_NAME: str = "media-lens-{ts}.log"

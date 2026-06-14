@@ -14,6 +14,7 @@ from src.media_lens.common import (
     ANTHROPIC_MODEL,
     DEFAULT_AI_PROVIDER,
     LOGGER_NAME,
+    OLLAMA_MODEL,
     VERTEX_AI_LOCATION,
     VERTEX_AI_MODEL,
     VERTEX_AI_PROJECT_ID,
@@ -241,7 +242,7 @@ def create_agent(provider: str = "claude", **kwargs) -> Agent:
     :return: Agent instance
     """
     if provider.lower() == "claude":
-        model = kwargs.get("model", "claude-3-5-haiku-latest")
+        model = kwargs.get("model", ANTHROPIC_MODEL)
         # LiteLLM uses ANTHROPIC_API_KEY from environment
         litellm_model = f"anthropic/{model}"
         return LiteLLMAgent(model=litellm_model)
@@ -260,7 +261,7 @@ def create_agent(provider: str = "claude", **kwargs) -> Agent:
         )
 
     elif provider.lower() == "ollama":
-        model = kwargs.get("model", "qwen")
+        model = kwargs.get("model", OLLAMA_MODEL)
         litellm_model = f"ollama/{model}"
         return LiteLLMAgent(model=litellm_model)
 
@@ -281,7 +282,9 @@ def create_agent_from_env() -> Agent:
 
     loaded_secrets = load_secrets_from_gcp()
 
-    provider = os.getenv("AI_PROVIDER", DEFAULT_AI_PROVIDER).lower()
+    # Treat empty-string env vars (e.g. unset docker-compose passthroughs) as unset,
+    # so config/ai_config.json remains the single source of truth for defaults.
+    provider = (os.getenv("AI_PROVIDER") or DEFAULT_AI_PROVIDER).lower()
 
     if provider == "claude":
         # Try environment variable first, then fall back to loaded secrets
@@ -297,11 +300,11 @@ def create_agent_from_env() -> Agent:
         # Set API key for LiteLLM
         os.environ["ANTHROPIC_API_KEY"] = api_key
 
-        model = os.getenv("ANTHROPIC_MODEL", ANTHROPIC_MODEL)
+        model = os.getenv("ANTHROPIC_MODEL") or ANTHROPIC_MODEL
         return create_agent(provider="claude", model=model)
 
     elif provider == "vertex":
-        project_id = os.getenv("VERTEX_AI_PROJECT_ID", VERTEX_AI_PROJECT_ID)
+        project_id = os.getenv("VERTEX_AI_PROJECT_ID") or VERTEX_AI_PROJECT_ID
         if not project_id:
             raise ValueError(
                 "VERTEX_AI_PROJECT_ID environment variable is required for Vertex AI provider"
@@ -318,14 +321,14 @@ def create_agent_from_env() -> Agent:
                     f"(was: {creds_path})"
                 )
 
-        location = os.getenv("VERTEX_AI_LOCATION", VERTEX_AI_LOCATION)
-        model = os.getenv("VERTEX_AI_MODEL", VERTEX_AI_MODEL)
+        location = os.getenv("VERTEX_AI_LOCATION") or VERTEX_AI_LOCATION
+        model = os.getenv("VERTEX_AI_MODEL") or VERTEX_AI_MODEL
         return create_agent(
             provider="vertex", project_id=project_id, location=location, model=model
         )
 
     elif provider == "ollama":
-        model = os.getenv("OLLAMA_MODEL_VERSION", "qwen")
+        model = os.getenv("OLLAMA_MODEL_VERSION") or OLLAMA_MODEL
         return create_agent(provider="ollama", model=model)
 
     else:
