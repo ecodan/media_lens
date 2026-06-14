@@ -14,7 +14,7 @@ authors = [
 license = { text = "MIT" }
 
 dependencies = [
-    "anthropic==0.46.0",
+    "anthropic>=0.97.0",
     "beautifulsoup4==4.13.3",
     "blinker==1.9.0",
     "bs4==0.0.2",
@@ -24,7 +24,7 @@ dependencies = [
     "deptry==0.23.0",
     "Flask==2.3.3",
     "google-api-core==2.24.2",
-    "google-auth==2.38.0",
+    "google-auth>=2.45.0",
     "google-cloud-core==2.4.3",
     "google-cloud-secret-manager>=2.26.0",
     "google-cloud-storage==2.13.0",
@@ -49,7 +49,7 @@ dependencies = [
     "protobuf>=5.29.6",
     "pyasn1==0.6.2",
     "pyasn1_modules==0.4.2",
-    "python-dotenv==1.0.1",
+    "python-dotenv>=1.1.0",
     "pytz==2025.1",
     "regex==2024.11.6",
     "requirements-parser==0.13.0",
@@ -65,6 +65,7 @@ dependencies = [
     "aiohttp==3.13.3",
     "filelock==3.20.3",
     "PyNaCl==1.6.2",
+    "gavel-ai",
 ]
 
 [project.optional-dependencies]
@@ -84,6 +85,9 @@ dev-dependencies = [
     "pytest-cov>=6.0.0",
     "ruff>=0.5.6",
 ]
+
+[tool.uv.sources]
+gavel-ai = { path = "../gavel-ai" }
 
 [tool.ruff]
 line-length = 100

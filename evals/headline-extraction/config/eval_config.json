@@ -51,9 +51,7 @@
     }
   ],
   "variants": [
-    "gemini_pro_extractor",
-    "gemini_35_flash_extractor",
-    "claude_sonnet_extractor"
+    "gemini_35_flash_extractor"
   ],
   "scenarios": {
     "source": "file.local",
