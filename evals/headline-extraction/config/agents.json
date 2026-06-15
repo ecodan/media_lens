@@ -63,22 +63,38 @@
         "project_id": "medialens",
         "location": "global"
       }
+    },
+    "claude-haiku": {
+      "model_provider": "anthropic",
+      "model_family": "claude",
+      "model_version": "claude-haiku-4-5-20251001",
+      "model_parameters": {
+        "temperature": 0.3,
+        "max_tokens": 4096
+      },
+      "provider_auth": {
+        "api_key": "{{ANTHROPIC_API_KEY}}"
+      }
     }
   },
   "gemini_pro_extractor": {
     "model_id": "gemini-pro",
-    "prompt": "assistant:v1"
+    "prompt": "assistant:v2"
   },
   "claude_sonnet_extractor": {
     "model_id": "claude-sonnet",
-    "prompt": "assistant:v1"
+    "prompt": "assistant:v2"
   },
   "gemini_25_flash_extractor": {
     "model_id": "gemini-25-flash",
-    "prompt": "assistant:v1"
+    "prompt": "assistant:v2"
   },
   "gemini_35_flash_extractor": {
     "model_id": "gemini-35-flash",
-    "prompt": "assistant:v1"
+    "prompt": "assistant:v2"
+  },
+  "claude_haiku_extractor": {
+    "model_id": "claude-haiku",
+    "prompt": "assistant:v2"
   }
 }

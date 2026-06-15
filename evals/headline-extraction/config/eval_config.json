@@ -12,12 +12,13 @@
           "type": "deepeval.geval",
           "model": "claude-sonnet",
           "threshold": 0.7,
-          "criteria": "Do the extracted headline titles match the expected golden headlines? Are they verbatim quotes from the HTML content, in the correct order of appearance?",
+          "evaluation_params": ["actual_output", "expected_output"],
+          "criteria": "Do the extracted headline titles match the expected golden headlines? Are they verbatim quotes in the correct order of appearance?",
           "evaluation_steps": [
             "Count the number of extracted titles vs expected titles (should be exactly 5)",
             "Check if each extracted title appears verbatim in the expected headlines in the same order",
-            "Verify headlines are quoted exactly from the HTML, not paraphrased or modified",
-            "Confirm the ordering matches the order of appearance in the HTML"
+            "Verify titles are quoted exactly as in the expected headlines, not paraphrased or modified",
+            "Confirm the ordering of titles matches the expected order"
           ]
         },
         {
@@ -25,12 +26,12 @@
           "type": "deepeval.geval",
           "model": "claude-sonnet",
           "threshold": 0.7,
-          "criteria": "Are the extracted URLs exactly correct and match the golden URLs? Do they represent valid article links from the HTML content?",
+          "evaluation_params": ["actual_output", "expected_output"],
+          "criteria": "Are the extracted URLs exactly correct and match the golden URLs?",
           "evaluation_steps": [
             "Compare each extracted URL against the expected golden URL for the corresponding headline",
             "Verify URLs are exact matches (case-sensitive for protocol and domain, paths as they appear)",
-            "Check that all 5 URLs are present and non-empty",
-            "Confirm URLs are plausible article links from the website (not navigation, ads, or spurious content)"
+            "Check that all 5 URLs are present and non-empty"
           ]
         },
         {
@@ -39,6 +40,7 @@
           "model": "claude-sonnet",
           "threshold": 0.9,
           "strict_mode": true,
+          "evaluation_params": ["actual_output", "expected_output"],
           "criteria": "Is the extracted output valid JSON matching the required schema with exactly 5 stories, each containing title, date, and url fields?",
           "evaluation_steps": [
             "Verify the output is valid JSON (parseable without errors)",
@@ -51,7 +53,8 @@
     }
   ],
   "variants": [
-    "gemini_35_flash_extractor"
+    "gemini_35_flash_extractor",
+    "claude_haiku_extractor"
   ],
   "scenarios": {
     "source": "file.local",
